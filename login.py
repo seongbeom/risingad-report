@@ -1,22 +1,31 @@
 """
-Cafe24 로그인 테스트 스크립트
-테스트 아이디/비번 자동 입력, reCAPTCHA + 로그인은 직접 클릭
+Cafe24 로그인 자동화 스크립트
+stealth 모드로 reCAPTCHA 우회 + 자동 로그인
 """
 
+import os
+
+from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
+
+load_dotenv()
 
 LOGIN_URL = "https://eclogin.cafe24.com/Shop/?url=Init&login_mode=2"
 SESSION_FILE = "session.json"
 
-TEST_ID = "testuser123"
-TEST_PW = "testpass123"
+CAFE24_ID = os.environ["CAFE24_ID"]
+CAFE24_SUB_ID = os.environ["CAFE24_SUB_ID"]
+CAFE24_PW = os.environ["CAFE24_PW"]
 
 
 def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, slow_mo=300)
         context = browser.new_context()
+        stealth = Stealth()
         page = context.new_page()
+        stealth.apply_stealth_sync(page)
 
         page.goto(LOGIN_URL, wait_until="domcontentloaded")
         page.wait_for_timeout(2000)
@@ -26,16 +35,15 @@ def main():
         recaptcha_frame.locator(".rc-anchor-checkbox-holder").click()
         page.wait_for_timeout(1000)
 
-        # 아이디/비밀번호 자동 입력
-        page.fill("#mall_id", TEST_ID)
-        page.fill("#userpasswd", TEST_PW)
-        print(f"아이디({TEST_ID}), 비밀번호 자동 입력 완료")
-        print()
-        print("이제 직접 해주세요:")
-        print("  1. reCAPTCHA 체크박스 클릭")
-        print("  2. 로그인 버튼 클릭")
-        print()
-        print("5분 내에 완료해주세요...")
+        # 아이디/부운영자아이디/비밀번호 자동 입력
+        page.fill("#mall_id", CAFE24_ID)
+        page.fill("#userid", CAFE24_SUB_ID)
+        page.fill("#userpasswd", CAFE24_PW)
+        print(f"아이디({CAFE24_ID}), 부운영자({CAFE24_SUB_ID}), 비밀번호 자동 입력 완료")
+
+        # 로그인 버튼 클릭
+        page.click("button.btnStrong.large")
+        print("로그인 버튼 클릭 완료")
 
         # 로그인 결과 대기
         try:
