@@ -1,3 +1,5 @@
 .env
 session.json
 venv/
+browser_data/
+yolov8m-seg.pt
