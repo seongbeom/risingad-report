@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cafe24 애널리틱스 스크래퍼</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
+        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        h1 { font-size: 1.5rem; margin-bottom: 8px; }
+        .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
+        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .card h2 { font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #fafafa; font-weight: 600; font-size: 0.8rem; color: #666; text-transform: uppercase; }
+        tr:hover { background: #f9f9f9; }
+        .form-row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-top: 12px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.75rem; color: #888; font-weight: 600; }
+        input, select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        input:focus, select:focus { outline: none; border-color: #4a90d9; }
+        .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+        .btn-primary { background: #4a90d9; color: #fff; }
+        .btn-primary:hover { background: #3a7bc8; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-success { background: #27ae60; color: #fff; }
+        .btn-success:hover { background: #229954; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+        .badge-success { background: #d4edda; color: #155724; }
+        .badge-error { background: #f8d7da; color: #721c24; }
+        .badge-running { background: #fff3cd; color: #856404; }
+        .badge-on { background: #d4edda; color: #155724; }
+        .badge-off { background: #e2e3e5; color: #6c757d; }
+        .actions { display: flex; gap: 6px; }
+        .empty { text-align: center; padding: 24px; color: #999; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .schedule-inline { display: flex; gap: 4px; align-items: center; font-size: 0.9rem; }
+        .time-input { width: 60px; text-align: center; }
+        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; cursor: pointer; }
+        .section-divider { margin: 32px 0 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cafe24 애널리틱스 스크래퍼</h1>
+        <p class="subtitle">{{ now }}</p>
+
+        <!-- 계정 관리 -->
+        <div class="card">
+            <h2>계정 관리</h2>
+            {% if accounts %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>라벨</th>
+                        <th>쇼핑몰 ID</th>
+                        <th>부운영자 ID</th>
+                        <th>스케줄</th>
+                        <th>동작</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in accounts %}
+                    <tr>
+                        <td>{{ a.label or '-' }}</td>
+                        <td><strong>{{ a.cafe24_id }}</strong></td>
+                        <td>{{ a.sub_id }}</td>
+                        <td>
+                            {% if a.id in schedules %}
+                                {% set s = schedules[a.id] %}
+                                <span class="badge {{ 'badge-on' if s.enabled else 'badge-off' }}">
+                                    {{ '%02d' % s.cron_hour }}:{{ '%02d' % s.cron_minute }}
+                                    {{ 'ON' if s.enabled else 'OFF' }}
+                                </span>
+                            {% else %}
+                                <span class="badge badge-off">미설정</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="actions">
+                                {% if a.id in running %}
+                                    <span class="badge badge-running">실행중...</span>
+                                {% else %}
+                                    <form method="POST" action="/run/{{ a.id }}" style="display:inline">
+                                        <button class="btn btn-success btn-sm" type="submit">실행</button>
+                                    </form>
+                                {% endif %}
+                                <a href="/results/{{ a.id }}" class="btn btn-primary btn-sm" style="text-decoration:none">결과</a>
+                                <form method="POST" action="/accounts/{{ a.id }}/delete" style="display:inline"
+                                      onsubmit="return confirm('정말 삭제하시겠습니까?')">
+                                    <button class="btn btn-danger btn-sm" type="submit">삭제</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty">등록된 계정이 없습니다.</p>
+            {% endif %}
+
+            <form method="POST" action="/accounts" class="form-row">
+                <div class="form-group">
+                    <label>라벨 (선택)</label>
+                    <input name="label" placeholder="예: 신데렐라" style="width:120px">
+                </div>
+                <div class="form-group">
+                    <label>쇼핑몰 ID *</label>
+                    <input name="cafe24_id" required placeholder="cafe24 ID" style="width:150px">
+                </div>
+                <div class="form-group">
+                    <label>부운영자 ID *</label>
+                    <input name="sub_id" required placeholder="부운영자 ID" style="width:150px">
+                </div>
+                <div class="form-group">
+                    <label>비밀번호 *</label>
+                    <input name="password" type="password" required placeholder="비밀번호" style="width:150px">
+                </div>
+                <button class="btn btn-primary" type="submit">추가</button>
+            </form>
+        </div>
+
+        <!-- 스케줄 설정 -->
+        <div class="card">
+            <h2>스케줄 설정</h2>
+            {% if accounts %}
+            <form method="POST" action="/schedules" class="form-row">
+                <div class="form-group">
+                    <label>계정</label>
+                    <select name="account_id">
+                        {% for a in accounts %}
+                        <option value="{{ a.id }}">{{ a.label or a.cafe24_id }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>실행 시각</label>
+                    <div class="schedule-inline">
+                        <input name="hour" type="number" min="0" max="23" value="8" class="time-input">
+                        <span>시</span>
+                        <input name="minute" type="number" min="0" max="59" value="0" class="time-input">
+                        <span>분</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enabled" checked>
+                        활성화
+                    </label>
+                </div>
+                <button class="btn btn-primary" type="submit">저장</button>
+            </form>
+
+            {% if schedules %}
+            <table style="margin-top: 16px;">
+                <thead>
+                    <tr><th>계정</th><th>시각</th><th>상태</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for aid, s in schedules.items() %}
+                    <tr>
+                        <td>{{ s.label or s.cafe24_id }}</td>
+                        <td>매일 {{ '%02d' % s.cron_hour }}:{{ '%02d' % s.cron_minute }}</td>
+                        <td><span class="badge {{ 'badge-on' if s.enabled else 'badge-off' }}">{{ 'ON' if s.enabled else 'OFF' }}</span></td>
+                        <td>
+                            <form method="POST" action="/schedules/{{ aid }}/delete" style="display:inline">
+                                <button class="btn btn-danger btn-sm" type="submit">삭제</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            {% else %}
+            <p class="empty">먼저 계정을 추가하세요.</p>
+            {% endif %}
+        </div>
+
+        <!-- 최근 실행 기록 -->
+        <div class="card">
+            <h2>최근 실행 기록</h2>
+            {% if runs %}
+            <table>
+                <thead>
+                    <tr><th>계정</th><th>시작</th><th>종료</th><th>상태</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for r in runs %}
+                    <tr>
+                        <td>{{ r.cafe24_id }}</td>
+                        <td>{{ r.started_at }}</td>
+                        <td>{{ r.finished_at or '-' }}</td>
+                        <td>
+                            {% if r.status == 'success' %}
+                                <span class="badge badge-success">성공</span>
+                            {% elif r.status == 'running' %}
+                                <span class="badge badge-running">실행중</span>
+                            {% else %}
+                                <span class="badge badge-error" title="{{ r.error or '' }}">실패</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.status == 'success' %}
+                                <a href="/results/{{ r.account_id }}?date={{ r.started_at[:10] }}" class="btn btn-primary btn-sm" style="text-decoration:none">보기</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty">실행 기록이 없습니다.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // 실행 중인 작업이 있으면 5초마다 새로고침
+        {% if running %}
+        setTimeout(() => location.reload(), 5000);
+        {% endif %}
+    </script>
+</body>
+</html>
