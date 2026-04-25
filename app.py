@@ -231,4 +231,4 @@ def api_status():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=9090, use_reloader=False)
+    app.run(host="0.0.0.0", debug=False, port=9090, use_reloader=False)
