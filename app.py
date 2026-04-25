@@ -10,6 +10,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for, s
 
 import db
 import scraper
+import sheets
 
 app = Flask(__name__)
 app.secret_key = "cafe24-scraper-secret-key-change-me"
@@ -47,6 +48,14 @@ def _run_scrape_task(account_id):
         results = scraper.run_scrape(account)
         today = datetime.now().strftime("%Y-%m-%d")
         result_file = f"data/{account_id}/{today}.json"
+
+        # Google Sheets 자동 입력 (월 바뀌면 시트 자동 생성)
+        try:
+            sheets.write_result(results)
+        except Exception:
+            # 시트 입력 실패해도 스크래핑 자체는 성공으로 기록
+            traceback.print_exc()
+
         db.finish_run(run_id, "success", result_file=result_file)
     except Exception as e:
         db.finish_run(run_id, "error", error=traceback.format_exc())

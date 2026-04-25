@@ -353,6 +353,10 @@ def run_scrape(account):
         if frame:
             results["신규회원"] = scrape_new_members(frame, page)
 
+        # 5/6. 매출종합/구매패턴 전체보기 팝업 (구매개수, 처음·재구매 건수)
+        results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, today, today)
+        results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, today, today)
+
         # 세션 저장
         context.storage_state(path=str(session_file))
         browser.close()
