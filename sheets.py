@@ -158,12 +158,47 @@ def find_date_row(worksheet, dt):
     return None
 
 
+def _ensure_efficiency_sheet(spreadsheet, dt):
+    """효율_26년X월이 없으면 효율_26년4월 복제 후 날짜·광고비 비움.
+    월별 시트의 V열이 이 시트의 G33~G63을 참조하므로 월별 시트 생성 전에 호출돼야 함."""
+    import calendar
+    name = efficiency_sheet_name(dt.strftime("%Y-%m-%d"))
+    try:
+        return spreadsheet.worksheet(name)
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+
+    template = spreadsheet.worksheet(SOURCE_EFFICIENCY_SHEET)
+    new_ws = template.duplicate(new_sheet_name=name, insert_sheet_index=template.index + 1)
+
+    # B33~B63: 새 월의 1~말일 (남는 행은 빈값)
+    last_day = calendar.monthrange(dt.year, dt.month)[1]
+    date_updates = []
+    for day in range(1, 32):
+        if day <= last_day:
+            date_updates.append([datetime(dt.year, dt.month, day).strftime("%Y/%m/%d")])
+        else:
+            date_updates.append([""])
+    new_ws.update("B33:B63", date_updates, value_input_option="USER_ENTERED")
+
+    # G33~G63: 광고비 비우기 (사용자가 새 월에 직접 입력)
+    new_ws.update("G33:G63", [[""] for _ in range(31)], value_input_option="USER_ENTERED")
+
+    print(f"시트 '{name}' 생성 완료 ('{SOURCE_EFFICIENCY_SHEET}' 복제 + 날짜·광고비 갱신)")
+    print(f"  ⚠ 다른 raw 데이터(노출/클릭 등 채널별 컬럼)는 이전달 값이 남아있을 수 있음 — 직접 정리 필요")
+    return new_ws
+
+
 def _ensure_month_sheet(spreadsheet, sheet_name, dt):
-    """월별 시트가 없으면 템플릿(26년 4월) 복제 후 데이터/날짜 갱신."""
+    """월별 시트가 없으면 템플릿(26년 4월) 복제 후 데이터/날짜 갱신.
+    효율 시트가 없으면 그것도 같이 자동 생성."""
     try:
         return spreadsheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
         pass
+
+    # 효율 시트 먼저 생성 (월별 시트의 V열이 효율 시트를 참조)
+    _ensure_efficiency_sheet(spreadsheet, dt)
 
     template = spreadsheet.worksheet(TEMPLATE_SHEET)
     new_ws = template.duplicate(new_sheet_name=sheet_name, insert_sheet_index=0)
