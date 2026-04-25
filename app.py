@@ -56,11 +56,14 @@ def _run_scrape_task(account_id):
             scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
             result_file = f"data/{account_id}/{scraped_date}.json"
 
-            try:
-                spreadsheet_id = account.get("spreadsheet_id") or None
-                sheets.write_result(results, spreadsheet_id=spreadsheet_id)
-            except Exception:
-                traceback.print_exc()
+            spreadsheet_id = account.get("spreadsheet_id") or ""
+            if spreadsheet_id:
+                try:
+                    sheets.write_result(results, spreadsheet_id=spreadsheet_id)
+                except Exception:
+                    traceback.print_exc()
+            else:
+                print(f"[{account_id}] spreadsheet_id 미설정 - 시트 입력 스킵, JSON만 저장됨")
 
             db.finish_run(run_id, "success", result_file=result_file)
         except Exception:
