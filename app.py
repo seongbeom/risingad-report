@@ -262,6 +262,7 @@ def dashboard():
             return None
         return {"abs": cur - ref, "pct": (cur - ref) / ref * 100}
 
+    history_start = (base - timedelta(days=13)).strftime("%Y-%m-%d")  # 14일 윈도우 (오늘 포함)
     panels = []
     for aid in selected_ids:
         account = next((a for a in accounts if a["id"] == aid), None)
@@ -280,11 +281,28 @@ def dashboard():
                 "vs_day": _diff(v, d1.get(col)),
                 "vs_week": _diff(v, d7.get(col)),
             })
+        history = db.list_metrics(aid, history_start, date_str)
         panels.append({
             "account": account,
             "kpis": kpis,
             "has_data": bool(cur),
+            "history": history,
         })
+
+    # KPI별 다계정 비교 데이터 (선택된 계정이 2개 이상일 때 의미)
+    compare_charts = []
+    if len(panels) >= 2:
+        # 14일치 날짜 라벨 통합
+        all_dates = sorted({m["date"] for p in panels for m in p["history"]})
+        for label, col, unit in KPI_FIELDS:
+            datasets = []
+            for p in panels:
+                lookup = {m["date"]: m.get(col) for m in p["history"]}
+                datasets.append({
+                    "label": p["account"]["label"] or p["account"]["cafe24_id"],
+                    "data": [lookup.get(d) for d in all_dates],
+                })
+            compare_charts.append({"label": label, "unit": unit, "labels": all_dates, "datasets": datasets})
 
     return render_template(
         "dashboard.html",
@@ -294,6 +312,8 @@ def dashboard():
         prev_day=prev_day_str,
         prev_week=prev_week_str,
         panels=panels,
+        compare_charts=compare_charts,
+        kpi_fields=[k[0] for k in KPI_FIELDS],
     )
 
 

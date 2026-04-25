@@ -41,7 +41,14 @@
         .down { color: #e74c3c; }
         .flat { color: #888; }
         .nodata { font-size: 0.8rem; color: #aaa; padding: 16px; text-align: center; background: #fafafa; border-radius: 6px; }
+
+        .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
+        @media (max-width: 720px) { .chart-grid { grid-template-columns: 1fr; } }
+        .chart-box { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 12px; }
+        .chart-box-title { font-size: 0.85rem; font-weight: 600; color: #555; margin-bottom: 8px; }
+        .chart-box canvas { max-height: 220px; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
@@ -121,8 +128,33 @@
         {% else %}
         <div class="nodata">{{ date }} 데이터가 없습니다 (스크래핑 미실행 또는 미동기화)</div>
         {% endif %}
+
+        {% if panel.history %}
+        <div class="chart-grid">
+            {% for k in kpi_fields %}
+            <div class="chart-box">
+                <div class="chart-box-title">{{ k }} (최근 14일)</div>
+                <canvas id="chart-{{ panel.account.id }}-{{ loop.index }}"></canvas>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
     {% endfor %}
+
+    {% if compare_charts %}
+    <div class="card">
+        <h2>계정 비교 (최근 14일)</h2>
+        <div class="chart-grid">
+            {% for cc in compare_charts %}
+            <div class="chart-box">
+                <div class="chart-box-title">{{ cc.label }}</div>
+                <canvas id="compare-{{ loop.index }}"></canvas>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 
     {% if not panels %}
     <div class="card">
@@ -130,5 +162,83 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+const PALETTE = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12", "#9b59b6"];
+const baseOpts = (unit) => ({
+    responsive: true,
+    plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
+        tooltip: {
+            callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()} ${unit}`
+            }
+        }
+    },
+    scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 45, minRotation: 45 } },
+        y: { ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() }, beginAtZero: true }
+    }
+});
+
+// 계정별 패널 차트
+{% for panel in panels %}
+{% if panel.history %}
+{% set p_loop = loop %}
+{% set hist = panel.history %}
+(function() {
+    const labels = {{ hist | map(attribute='date') | list | tojson }};
+    const acctName = {{ (panel.account.label or panel.account.cafe24_id) | tojson }};
+    const colors = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12"];
+    const fields = [
+        {col: "방문자수", unit: "명"},
+        {col: "매출", unit: "원"},
+        {col: "구매건수", unit: "건"},
+        {col: "객단가", unit: "원"},
+    ];
+    const histData = {{ hist | tojson }};
+    fields.forEach((f, i) => {
+        const data = histData.map(h => h[f.col] ?? null);
+        new Chart(document.getElementById(`chart-{{ panel.account.id }}-${i+1}`), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: f.col,
+                    data: data,
+                    borderColor: colors[i],
+                    backgroundColor: colors[i] + '22',
+                    tension: 0.3,
+                    pointRadius: 3,
+                }]
+            },
+            options: baseOpts(f.unit)
+        });
+    });
+})();
+{% endif %}
+{% endfor %}
+
+// KPI별 다계정 비교 차트
+{% for cc in compare_charts %}
+(function() {
+    const idx = {{ loop.index }};
+    const labels = {{ cc.labels | tojson }};
+    const datasets = {{ cc.datasets | tojson }}.map((ds, i) => ({
+        label: ds.label,
+        data: ds.data,
+        borderColor: PALETTE[i % PALETTE.length],
+        backgroundColor: PALETTE[i % PALETTE.length] + '22',
+        tension: 0.3,
+        pointRadius: 3,
+    }));
+    new Chart(document.getElementById(`compare-${idx}`), {
+        type: 'line',
+        data: { labels, datasets },
+        options: baseOpts({{ cc.unit | tojson }})
+    });
+})();
+{% endfor %}
+</script>
 </body>
 </html>
