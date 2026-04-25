@@ -175,22 +175,30 @@ def set_period_range(frame, page, start_date, end_date):
     period_option.click()
     page.wait_for_timeout(1500)
 
-    # 3) 시작일 버튼 클릭 → 달력에서 날짜 선택
+    # 3) 시작일/종료일 버튼 클릭 → 달력에서 날짜 선택
     start_day = int(start_date.split("-")[2])
     end_day = int(end_date.split("-")[2])
 
-    # 시작일 버튼 찾기 (첫 번째 YYYY-MM-DD 형식 버튼)
-    date_buttons = []
-    for btn in frame.query_selector_all("button"):
-        t = btn.evaluate("el => el.textContent?.trim() || ''")
-        if len(t) == 10 and t.startswith("202") and t.count("-") == 2:
-            date_buttons.append(btn)
+    def _date_buttons():
+        out = []
+        for btn in frame.query_selector_all("button"):
+            t = btn.evaluate("el => el.textContent?.trim() || ''")
+            if len(t) == 10 and t.startswith("202") and t.count("-") == 2:
+                out.append(btn)
+        return out
 
-    if len(date_buttons) >= 1:
-        # 시작일 달력 열기
-        date_buttons[0].click()
+    btns = _date_buttons()
+    if len(btns) >= 1:
+        btns[0].click()
         page.wait_for_timeout(1500)
         _click_calendar_day(frame, page, start_day)
+        page.wait_for_timeout(1000)
+
+    btns = _date_buttons()  # 시작일 변경 후 DOM이 바뀔 수 있으니 재조회
+    if len(btns) >= 2:
+        btns[1].click()
+        page.wait_for_timeout(1500)
+        _click_calendar_day(frame, page, end_day)
         page.wait_for_timeout(1000)
 
     # 4) 조회 클릭
@@ -262,6 +270,33 @@ def scrape_new_members(frame, page, period_fn=None):
     result["신규회원수"] = scrape_table(frame, 0)
     result["회원별구매현황"] = scrape_table(frame, 1)
     return result
+
+
+SALES_POPUP_URL = "https://ca-web.cafe24data.com/sales/popup/summary"
+PATTERNS_POPUP_URL = "https://ca-web.cafe24data.com/customers/buyers/popup/purchase-patterns"
+
+
+def scrape_popup(context, popup_url, start_date, end_date):
+    """팝업 페이지(매출종합/구매패턴 전체보기)를 별도 탭으로 열어 일별 테이블 추출.
+    반환: {table_index: {headers, rows}}"""
+    p = context.new_page()
+    try:
+        url = f"{popup_url}?device_type=total&period=custom&start_date={start_date}&end_date={end_date}"
+        p.goto(url, wait_until="networkidle", timeout=30000)
+        p.wait_for_timeout(2000)
+        out = {}
+        for i, t in enumerate(p.query_selector_all("table")):
+            headers = t.evaluate(
+                "el => Array.from(el.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '')"
+            )
+            rows = t.evaluate(
+                "el => Array.from(el.querySelectorAll('tbody tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim() || ''))"
+            )
+            if headers:
+                out[i] = {"headers": headers, "rows": rows}
+        return out
+    finally:
+        p.close()
 
 
 def run_scrape(account):
@@ -385,6 +420,12 @@ def run_scrape_range(account, start_date, end_date):
         frame = page.frame("adminFrameContent")
         if frame:
             results["신규회원"] = scrape_new_members(frame, page, period_fn)
+
+        # 5. 매출종합 전체보기 팝업 (구매개수 포함)
+        results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, start_date, end_date)
+
+        # 6. 처음구매vs재구매 전체보기 팝업 (처음/재구매 구매건수 포함)
+        results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, start_date, end_date)
 
         # 세션 저장
         context.storage_state(path=str(session_file))
