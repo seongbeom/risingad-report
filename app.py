@@ -3,7 +3,7 @@
 import functools
 import threading
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -234,6 +234,66 @@ def results_page(account_id):
         runs=runs,
         result=result,
         date=date,
+    )
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    """일별 KPI 대시보드 (단일/다계정 + 전일·전주 비교)."""
+    accounts = db.list_accounts()
+    all_ids = [a["id"] for a in accounts]
+    selected_ids = request.args.getlist("account_id") or all_ids
+    date_str = request.args.get("date") or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    base = datetime.strptime(date_str, "%Y-%m-%d")
+    prev_day_str = (base - timedelta(days=1)).strftime("%Y-%m-%d")
+    prev_week_str = (base - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    KPI_FIELDS = [
+        ("방문자수", "방문자수", "명"),
+        ("매출", "매출", "원"),
+        ("구매건수", "구매건수", "건"),
+        ("객단가", "객단가", "원"),
+    ]
+
+    def _diff(cur, ref):
+        if cur is None or ref is None or not ref:
+            return None
+        return {"abs": cur - ref, "pct": (cur - ref) / ref * 100}
+
+    panels = []
+    for aid in selected_ids:
+        account = next((a for a in accounts if a["id"] == aid), None)
+        if not account:
+            continue
+        cur = db.get_metric(aid, date_str) or {}
+        d1 = db.get_metric(aid, prev_day_str) or {}
+        d7 = db.get_metric(aid, prev_week_str) or {}
+        kpis = []
+        for label, col, unit in KPI_FIELDS:
+            v = cur.get(col)
+            kpis.append({
+                "label": label,
+                "value": v,
+                "unit": unit,
+                "vs_day": _diff(v, d1.get(col)),
+                "vs_week": _diff(v, d7.get(col)),
+            })
+        panels.append({
+            "account": account,
+            "kpis": kpis,
+            "has_data": bool(cur),
+        })
+
+    return render_template(
+        "dashboard.html",
+        accounts=accounts,
+        selected_ids=selected_ids,
+        date=date_str,
+        prev_day=prev_day_str,
+        prev_week=prev_week_str,
+        panels=panels,
     )
 
 

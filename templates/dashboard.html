@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>대시보드 - Cafe24 애널리틱스</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+        h1 { font-size: 1.5rem; margin-bottom: 4px; }
+        .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
+        .nav { margin-bottom: 16px; }
+        .nav a { color: #4a90d9; text-decoration: none; margin-right: 16px; font-size: 0.9rem; }
+        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .card h2 { font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+        .form-row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.75rem; color: #888; font-weight: 600; }
+        input, select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+        .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; background: #4a90d9; color: #fff; }
+        .btn:hover { background: #3a7bc8; }
+        .checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
+        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.9rem; cursor: pointer; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
+
+        .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #444; }
+        .panel-title .acct { color: #4a90d9; }
+        .panel-title .date { color: #888; font-size: 0.85rem; font-weight: normal; margin-left: 8px; }
+
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        @media (max-width: 720px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+        .kpi { background: #fafafa; border-radius: 6px; padding: 14px; }
+        .kpi-label { font-size: 0.75rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .kpi-value { font-size: 1.6rem; font-weight: 700; color: #222; margin: 6px 0; }
+        .kpi-unit { font-size: 0.7rem; color: #aaa; margin-left: 2px; }
+        .kpi-comparisons { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+        .kpi-comp-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; }
+        .kpi-comp-label { color: #888; }
+        .kpi-comp-value { font-weight: 600; }
+        .up { color: #27ae60; }
+        .down { color: #e74c3c; }
+        .flat { color: #888; }
+        .nodata { font-size: 0.8rem; color: #aaa; padding: 16px; text-align: center; background: #fafafa; border-radius: 6px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>일별 KPI 대시보드</h1>
+    <p class="subtitle">{{ date }} 기준 (전일 {{ prev_day }} / 전주 {{ prev_week }} 비교)</p>
+    <div class="nav">
+        <a href="/">← 관리자</a>
+    </div>
+
+    <!-- 필터 -->
+    <div class="card">
+        <h2>조회 조건</h2>
+        <form method="GET" action="/dashboard">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>기준일</label>
+                    <input type="date" name="date" value="{{ date }}">
+                </div>
+                <div class="form-group">
+                    <label>계정 (선택 안 하면 전체)</label>
+                    <div class="checkbox-group">
+                        {% for a in accounts %}
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="account_id" value="{{ a.id }}"
+                                   {% if a.id in selected_ids %}checked{% endif %}>
+                            {{ a.label or a.cafe24_id }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button class="btn" type="submit">조회</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 패널들 -->
+    {% for panel in panels %}
+    <div class="card">
+        <div class="panel-title">
+            <span class="acct">{{ panel.account.label or panel.account.cafe24_id }}</span>
+            <span class="date">{{ panel.account.cafe24_id }}</span>
+        </div>
+        {% if panel.has_data %}
+        <div class="kpi-grid">
+            {% for k in panel.kpis %}
+            <div class="kpi">
+                <div class="kpi-label">{{ k.label }}</div>
+                <div class="kpi-value">
+                    {% if k.value is not none %}
+                        {{ "{:,.0f}".format(k.value) }}<span class="kpi-unit">{{ k.unit }}</span>
+                    {% else %}
+                        -
+                    {% endif %}
+                </div>
+                <div class="kpi-comparisons">
+                    {% for comp_key, comp_label in [('vs_day','전일'), ('vs_week','전주')] %}
+                    {% set d = k[comp_key] %}
+                    <div class="kpi-comp-row">
+                        <span class="kpi-comp-label">{{ comp_label }}</span>
+                        {% if d %}
+                            {% if d.abs > 0 %}
+                                <span class="kpi-comp-value up">▲ {{ "{:,.0f}".format(d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
+                            {% elif d.abs < 0 %}
+                                <span class="kpi-comp-value down">▼ {{ "{:,.0f}".format(-d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
+                            {% else %}
+                                <span class="kpi-comp-value flat">─</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="kpi-comp-value flat">데이터 없음</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="nodata">{{ date }} 데이터가 없습니다 (스크래핑 미실행 또는 미동기화)</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if not panels %}
+    <div class="card">
+        <p class="nodata">선택된 계정이 없거나 등록된 계정이 없습니다.</p>
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>
