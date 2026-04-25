@@ -56,6 +56,10 @@ def _run_scrape_task(account_id):
             scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
             result_file = f"data/{account_id}/{scraped_date}.json"
 
+            # DB 저장 (대시보드 쿼리용)
+            metrics = sheets.extract_metrics(results)
+            db.upsert_metrics(account_id, scraped_date, metrics)
+
             spreadsheet_id = account.get("spreadsheet_id") or ""
             if spreadsheet_id:
                 try:

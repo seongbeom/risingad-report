@@ -59,12 +59,93 @@ def init_db():
                 error TEXT,
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );
+
+            -- 일별 지표 (대시보드/쿼리용)
+            CREATE TABLE IF NOT EXISTS metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                매출 INTEGER DEFAULT 0,
+                구매건수 INTEGER DEFAULT 0,
+                방문자수 INTEGER DEFAULT 0,
+                방문당매출 INTEGER DEFAULT 0,
+                신규방문 INTEGER DEFAULT 0,
+                재방문 INTEGER DEFAULT 0,
+                순방문자수 INTEGER DEFAULT 0,
+                순방문비중 REAL DEFAULT 0,
+                신규비중 REAL DEFAULT 0,
+                재방문비중 REAL DEFAULT 0,
+                전환율 REAL DEFAULT 0,
+                구매개수 INTEGER DEFAULT 0,
+                합구매 REAL DEFAULT 0,
+                처음구매 INTEGER DEFAULT 0,
+                처음구매비중 REAL DEFAULT 0,
+                재구매 INTEGER DEFAULT 0,
+                객단가 INTEGER DEFAULT 0,
+                회원가입 INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_metrics_date ON metrics(date);
         """)
 
         # 기존 DB에 spreadsheet_id 컬럼 없으면 추가 (마이그레이션)
         cols = [r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()]
         if "spreadsheet_id" not in cols:
             conn.execute("ALTER TABLE accounts ADD COLUMN spreadsheet_id TEXT DEFAULT ''")
+
+
+# --- 일별 지표 CRUD ---
+
+METRIC_COLS = [
+    "매출", "구매건수", "방문자수", "방문당매출", "신규방문", "재방문",
+    "순방문자수", "순방문비중", "신규비중", "재방문비중", "전환율",
+    "구매개수", "합구매", "처음구매", "처음구매비중", "재구매",
+    "객단가", "회원가입",
+]
+
+
+def upsert_metrics(account_id, date, metrics):
+    """metrics dict (sheets.extract_metrics 결과)를 (account_id, date) 키로 upsert."""
+    cols = ["account_id", "date"] + METRIC_COLS + ["updated_at"]
+    placeholders = ",".join(["?"] * len(cols))
+    col_list = ",".join(f'"{c}"' for c in cols)
+    update_clause = ",".join(f'"{c}"=excluded."{c}"' for c in METRIC_COLS + ["updated_at"])
+    values = [account_id, date] + [metrics.get(c, 0) or 0 for c in METRIC_COLS] + [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+    with db_conn() as conn:
+        conn.execute(
+            f"INSERT INTO metrics ({col_list}) VALUES ({placeholders}) "
+            f"ON CONFLICT(account_id, date) DO UPDATE SET {update_clause}",
+            values,
+        )
+
+
+def list_metrics(account_id=None, start_date=None, end_date=None):
+    """일별 지표 조회 (account/date 범위 필터). 날짜 오름차순."""
+    sql = 'SELECT * FROM metrics WHERE 1=1'
+    params = []
+    if account_id:
+        if isinstance(account_id, (list, tuple)):
+            sql += f" AND account_id IN ({','.join('?' * len(account_id))})"
+            params.extend(account_id)
+        else:
+            sql += " AND account_id = ?"
+            params.append(account_id)
+    if start_date:
+        sql += " AND date >= ?"
+        params.append(start_date)
+    if end_date:
+        sql += " AND date <= ?"
+        params.append(end_date)
+    sql += " ORDER BY date ASC, account_id ASC"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def get_metric(account_id, date):
+    with db_conn() as conn:
+        r = conn.execute("SELECT * FROM metrics WHERE account_id=? AND date=?", (account_id, date)).fetchone()
+        return dict(r) if r else None
 
 
 # --- 계정 CRUD ---
