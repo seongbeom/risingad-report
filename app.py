@@ -46,12 +46,13 @@ def _run_scrape_task(account_id):
 
     try:
         results = scraper.run_scrape(account)
-        today = datetime.now().strftime("%Y-%m-%d")
-        result_file = f"data/{account_id}/{today}.json"
+        scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
+        result_file = f"data/{account_id}/{scraped_date}.json"
 
-        # Google Sheets 자동 입력 (월 바뀌면 시트 자동 생성)
+        # Google Sheets 자동 입력 (계정의 spreadsheet_id 사용, 없으면 DEFAULT)
         try:
-            sheets.write_result(results)
+            spreadsheet_id = account.get("spreadsheet_id") or None
+            sheets.write_result(results, spreadsheet_id=spreadsheet_id)
         except Exception:
             # 시트 입력 실패해도 스크래핑 자체는 성공으로 기록
             traceback.print_exc()
@@ -142,7 +143,16 @@ def add_account():
     sub_id = request.form["sub_id"].strip()
     password = request.form["password"].strip()
     label = request.form.get("label", "").strip()
-    db.add_account(cafe24_id, sub_id, password, label)
+    spreadsheet_id = request.form.get("spreadsheet_id", "").strip()
+    db.add_account(cafe24_id, sub_id, password, label, spreadsheet_id)
+    return redirect(url_for("index"))
+
+
+@app.route("/accounts/<account_id>/spreadsheet", methods=["POST"])
+@login_required
+def update_spreadsheet(account_id):
+    sid = request.form.get("spreadsheet_id", "").strip()
+    db.update_spreadsheet_id(account_id, sid)
     return redirect(url_for("index"))
 
 

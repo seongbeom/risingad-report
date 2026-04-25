@@ -11,7 +11,7 @@ Cafe24 애널리틱스 스크래퍼
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -299,17 +299,22 @@ def scrape_popup(context, popup_url, start_date, end_date):
         p.close()
 
 
-def run_scrape(account):
-    """계정 하나에 대해 전체 스크래핑 실행. 결과 dict 반환."""
+def run_scrape(account, target_date=None):
+    """계정 하나에 대해 전체 스크래핑 실행. 결과 dict 반환.
+    target_date 미지정 시 어제 날짜 사용 (당일은 부분 데이터라 부정확).
+    """
     cafe24_id = account["cafe24_id"]
     base = f"https://{cafe24_id}.cafe24.com"
-    today = datetime.now().strftime("%Y-%m-%d")
+    target_date = target_date or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     urls = {
         "sales": f"{base}/disp/admin/shop1/menu/cafe24analytics?type=sales",
         "visitors": f"{base}/disp/admin/shop1/menu/cafe24analytics?type=customers-visitors",
         "buyers": f"{base}/disp/admin/shop1/menu/cafe24analytics?type=customers-buyers",
     }
+
+    def period_fn(frame, page):
+        set_period_range(frame, page, target_date, target_date)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, slow_mo=100)
@@ -323,46 +328,46 @@ def run_scrape(account):
         page = context.new_page()
         ensure_login(page, context, account)
 
-        results = {"account": cafe24_id, "date": today}
+        results = {"account": cafe24_id, "date": target_date}
 
         # 1. 매출분석
         page.goto(urls["sales"], wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
-            results["매출종합분석"] = scrape_sales(frame, page)
+            results["매출종합분석"] = scrape_sales(frame, page, period_fn)
 
         # 2. 방문자분석
         page.goto(urls["visitors"], wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
-            results["방문자분석"] = scrape_visitors(frame, page)
+            results["방문자분석"] = scrape_visitors(frame, page, period_fn)
 
         # 3. 처음방문vs재방문
         page.goto(urls["buyers"], wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
-            results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page)
+            results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page, period_fn)
 
         # 4. 신규회원
         page.goto(urls["buyers"], wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
-            results["신규회원"] = scrape_new_members(frame, page)
+            results["신규회원"] = scrape_new_members(frame, page, period_fn)
 
         # 5/6. 매출종합/구매패턴 전체보기 팝업 (구매개수, 처음·재구매 건수)
-        results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, today, today)
-        results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, today, today)
+        results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
+        results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
 
         # 세션 저장
         context.storage_state(path=str(session_file))
         browser.close()
 
     # 결과 파일 저장
-    result_file = _result_path(account["id"], today)
+    result_file = _result_path(account["id"], target_date)
     with open(result_file, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
@@ -370,6 +375,7 @@ def run_scrape(account):
 
 
 def run_scrape_range(account, start_date, end_date):
+
     """날짜 범위 스크래핑. 테이블에 일별 여러 행이 반환됨."""
     cafe24_id = account["cafe24_id"]
     base = f"https://{cafe24_id}.cafe24.com"

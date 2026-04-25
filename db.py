@@ -36,6 +36,7 @@ def init_db():
                 sub_id TEXT NOT NULL,
                 password TEXT NOT NULL,
                 label TEXT DEFAULT '',
+                spreadsheet_id TEXT DEFAULT '',
                 created_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
@@ -60,6 +61,11 @@ def init_db():
             );
         """)
 
+        # 기존 DB에 spreadsheet_id 컬럼 없으면 추가 (마이그레이션)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()]
+        if "spreadsheet_id" not in cols:
+            conn.execute("ALTER TABLE accounts ADD COLUMN spreadsheet_id TEXT DEFAULT ''")
+
 
 # --- 계정 CRUD ---
 
@@ -75,11 +81,19 @@ def get_account(account_id):
         return dict(row) if row else None
 
 
-def add_account(cafe24_id, sub_id, password, label=""):
+def add_account(cafe24_id, sub_id, password, label="", spreadsheet_id=""):
     with db_conn() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO accounts (id, cafe24_id, sub_id, password, label) VALUES (?, ?, ?, ?, ?)",
-            (cafe24_id, cafe24_id, sub_id, password, label),
+            "INSERT OR REPLACE INTO accounts (id, cafe24_id, sub_id, password, label, spreadsheet_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (cafe24_id, cafe24_id, sub_id, password, label, spreadsheet_id),
+        )
+
+
+def update_spreadsheet_id(account_id, spreadsheet_id):
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE accounts SET spreadsheet_id=? WHERE id=?",
+            (spreadsheet_id, account_id),
         )
 
 
