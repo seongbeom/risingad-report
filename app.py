@@ -6,6 +6,7 @@ import traceback
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor
 from flask import Flask, jsonify, redirect, render_template, request, url_for, session, g
 
 import db
@@ -28,48 +29,50 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
-scheduler = BackgroundScheduler()
+# 잡을 스케줄러 큐로 직렬 실행 (동시 Chromium 구동 방지 — 메모리 보호)
+scheduler = BackgroundScheduler(
+    executors={"default": ThreadPoolExecutor(max_workers=1)},
+    job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
+)
 scheduler.start()
 
 # 실행 중인 작업 추적
 _running = {}  # account_id -> run_id
+_run_lock = threading.Lock()  # 수동 실행과 스케줄 잡이 동시에 안 돌도록
 
 
 def _run_scrape_task(account_id):
-    """백그라운드 스레드에서 스크래핑 실행"""
-    account = db.get_account(account_id)
-    if not account:
-        return
+    """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지)"""
+    with _run_lock:
+        account = db.get_account(account_id)
+        if not account:
+            return
 
-    run_id = db.add_run(account_id)
-    _running[account_id] = run_id
+        run_id = db.add_run(account_id)
+        _running[account_id] = run_id
 
-    try:
-        results = scraper.run_scrape(account)
-        scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
-        result_file = f"data/{account_id}/{scraped_date}.json"
-
-        # Google Sheets 자동 입력 (계정의 spreadsheet_id 사용, 없으면 DEFAULT)
         try:
-            spreadsheet_id = account.get("spreadsheet_id") or None
-            sheets.write_result(results, spreadsheet_id=spreadsheet_id)
-        except Exception:
-            # 시트 입력 실패해도 스크래핑 자체는 성공으로 기록
-            traceback.print_exc()
+            results = scraper.run_scrape(account)
+            scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
+            result_file = f"data/{account_id}/{scraped_date}.json"
 
-        db.finish_run(run_id, "success", result_file=result_file)
-    except Exception as e:
-        db.finish_run(run_id, "error", error=traceback.format_exc())
-    finally:
-        _running.pop(account_id, None)
+            try:
+                spreadsheet_id = account.get("spreadsheet_id") or None
+                sheets.write_result(results, spreadsheet_id=spreadsheet_id)
+            except Exception:
+                traceback.print_exc()
+
+            db.finish_run(run_id, "success", result_file=result_file)
+        except Exception:
+            db.finish_run(run_id, "error", error=traceback.format_exc())
+        finally:
+            _running.pop(account_id, None)
 
 
 def _scheduled_job(account_id):
-    """스케줄러에서 호출"""
-    if account_id in _running:
-        return  # 이미 실행 중이면 스킵
-    t = threading.Thread(target=_run_scrape_task, args=(account_id,), daemon=True)
-    t.start()
+    """스케줄러에서 직접 호출 (max_workers=1로 큐잉돼 직렬 실행됨).
+    수동 실행은 별도 thread로 띄우되 _run_lock으로 동일하게 직렬화."""
+    _run_scrape_task(account_id)
 
 
 def reload_schedules():
