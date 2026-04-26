@@ -58,6 +58,13 @@ def _run_scrape_task(account_id):
             scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
             result_file = f"data/{account_id}/{scraped_date}.json"
 
+            # 카페24 Premium 만료 등으로 sample(데모) 데이터가 반환된 경우는 시트/DB 모두 스킵
+            if results.get("_is_sample"):
+                msg = f"[{account_id}] is_sample=True - 카페24 Premium 만료 또는 권한 문제. 시트/DB 입력 스킵"
+                print(msg)
+                db.finish_run(run_id, "error", error="cafe24 returned sample data (premium expired?)")
+                return
+
             # DB 저장 (대시보드 쿼리용)
             metrics = sheets.extract_metrics(results)
             db.upsert_metrics(account_id, scraped_date, metrics)

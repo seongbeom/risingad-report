@@ -158,50 +158,62 @@ def _click_calendar_day(frame, page, day_num):
 
 
 def set_period_range(frame, page, start_date, end_date):
-    """기간 설정: '기간 선택' 모드에서 시작일/종료일 달력으로 지정 → 조회"""
-    # 1) 기간 드롭다운 열기
-    period_texts = ["7일", "1개월", "3개월", "6개월", "오늘"]
-    for text in period_texts:
-        btn = frame.query_selector(f"button:has-text('{text}')")
-        if btn:
-            btn_text = btn.evaluate("el => el.textContent?.trim() || ''")
-            if btn_text == text:
-                btn.click()
-                page.wait_for_timeout(1000)
-                break
-
-    # 2) '기간 선택' 클릭
-    period_option = frame.locator("text=기간 선택").first
-    period_option.click()
-    page.wait_for_timeout(1500)
-
-    # 3) 시작일/종료일 버튼 클릭 → 달력에서 날짜 선택
+    """기간 설정: 기간 선택 모드 → 시작일 button → 캘린더에서 day → 종료일 button → 캘린더에서 day → 조회.
+    카페24 캘린더는 default로 현재 월(이번 달)이 떠있어서 navigate 없이 바로 day 클릭이 정상."""
     start_day = int(start_date.split("-")[2])
     end_day = int(end_date.split("-")[2])
 
-    def _date_buttons():
+    # 1) 기간 드롭다운 → 기간 선택
+    for text in ["7일", "1개월", "3개월", "6개월", "오늘"]:
+        b = frame.query_selector(f"button:has-text('{text}')")
+        if b and b.evaluate("el => el.textContent?.trim() || ''") == text:
+            b.click()
+            page.wait_for_timeout(800)
+            opt = frame.locator("text=기간 선택").first
+            if opt.count() > 0:
+                opt.click()
+                page.wait_for_timeout(1200)
+            break
+
+    def _date_btns():
         out = []
-        for btn in frame.query_selector_all("button"):
-            t = btn.evaluate("el => el.textContent?.trim() || ''")
-            if len(t) == 10 and t.startswith("202") and t.count("-") == 2:
-                out.append(btn)
+        for b in frame.query_selector_all("button"):
+            t = b.evaluate("el => el.textContent?.trim() || ''")
+            if len(t) == 10 and t[:2] == "20" and t[4] == "-" and t[7] == "-":
+                out.append((t, b))
         return out
 
-    btns = _date_buttons()
+    # 2) 시작일 button click → 캘린더 popup → 'start_day' td button click
+    btns = _date_btns()
     if len(btns) >= 1:
-        btns[0].click()
-        page.wait_for_timeout(1500)
-        _click_calendar_day(frame, page, start_day)
-        page.wait_for_timeout(1000)
+        btns[0][1].click()
+        page.wait_for_timeout(1200)
+        # 정확히 그 텍스트인 td button만 (has-text는 부분일치라 == 비교 필요)
+        cells = frame.query_selector_all("td button")
+        for c in cells:
+            if c.is_visible() and c.evaluate("el => el.textContent?.trim() || ''") == str(start_day):
+                c.click()
+                page.wait_for_timeout(800)
+                break
 
-    btns = _date_buttons()  # 시작일 변경 후 DOM이 바뀔 수 있으니 재조회
+    # 3) 종료일 button click → 캘린더 popup → 'end_day' td button click
+    btns = _date_btns()
     if len(btns) >= 2:
-        btns[1].click()
-        page.wait_for_timeout(1500)
-        _click_calendar_day(frame, page, end_day)
-        page.wait_for_timeout(1000)
+        btns[1][1].click()
+        page.wait_for_timeout(1200)
+        cells = frame.query_selector_all("td button")
+        for c in cells:
+            if c.is_visible() and c.evaluate("el => el.textContent?.trim() || ''") == str(end_day):
+                c.click()
+                page.wait_for_timeout(800)
+                break
 
-    # 4) 조회 클릭
+    # 4) 시작/종료 텍스트 검증
+    btns = _date_btns()
+    if btns:
+        print(f"[set_period_range] 적용된 버튼 텍스트: {[t for t,_ in btns]}")
+
+    # 5) 조회 클릭
     search_btn = frame.query_selector("button:has-text('조회')")
     if search_btn:
         search_btn.click()
@@ -276,6 +288,26 @@ SALES_POPUP_URL = "https://ca-web.cafe24data.com/sales/popup/summary"
 PATTERNS_POPUP_URL = "https://ca-web.cafe24data.com/customers/buyers/popup/purchase-patterns"
 
 
+def _attach_sample_detector(page_or_context):
+    """카페24 ca-internal API 응답에 'is_sample': True가 있으면 데모 데이터.
+    detector dict의 'is_sample' 플래그를 set 해서 호출자가 확인 가능하게 함."""
+    detector = {"is_sample": False}
+
+    def on_response(resp):
+        try:
+            if "ca-internal.cafe24data.com/ca2/" in resp.url and resp.status == 200:
+                ct = resp.headers.get("content-type", "")
+                if "json" in ct:
+                    body = resp.json()
+                    if isinstance(body, dict) and body.get("is_sample") is True:
+                        detector["is_sample"] = True
+        except Exception:
+            pass
+
+    page_or_context.on("response", on_response)
+    return detector
+
+
 def scrape_popup(context, popup_url, start_date, end_date):
     """팝업 페이지(매출종합/구매패턴 전체보기)를 별도 탭으로 열어 일별 테이블 추출.
     반환: {table_index: {headers, rows}}"""
@@ -326,6 +358,7 @@ def run_scrape(account, target_date=None):
             context = browser.new_context()
 
         page = context.new_page()
+        sample_detector = _attach_sample_detector(page)
         ensure_login(page, context, account)
 
         results = {"account": cafe24_id, "date": target_date}
@@ -362,6 +395,8 @@ def run_scrape(account, target_date=None):
         results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
         results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
 
+        results["_is_sample"] = sample_detector["is_sample"]
+
         # 세션 저장
         context.storage_state(path=str(session_file))
         browser.close()
@@ -380,6 +415,7 @@ def run_scrape_range(account, start_date, end_date):
     cafe24_id = account["cafe24_id"]
     base = f"https://{cafe24_id}.cafe24.com"
 
+    # URL 파라미터로 날짜 주면 백엔드 routing이 이상해지는 케이스 발견 → 캘린더 클릭만으로 진행
     urls = {
         "sales": f"{base}/disp/admin/shop1/menu/cafe24analytics?type=sales",
         "visitors": f"{base}/disp/admin/shop1/menu/cafe24analytics?type=customers-visitors",
@@ -399,6 +435,7 @@ def run_scrape_range(account, start_date, end_date):
             context = browser.new_context()
 
         page = context.new_page()
+        sample_detector = _attach_sample_detector(page)
         ensure_login(page, context, account)
 
         results = {"account": cafe24_id, "start_date": start_date, "end_date": end_date}
@@ -436,6 +473,8 @@ def run_scrape_range(account, start_date, end_date):
 
         # 6. 처음구매vs재구매 전체보기 팝업 (처음/재구매 구매건수 포함)
         results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, start_date, end_date)
+
+        results["_is_sample"] = sample_detector["is_sample"]
 
         # 세션 저장
         context.storage_state(path=str(session_file))
