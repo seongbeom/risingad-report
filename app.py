@@ -30,7 +30,9 @@ def login_required(f):
     return decorated
 
 # 잡을 스케줄러 큐로 직렬 실행 (동시 Chromium 구동 방지 — 메모리 보호)
+# timezone 명시 (Asia/Seoul) — 안 하면 서버 UTC로 동작해서 한국시간과 9시간 어긋남
 scheduler = BackgroundScheduler(
+    timezone="Asia/Seoul",
     executors={"default": ThreadPoolExecutor(max_workers=1)},
     job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
 )
