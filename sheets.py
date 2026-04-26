@@ -253,6 +253,13 @@ def write_result(result, spreadsheet_id=None, sheet_name=None):
     spreadsheet_id = spreadsheet_id or DEFAULT_SPREADSHEET_ID
     date_str = result.get("date", datetime.now().strftime("%Y-%m-%d"))
     dt = datetime.strptime(date_str, "%Y-%m-%d")
+    # 비정상 날짜 가드: 스크래퍼가 캘린더에서 엉뚱한 달을 클릭하면 23년 1월 같은
+    # 과거 데이터가 들어오는 경우가 있음. 미래 또는 90일 이전 날짜는 시트 안 건드림.
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    delta_days = (today - dt).days
+    if delta_days < 0 or delta_days > 90:
+        print(f"[write_result] 비정상 날짜 감지 ({date_str}, today에서 {delta_days}일) - 시트 입력 스킵")
+        return None
     sheet_name = sheet_name or month_sheet_name(date_str)
 
     metrics = extract_metrics(result)

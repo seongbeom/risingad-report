@@ -106,7 +106,16 @@ METRIC_COLS = [
 
 
 def upsert_metrics(account_id, date, metrics):
-    """metrics dict (sheets.extract_metrics 결과)를 (account_id, date) 키로 upsert."""
+    """metrics dict (sheets.extract_metrics 결과)를 (account_id, date) 키로 upsert.
+    비정상 날짜(미래 / 90일 이전)는 무시 - 스크래퍼 캘린더 클릭 오류 방어."""
+    try:
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        delta_days = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - dt).days
+        if delta_days < 0 or delta_days > 90:
+            print(f"[upsert_metrics] 비정상 날짜 무시: {account_id} {date} ({delta_days}일)")
+            return
+    except (ValueError, TypeError):
+        return
     cols = ["account_id", "date"] + METRIC_COLS + ["updated_at"]
     placeholders = ",".join(["?"] * len(cols))
     col_list = ",".join(f'"{c}"' for c in cols)
