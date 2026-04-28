@@ -314,7 +314,7 @@ def scrape_popup(context, popup_url, start_date, end_date):
     p = context.new_page()
     try:
         url = f"{popup_url}?device_type=total&period=custom&start_date={start_date}&end_date={end_date}"
-        p.goto(url, wait_until="networkidle", timeout=30000)
+        p.goto(url, wait_until="domcontentloaded", timeout=30000)
         p.wait_for_timeout(2000)
         out = {}
         for i, t in enumerate(p.query_selector_all("table")):
@@ -364,28 +364,28 @@ def run_scrape(account, target_date=None):
         results = {"account": cafe24_id, "date": target_date}
 
         # 1. 매출분석
-        page.goto(urls["sales"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
             results["매출종합분석"] = scrape_sales(frame, page, period_fn)
 
         # 2. 방문자분석
-        page.goto(urls["visitors"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["visitors"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
             results["방문자분석"] = scrape_visitors(frame, page, period_fn)
 
         # 3. 처음방문vs재방문
-        page.goto(urls["buyers"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
             results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page, period_fn)
 
         # 4. 신규회원
-        page.goto(urls["buyers"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
@@ -441,28 +441,28 @@ def run_scrape_range(account, start_date, end_date):
         results = {"account": cafe24_id, "start_date": start_date, "end_date": end_date}
 
         # 1. 매출분석
-        page.goto(urls["sales"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
             results["매출종합분석"] = scrape_sales(frame, page, period_fn)
 
         # 2. 방문자분석
-        page.goto(urls["visitors"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["visitors"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
             results["방문자분석"] = scrape_visitors(frame, page, period_fn)
 
         # 3. 처음방문vs재방문
-        page.goto(urls["buyers"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
             results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page, period_fn)
 
         # 4. 신규회원
-        page.goto(urls["buyers"], wait_until="networkidle", timeout=30000)
+        page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
