@@ -1,6 +1,7 @@
 """Cafe24 애널리틱스 스크래퍼 - Web UI"""
 
 import functools
+import os
 import threading
 import traceback
 from datetime import datetime, timedelta
@@ -14,11 +15,11 @@ import scraper
 import sheets
 
 app = Flask(__name__)
-app.secret_key = "cafe24-scraper-secret-key-change-me"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cafe24-scraper-secret-key-change-me")
 
-# 로그인 설정
-ADMIN_USER = "admin"
-ADMIN_PASS = "admin"
+# 로그인 설정 (.env 의 ADMIN_USER / ADMIN_PASS 우선)
+ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
 
 
 def login_required(f):
