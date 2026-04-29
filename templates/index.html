@@ -226,7 +226,7 @@
                         </td>
                         <td>
                             {% if r.status == 'success' %}
-                                <a href="/results/{{ r.account_id }}?date={{ r.started_at[:10] }}" class="btn btn-primary btn-sm" style="text-decoration:none">보기</a>
+                                <a href="/results/{{ r.account_id }}?date={{ r.display_date or r.started_at[:10] }}" class="btn btn-primary btn-sm" style="text-decoration:none">보기</a>
                             {% endif %}
                         </td>
                     </tr>

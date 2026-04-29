@@ -40,7 +40,7 @@
         {% if runs %}
         <div class="date-nav">
             {% for r in runs if r.status == 'success' %}
-                {% set d = r.started_at[:10] %}
+                {% set d = r.display_date or r.started_at[:10] %}
                 <a href="/results/{{ account.id }}?date={{ d }}" class="{{ 'active' if d == date else '' }}">{{ d }}</a>
             {% endfor %}
         </div>

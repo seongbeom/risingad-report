@@ -172,6 +172,8 @@ def logout():
 def index():
     accounts = db.list_accounts()
     runs = db.list_runs(limit=30)
+    for r in runs:
+        r["display_date"] = _date_from_run(r)
     schedules = {s["account_id"]: s for s in db.list_schedules()}
     return render_template(
         "index.html",
@@ -254,6 +256,8 @@ def run_now(account_id):
 def results_page(account_id):
     account = db.get_account(account_id)
     runs = db.list_runs(account_id=account_id, limit=30)
+    for r in runs:
+        r["display_date"] = _date_from_run(r)
     # 가장 최근 성공 결과 로드
     date = request.args.get("date")
     result = None
