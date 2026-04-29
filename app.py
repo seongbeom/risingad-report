@@ -258,6 +258,7 @@ def results_page(account_id):
     runs = db.list_runs(account_id=account_id, limit=30)
     for r in runs:
         r["display_date"] = _date_from_run(r)
+    available_dates = db.list_result_dates(account_id)
     # 가장 최근 성공 결과 로드
     date = request.args.get("date")
     result = None
@@ -277,6 +278,7 @@ def results_page(account_id):
         runs=runs,
         result=result,
         date=date,
+        available_dates=available_dates,
     )
 
 

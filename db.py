@@ -261,12 +261,77 @@ def list_runs(account_id=None, limit=20):
         return [dict(r) for r in rows]
 
 
+def _extract_single_day(result, date_str):
+    """range 결과에서 특정 날짜 1일치만 필터해 단일일자 형태로 변환."""
+    def _filter(section):
+        if not isinstance(section, dict):
+            return section
+        out = {}
+        for sub, t in section.items():
+            if isinstance(t, dict) and "rows" in t:
+                rows = [r for r in t.get("rows", []) if r and r[0] == date_str]
+                out[sub] = {"headers": t.get("headers", []), "rows": rows}
+            else:
+                out[sub] = t
+        return out
+    return {
+        "account": result.get("account", ""),
+        "date": date_str,
+        "매출종합분석": _filter(result.get("매출종합분석", {})),
+        "방문자분석": _filter(result.get("방문자분석", {})),
+        "처음방문vs재방문": _filter(result.get("처음방문vs재방문", {})),
+        "신규회원": _filter(result.get("신규회원", {})),
+        # 팝업 데이터는 row[0]이 일자라 그대로 둠 (sheets.extract_metrics에서 result["date"] 매칭)
+        "매출종합_상세": result.get("매출종합_상세", {}),
+        "구매패턴_상세": result.get("구매패턴_상세", {}),
+    }
+
+
 def get_result(account_id, date_str):
-    result_file = Path(__file__).parent / "data" / account_id / f"{date_str}.json"
-    if result_file.exists():
-        with open(result_file, encoding="utf-8") as f:
+    """단일일자 JSON 우선, 없으면 range JSON(*_to_*.json) 중 해당 날짜 포함하는 것 fallback."""
+    account_dir = Path(__file__).parent / "data" / account_id
+    single = account_dir / f"{date_str}.json"
+    if single.exists():
+        with open(single, encoding="utf-8") as f:
             return json.load(f)
+    if not account_dir.exists():
+        return None
+    for f in sorted(account_dir.glob("*_to_*.json")):
+        try:
+            start, end = f.stem.split("_to_")
+            if start <= date_str <= end:
+                with open(f, encoding="utf-8") as fh:
+                    return _extract_single_day(json.load(fh), date_str)
+        except (ValueError, OSError):
+            continue
     return None
+
+
+def list_result_dates(account_id):
+    """결과 파일이 있는 모든 일자(단일 + range 펼친 것) 내림차순.
+    range 파일은 metrics 테이블에 들어있는 일자만 노출 (실제로 데이터 있는 날만)."""
+    account_dir = Path(__file__).parent / "data" / account_id
+    if not account_dir.exists():
+        return []
+    dates = set()
+    for f in account_dir.glob("*.json"):
+        stem = f.stem
+        if "_to_" in stem:
+            try:
+                start, end = stem.split("_to_")
+                # metrics 테이블에 있는 날짜만 (실제 데이터 들어간 날)
+                with db_conn() as conn:
+                    rows = conn.execute(
+                        "SELECT date FROM metrics WHERE account_id=? AND date BETWEEN ? AND ?",
+                        (account_id, start, end),
+                    ).fetchall()
+                for r in rows:
+                    dates.add(r[0])
+            except ValueError:
+                continue
+        else:
+            dates.add(stem)
+    return sorted(dates, reverse=True)
 
 
 # 초기화

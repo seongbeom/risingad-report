@@ -37,10 +37,9 @@
         </div>
 
         <!-- 날짜 선택 -->
-        {% if runs %}
+        {% if available_dates %}
         <div class="date-nav">
-            {% for r in runs if r.status == 'success' %}
-                {% set d = r.display_date or r.started_at[:10] %}
+            {% for d in available_dates %}
                 <a href="/results/{{ account.id }}?date={{ d }}" class="{{ 'active' if d == date else '' }}">{{ d }}</a>
             {% endfor %}
         </div>
