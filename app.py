@@ -3,8 +3,10 @@
 import functools
 import os
 import threading
+import time
 import traceback
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -44,8 +46,13 @@ _running = {}  # account_id -> run_id
 _run_lock = threading.Lock()  # 수동 실행과 스케줄 잡이 동시에 안 돌도록
 
 
+SCRAPE_MAX_ATTEMPTS = 3  # 1차 + 재시도 2회 (reCAPTCHA 풀이 운에 의존하기 때문)
+SCRAPE_RETRY_DELAY_SEC = 15
+
+
 def _run_scrape_task(account_id):
-    """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지)"""
+    """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지).
+    실패 시 N회 재시도. is_sample(Premium 만료)는 재시도 의미 없으니 즉시 종료."""
     with _run_lock:
         account = db.get_account(account_id)
         if not account:
@@ -55,7 +62,21 @@ def _run_scrape_task(account_id):
         _running[account_id] = run_id
 
         try:
-            results = scraper.run_scrape(account)
+            results = None
+            last_err = None
+            for attempt in range(1, SCRAPE_MAX_ATTEMPTS + 1):
+                try:
+                    results = scraper.run_scrape(account)
+                    break
+                except Exception:
+                    last_err = traceback.format_exc()
+                    print(f"[{account_id}] attempt {attempt}/{SCRAPE_MAX_ATTEMPTS} 실패")
+                    if attempt < SCRAPE_MAX_ATTEMPTS:
+                        time.sleep(SCRAPE_RETRY_DELAY_SEC)
+            if results is None:
+                db.finish_run(run_id, "error", error=last_err or "scrape failed after retries")
+                return
+
             scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
             result_file = f"data/{account_id}/{scraped_date}.json"
 
@@ -84,6 +105,14 @@ def _run_scrape_task(account_id):
             db.finish_run(run_id, "error", error=traceback.format_exc())
         finally:
             _running.pop(account_id, None)
+
+
+def _date_from_run(run):
+    """runs row → 결과 JSON 파일 날짜. result_file 경로(date.json)가 있으면 그걸,
+    없으면 started_at 첫 10자(타임존 따라 다를 수 있음)로 fallback."""
+    if run.get("result_file"):
+        return Path(run["result_file"]).stem
+    return (run.get("started_at") or "")[:10]
 
 
 def _scheduled_job(account_id):
@@ -233,7 +262,7 @@ def results_page(account_id):
     elif runs:
         for r in runs:
             if r["status"] == "success" and r["result_file"]:
-                d = r["started_at"][:10]
+                d = _date_from_run(r)
                 result = db.get_result(account_id, d)
                 if result:
                     date = d
