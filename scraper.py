@@ -338,27 +338,50 @@ def scrape_popup_hourly(context, popup_url, target_date):
     try:
         url = f"{popup_url}?device_type=total&period=custom&start_date={target_date}&end_date={target_date}"
         p.goto(url, wait_until="domcontentloaded", timeout=30000)
-        p.wait_for_timeout(5000)
+        # 초기 데이터 로드 대기 (빠른 계정은 5초, 느린 계정은 10~12초 필요)
+        try:
+            p.wait_for_selector("table tbody tr", timeout=15000)
+        except Exception:
+            p.wait_for_timeout(8000)
 
         # 표시 기준 select → '시간 단위'
         sel = p.locator("select").first
         if sel.count() > 0:
             try:
                 sel.select_option(label="시간 단위", timeout=5000)
-                p.wait_for_timeout(1500)
+                p.wait_for_timeout(2000)
             except Exception:
                 pass
 
-        # 변경 후 조회 버튼 클릭 (cafe24 popup은 select 변경 즉시 반영되지 않을 때가 있음)
+        # 조회 버튼 클릭
         for txt in ["조회하기", "조회"]:
             btn = p.locator(f"button:has-text('{txt}')").first
             try:
                 if btn.count() > 0 and btn.is_visible():
                     btn.click()
-                    p.wait_for_timeout(3000)
                     break
             except Exception:
                 continue
+
+        # 시간단위 데이터 도착 대기 — 24행 또는 충분히 많은 row 가 들어올 때까지
+        deadline_ms = 20000
+        try:
+            p.wait_for_function(
+                """() => {
+                    const tables = document.querySelectorAll('table');
+                    for (const t of tables) {
+                        const headers = Array.from(t.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '');
+                        if (headers.some(h => h.includes('일시') || h.includes('시간'))) {
+                            const rows = t.querySelectorAll('tbody tr');
+                            if (rows.length >= 5) return true;
+                        }
+                    }
+                    return false;
+                }""",
+                timeout=deadline_ms,
+            )
+        except Exception:
+            pass
         p.wait_for_timeout(2000)
 
         out = {}
