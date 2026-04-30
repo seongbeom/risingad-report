@@ -30,6 +30,7 @@ def backfill_one(account_id, start_date, end_date):
         return
 
     sess_path = scraper._session_path(account_id)
+    sales_url = f"https://{account['cafe24_id']}.cafe24.com/disp/admin/shop1/menu/cafe24analytics?type=sales"
     print(f"\n===== {account_id} {start_date} ~ {end_date} =====")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, slow_mo=100)
@@ -40,7 +41,14 @@ def backfill_one(account_id, start_date, end_date):
 
         for d in daterange(start_date, end_date):
             try:
-                section = scraper.scrape_popup_hourly(context, scraper.SALES_POPUP_URL, d)
+                page.goto(sales_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(5000)
+                frame = page.frame("adminFrameContent")
+                if not frame:
+                    print(f"  [{d}] adminFrameContent 없음 (스킵)")
+                    continue
+                scraper.set_period_range(frame, page, d, d)
+                section = scraper.scrape_popup_hourly_via_admin(page, context, frame, d)
             except Exception as e:
                 print(f"  [{d}] 스크래핑 실패: {e}")
                 continue

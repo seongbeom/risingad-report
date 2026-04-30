@@ -331,9 +331,86 @@ def scrape_popup(context, popup_url, start_date, end_date):
         p.close()
 
 
+def scrape_popup_hourly_via_admin(page, context, frame, target_date):
+    """어드민 매출분석 frame의 '매출종합 분석' 카드 안 '전체보기' 버튼 클릭으로
+    popup 새 탭을 열어 시간 단위 24시간 테이블 추출.
+    부운영자 계정에서 ca-web URL 직접 navigate는 인증 토큰 누락으로 401 떨어지기 때문에
+    화면 클릭 흐름으로 popup을 열어야 한다.
+    호출 전 set_period_range(target_date, target_date) 가 이미 frame 에 적용되어 있어야 함."""
+    # 매출종합 분석 카드의 '전체보기' (frame 내 첫 번째)
+    try:
+        btn = frame.locator("button:has-text('전체보기')").first
+        with context.expect_page(timeout=20000) as new_page_info:
+            btn.click()
+        p = new_page_info.value
+    except Exception as e:
+        print(f"[scrape_popup_hourly_via_admin] 전체보기 popup 실패: {e}")
+        return {}
+
+    try:
+        p.wait_for_load_state("domcontentloaded", timeout=20000)
+        try:
+            p.wait_for_selector("table tbody tr", timeout=15000)
+        except Exception:
+            p.wait_for_timeout(8000)
+
+        # 표시 기준 → '시간 단위'
+        sel = p.locator("select").first
+        if sel.count() > 0:
+            try:
+                sel.select_option(label="시간 단위", timeout=5000)
+                p.wait_for_timeout(2000)
+            except Exception:
+                pass
+
+        # 조회 클릭
+        for txt in ["조회하기", "조회"]:
+            btn = p.locator(f"button:has-text('{txt}')").first
+            try:
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click()
+                    break
+            except Exception:
+                continue
+
+        # 시간단위 데이터 도착 대기
+        try:
+            p.wait_for_function(
+                """() => {
+                    const tables = document.querySelectorAll('table');
+                    for (const t of tables) {
+                        const headers = Array.from(t.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '');
+                        if (headers.some(h => h.includes('일시') || h.includes('시간'))) {
+                            const rows = t.querySelectorAll('tbody tr');
+                            if (rows.length >= 5) return true;
+                        }
+                    }
+                    return false;
+                }""",
+                timeout=20000,
+            )
+        except Exception:
+            pass
+        p.wait_for_timeout(2000)
+
+        out = {}
+        for i, t in enumerate(p.query_selector_all("table")):
+            headers = t.evaluate(
+                "el => Array.from(el.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '')"
+            )
+            rows = t.evaluate(
+                "el => Array.from(el.querySelectorAll('tbody tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim() || ''))"
+            )
+            if headers:
+                out[i] = {"headers": headers, "rows": rows}
+        return out
+    finally:
+        p.close()
+
+
 def scrape_popup_hourly(context, popup_url, target_date):
-    """팝업 페이지에서 표시 기준을 '시간 단위'로 토글한 뒤 24시간 테이블 추출.
-    target_date 1일치만. 반환은 scrape_popup 과 동일한 {table_index: {headers, rows}}."""
+    """[deprecated] ca-web URL 직접 navigate 방식. 부운영자 계정에서 인증 토큰 누락으로 401.
+    어드민 진입 흐름의 scrape_popup_hourly_via_admin 사용 권장. 백워드 호환용으로 유지."""
     p = context.new_page()
     try:
         url = f"{popup_url}?device_type=total&period=custom&start_date={target_date}&end_date={target_date}"
@@ -463,11 +540,18 @@ def run_scrape(account, target_date=None):
         results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
         results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
 
-        # 7. 시간 단위 매출 (target_date 1일 24시간 breakdown)
+        # 7. 시간 단위 매출 - 어드민 매출분석 화면 다시 진입 후 '전체보기' 클릭으로 popup
         try:
-            results["매출종합_시간별"] = scrape_popup_hourly(context, SALES_POPUP_URL, target_date)
+            page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+            sales_frame = page.frame("adminFrameContent")
+            if sales_frame:
+                set_period_range(sales_frame, page, target_date, target_date)
+                results["매출종합_시간별"] = scrape_popup_hourly_via_admin(page, context, sales_frame, target_date)
+            else:
+                results["매출종합_시간별"] = {}
         except Exception as e:
-            print(f"[scrape_popup_hourly] 실패 - 시간별 스킵: {e}")
+            print(f"[hourly] 실패 - 시간별 스킵: {e}")
             results["매출종합_시간별"] = {}
 
         results["_is_sample"] = sample_detector["is_sample"]
