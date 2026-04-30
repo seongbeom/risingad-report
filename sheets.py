@@ -139,29 +139,46 @@ def extract_metrics(result):
 
 
 def extract_hourly_rows(result):
-    """result['매출종합_시간별'] 의 매출종합 테이블에서 24시간 row 파싱.
+    """result['매출종합_시간별'] popup 테이블에서 24시간 row 파싱.
+    cafe24 시간단위 매출종합 컬럼: ['일시', '구매자수', '구매건수', '구매개수', '매출액', '비교값', '증감'].
+    24행 짜리 테이블(헤더에 '일시' 포함, row[0]이 시간)을 우선 매칭.
     반환: list of dict {hour, 매출, 구매건수, 객단가, 매출액비교, 매출액증감}.
-    row[0] 형식이 'YYYY-MM-DD HH', '2026-04-29 14시', 'HH:00' 등 무엇이든 hour 추출.
-    헤더 컬럼은 일별 매출종합과 동일 가정 (일자, 매출액, 구매건수, 매출액 비교, 매출액 증감).
     """
     section = result.get("매출종합_시간별", {})
     if not isinstance(section, dict):
         return []
-    # 첫 테이블이 매출종합 (헤더 시간/일시/일자 매칭)
+    # 헤더에 '일시' 들어가고 row 24개에 가까운 테이블 선택
     table = None
     for v in section.values():
-        if isinstance(v, dict) and v.get("rows"):
+        if not isinstance(v, dict):
+            continue
+        headers = v.get("headers") or []
+        if any("일시" in h or "시간" in h for h in headers) and len(v.get("rows") or []) >= 5:
             table = v
             break
     if not table:
         return []
+
+    headers = table.get("headers") or []
+    def col_index(*candidates):
+        for cand in candidates:
+            for i, h in enumerate(headers):
+                if cand in h:
+                    return i
+        return None
+
+    i_hour = col_index("일시", "시간") or 0
+    i_sales = col_index("매출액", "매출")
+    i_orders = col_index("구매건수")
+    i_compare = col_index("비교값", "매출액비교", "비교")
+    i_change = col_index("증감", "매출액증감")
 
     out = []
     seen_hours = set()
     for row in table.get("rows", []):
         if not row:
             continue
-        ts = str(row[0])
+        ts = str(row[i_hour]) if i_hour < len(row) else ""
         m = re.search(r"(\d{1,2})\s*시", ts) or re.search(r"\b(\d{1,2}):\d{2}", ts) or re.search(r"\s(\d{1,2})$", ts) or re.search(r"^(\d{1,2})$", ts)
         if not m:
             continue
@@ -169,18 +186,16 @@ def extract_hourly_rows(result):
         if not 0 <= h <= 23 or h in seen_hours:
             continue
         seen_hours.add(h)
-        매출 = parse_number(row[1] if len(row) > 1 else 0)
-        구매건수 = parse_number(row[2] if len(row) > 2 else 0)
-        매출액비교 = parse_number(row[3] if len(row) > 3 else 0)
-        매출액증감 = parse_number(row[4] if len(row) > 4 else 0)
-        객단가 = (매출 // 구매건수) if 구매건수 else 0
+        get = lambda i: parse_number(row[i]) if (i is not None and i < len(row)) else 0
+        매출 = get(i_sales)
+        구매건수 = get(i_orders)
         out.append({
             "hour": h,
             "매출": 매출,
             "구매건수": 구매건수,
-            "객단가": 객단가,
-            "매출액비교": 매출액비교,
-            "매출액증감": 매출액증감,
+            "객단가": (매출 // 구매건수) if 구매건수 else 0,
+            "매출액비교": get(i_compare),
+            "매출액증감": get(i_change),
         })
     return out
 
