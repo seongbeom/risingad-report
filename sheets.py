@@ -138,6 +138,53 @@ def extract_metrics(result):
     return m
 
 
+def extract_hourly_rows(result):
+    """result['매출종합_시간별'] 의 매출종합 테이블에서 24시간 row 파싱.
+    반환: list of dict {hour, 매출, 구매건수, 객단가, 매출액비교, 매출액증감}.
+    row[0] 형식이 'YYYY-MM-DD HH', '2026-04-29 14시', 'HH:00' 등 무엇이든 hour 추출.
+    헤더 컬럼은 일별 매출종합과 동일 가정 (일자, 매출액, 구매건수, 매출액 비교, 매출액 증감).
+    """
+    section = result.get("매출종합_시간별", {})
+    if not isinstance(section, dict):
+        return []
+    # 첫 테이블이 매출종합 (헤더 시간/일시/일자 매칭)
+    table = None
+    for v in section.values():
+        if isinstance(v, dict) and v.get("rows"):
+            table = v
+            break
+    if not table:
+        return []
+
+    out = []
+    seen_hours = set()
+    for row in table.get("rows", []):
+        if not row:
+            continue
+        ts = str(row[0])
+        m = re.search(r"(\d{1,2})\s*시", ts) or re.search(r"\b(\d{1,2}):\d{2}", ts) or re.search(r"\s(\d{1,2})$", ts) or re.search(r"^(\d{1,2})$", ts)
+        if not m:
+            continue
+        h = int(m.group(1))
+        if not 0 <= h <= 23 or h in seen_hours:
+            continue
+        seen_hours.add(h)
+        매출 = parse_number(row[1] if len(row) > 1 else 0)
+        구매건수 = parse_number(row[2] if len(row) > 2 else 0)
+        매출액비교 = parse_number(row[3] if len(row) > 3 else 0)
+        매출액증감 = parse_number(row[4] if len(row) > 4 else 0)
+        객단가 = (매출 // 구매건수) if 구매건수 else 0
+        out.append({
+            "hour": h,
+            "매출": 매출,
+            "구매건수": 구매건수,
+            "객단가": 객단가,
+            "매출액비교": 매출액비교,
+            "매출액증감": 매출액증감,
+        })
+    return out
+
+
 def find_date_row(worksheet, dt):
     """시트에서 날짜(datetime)에 해당하는 행 찾기.
     A열은 날짜 시리얼(예 46129) 또는 'MM월 DD일' 텍스트 둘 다 호환."""

@@ -91,6 +91,12 @@ def _run_scrape_task(account_id):
             metrics = sheets.extract_metrics(results)
             db.upsert_metrics(account_id, scraped_date, metrics)
 
+            # 시간별 metrics
+            hourly_rows = sheets.extract_hourly_rows(results)
+            if hourly_rows:
+                n = db.upsert_metrics_hourly(account_id, scraped_date, hourly_rows)
+                print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
+
             spreadsheet_id = account.get("spreadsheet_id") or ""
             if spreadsheet_id:
                 try:
@@ -327,11 +333,13 @@ def dashboard():
                 "vs_week": _diff(v, d7.get(col)),
             })
         history = db.list_metrics(aid, history_start, date_str)
+        hourly = db.list_metrics_hourly(aid, date_str)
         panels.append({
             "account": account,
             "kpis": kpis,
             "has_data": bool(cur),
             "history": history,
+            "hourly": hourly,
         })
 
     # KPI별 다계정 비교 데이터 (선택된 계정이 2개 이상일 때 의미)

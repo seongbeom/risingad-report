@@ -331,6 +331,51 @@ def scrape_popup(context, popup_url, start_date, end_date):
         p.close()
 
 
+def scrape_popup_hourly(context, popup_url, target_date):
+    """팝업 페이지에서 표시 기준을 '시간 단위'로 토글한 뒤 24시간 테이블 추출.
+    target_date 1일치만. 반환은 scrape_popup 과 동일한 {table_index: {headers, rows}}."""
+    p = context.new_page()
+    try:
+        url = f"{popup_url}?device_type=total&period=custom&start_date={target_date}&end_date={target_date}"
+        p.goto(url, wait_until="domcontentloaded", timeout=30000)
+        p.wait_for_timeout(5000)
+
+        # 표시 기준 select → '시간 단위'
+        sel = p.locator("select").first
+        if sel.count() > 0:
+            try:
+                sel.select_option(label="시간 단위", timeout=5000)
+                p.wait_for_timeout(1500)
+            except Exception:
+                pass
+
+        # 변경 후 조회 버튼 클릭 (cafe24 popup은 select 변경 즉시 반영되지 않을 때가 있음)
+        for txt in ["조회하기", "조회"]:
+            btn = p.locator(f"button:has-text('{txt}')").first
+            try:
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click()
+                    p.wait_for_timeout(3000)
+                    break
+            except Exception:
+                continue
+        p.wait_for_timeout(2000)
+
+        out = {}
+        for i, t in enumerate(p.query_selector_all("table")):
+            headers = t.evaluate(
+                "el => Array.from(el.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '')"
+            )
+            rows = t.evaluate(
+                "el => Array.from(el.querySelectorAll('tbody tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim() || ''))"
+            )
+            if headers:
+                out[i] = {"headers": headers, "rows": rows}
+        return out
+    finally:
+        p.close()
+
+
 def run_scrape(account, target_date=None):
     """계정 하나에 대해 전체 스크래핑 실행. 결과 dict 반환.
     target_date 미지정 시 어제 날짜 사용 (당일은 부분 데이터라 부정확).
@@ -394,6 +439,13 @@ def run_scrape(account, target_date=None):
         # 5/6. 매출종합/구매패턴 전체보기 팝업 (구매개수, 처음·재구매 건수)
         results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
         results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
+
+        # 7. 시간 단위 매출 (target_date 1일 24시간 breakdown)
+        try:
+            results["매출종합_시간별"] = scrape_popup_hourly(context, SALES_POPUP_URL, target_date)
+        except Exception as e:
+            print(f"[scrape_popup_hourly] 실패 - 시간별 스킵: {e}")
+            results["매출종합_시간별"] = {}
 
         results["_is_sample"] = sample_detector["is_sample"]
 

@@ -87,6 +87,22 @@ def init_db():
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_metrics_date ON metrics(date);
+
+            -- 시간별 지표 (1일 = 24행)
+            CREATE TABLE IF NOT EXISTS metrics_hourly (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                hour INTEGER NOT NULL,
+                매출 INTEGER DEFAULT 0,
+                구매건수 INTEGER DEFAULT 0,
+                객단가 INTEGER DEFAULT 0,
+                매출액비교 INTEGER DEFAULT 0,
+                매출액증감 INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date, hour),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_metrics_hourly_date ON metrics_hourly(date);
         """)
 
         # 기존 DB에 spreadsheet_id 컬럼 없으면 추가 (마이그레이션)
@@ -155,6 +171,50 @@ def get_metric(account_id, date):
     with db_conn() as conn:
         r = conn.execute("SELECT * FROM metrics WHERE account_id=? AND date=?", (account_id, date)).fetchone()
         return dict(r) if r else None
+
+
+HOURLY_COLS = ["매출", "구매건수", "객단가", "매출액비교", "매출액증감"]
+
+
+def upsert_metrics_hourly(account_id, date, hourly_rows):
+    """hourly_rows: list of dict {hour: int 0~23, 매출, 구매건수, 객단가, ...}.
+    같은 (account_id, date, hour) 키는 덮어씀."""
+    try:
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        delta_days = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - dt).days
+        if delta_days < 0 or delta_days > 90:
+            print(f"[upsert_metrics_hourly] 비정상 날짜 무시: {account_id} {date} ({delta_days}일)")
+            return 0
+    except (ValueError, TypeError):
+        return 0
+    cols = ["account_id", "date", "hour"] + HOURLY_COLS + ["updated_at"]
+    placeholders = ",".join(["?"] * len(cols))
+    col_list = ",".join(f'"{c}"' for c in cols)
+    update_clause = ",".join(f'"{c}"=excluded."{c}"' for c in HOURLY_COLS + ["updated_at"])
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    n = 0
+    with db_conn() as conn:
+        for r in hourly_rows:
+            if r.get("hour") is None:
+                continue
+            values = [account_id, date, int(r["hour"])] + [r.get(c, 0) or 0 for c in HOURLY_COLS] + [now]
+            conn.execute(
+                f"INSERT INTO metrics_hourly ({col_list}) VALUES ({placeholders}) "
+                f"ON CONFLICT(account_id, date, hour) DO UPDATE SET {update_clause}",
+                values,
+            )
+            n += 1
+    return n
+
+
+def list_metrics_hourly(account_id, date):
+    """단일 일자의 24시간 데이터 (hour 오름차순)."""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM metrics_hourly WHERE account_id=? AND date=? ORDER BY hour ASC",
+            (account_id, date),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # --- 계정 CRUD ---
