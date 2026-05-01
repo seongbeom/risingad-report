@@ -594,16 +594,21 @@ def run_scrape(account, target_date=None):
         results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
         results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
 
-        # 7. 시간 단위 매출 - 어드민 매출분석 화면 다시 진입 후 '전체보기' 클릭으로 popup
+        # 7. 시간 단위 매출
+        # - main admin: ca-web URL 직접 navigate (query string으로 정확한 date 전달, 캘린더 클릭 불필요)
+        # - sub admin: 직접 navigate는 401이라 어드민 매출분석 → '전체보기' 클릭 흐름 사용
         try:
-            page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(5000)
-            sales_frame = page.frame("adminFrameContent")
-            if sales_frame:
-                set_period_range(sales_frame, page, target_date, target_date)
-                results["매출종합_시간별"] = scrape_popup_hourly_via_admin(page, context, sales_frame, target_date)
+            if _is_main_admin(account):
+                results["매출종합_시간별"] = scrape_popup_hourly(context, SALES_POPUP_URL, target_date)
             else:
-                results["매출종합_시간별"] = {}
+                page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(5000)
+                sales_frame = page.frame("adminFrameContent")
+                if sales_frame:
+                    set_period_range(sales_frame, page, target_date, target_date)
+                    results["매출종합_시간별"] = scrape_popup_hourly_via_admin(page, context, sales_frame, target_date)
+                else:
+                    results["매출종합_시간별"] = {}
         except Exception as e:
             print(f"[hourly] 실패 - 시간별 스킵: {e}")
             results["매출종합_시간별"] = {}

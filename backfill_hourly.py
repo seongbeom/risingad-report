@@ -39,16 +39,20 @@ def backfill_one(account_id, start_date, end_date):
         scraper._attach_sample_detector(page)
         scraper.ensure_login(page, context, account)
 
+        is_main = scraper._is_main_admin(account)
         for d in daterange(start_date, end_date):
             try:
-                page.goto(sales_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(5000)
-                frame = page.frame("adminFrameContent")
-                if not frame:
-                    print(f"  [{d}] adminFrameContent 없음 (스킵)")
-                    continue
-                scraper.set_period_range(frame, page, d, d)
-                section = scraper.scrape_popup_hourly_via_admin(page, context, frame, d)
+                if is_main:
+                    section = scraper.scrape_popup_hourly(context, scraper.SALES_POPUP_URL, d)
+                else:
+                    page.goto(sales_url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(5000)
+                    frame = page.frame("adminFrameContent")
+                    if not frame:
+                        print(f"  [{d}] adminFrameContent 없음 (스킵)")
+                        continue
+                    scraper.set_period_range(frame, page, d, d)
+                    section = scraper.scrape_popup_hourly_via_admin(page, context, frame, d)
             except Exception as e:
                 print(f"  [{d}] 스크래핑 실패: {e}")
                 continue
