@@ -194,6 +194,13 @@ def upsert_metrics_hourly(account_id, date, hourly_rows):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     n = 0
     with db_conn() as conn:
+        new_hours = {int(r["hour"]) for r in hourly_rows if r.get("hour") is not None}
+        if new_hours:
+            placeholders_h = ",".join(["?"] * len(new_hours))
+            conn.execute(
+                f"DELETE FROM metrics_hourly WHERE account_id=? AND date=? AND hour NOT IN ({placeholders_h})",
+                [account_id, date] + list(new_hours),
+            )
         for r in hourly_rows:
             if r.get("hour") is None:
                 continue
