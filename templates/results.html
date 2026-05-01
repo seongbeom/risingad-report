@@ -166,15 +166,69 @@
             {% endfor %}
         </div>
         {% endif %}
+        {% endif %}
 
-        {% elif date %}
+        {% if hourly %}
         <div class="card">
-            <p class="empty">{{ date }} 결과를 찾을 수 없습니다.</p>
+            <h2>시간별 매출 ({{ date }})</h2>
+            <canvas id="hourly-chart" style="max-height:280px"></canvas>
+            <table style="margin-top:16px">
+                <thead>
+                    <tr><th>시</th><th>매출</th><th>구매건수</th><th>객단가</th><th>비교값</th><th>증감</th></tr>
+                </thead>
+                <tbody>
+                    {% for h in hourly %}
+                    <tr>
+                        <td>{{ '%02d시'|format(h.hour) }}</td>
+                        <td>{{ '{:,}'.format(h.매출) }}</td>
+                        <td>{{ h.구매건수 }}</td>
+                        <td>{{ '{:,}'.format(h.객단가) }}</td>
+                        <td>{{ '{:,}'.format(h.매출액비교) }}</td>
+                        <td style="color:{% if h.매출액증감 < 0 %}#c0392b{% else %}#27ae60{% endif %}">{{ '{:,}'.format(h.매출액증감) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        {% else %}
-        <div class="card">
-            <p class="empty">아직 실행 결과가 없습니다. 메인 페이지에서 '실행' 버튼을 눌러주세요.</p>
-        </div>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        <script>
+        (function(){
+            const hourly = {{ hourly | tojson }};
+            const allHours = Array.from({length:24}, (_,h) => h);
+            const lookup = {};
+            hourly.forEach(r => { lookup[r.hour] = r; });
+            const sales = allHours.map(h => (lookup[h]||{}).매출 ?? null);
+            const orders = allHours.map(h => (lookup[h]||{}).구매건수 ?? null);
+            new Chart(document.getElementById('hourly-chart'), {
+                type: 'line',
+                data: {
+                    labels: allHours.map(h => `${String(h).padStart(2,'0')}시`),
+                    datasets: [
+                        {label:'매출', data: sales, borderColor:'#4a90d9', backgroundColor:'#4a90d922', tension:0.3, pointRadius:3, yAxisID:'y'},
+                        {label:'구매건수', data: orders, borderColor:'#e74c3c', backgroundColor:'#e74c3c22', tension:0.3, pointRadius:3, yAxisID:'y1'}
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {mode:'index', intersect:false},
+                    plugins: {legend:{position:'bottom'}, tooltip:{callbacks:{label:(c)=>`${c.dataset.label}: ${Number(c.parsed.y||0).toLocaleString()}`}}},
+                    scales: {
+                        x: {ticks:{font:{size:10}}},
+                        y: {type:'linear', position:'left', ticks:{callback:v=>Number(v).toLocaleString()}, beginAtZero:true},
+                        y1: {type:'linear', position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>Number(v).toLocaleString()}, beginAtZero:true}
+                    }
+                }
+            });
+        })();
+        </script>
+        {% endif %}
+
+        {% if not result and not hourly %}
+            {% if date %}
+            <div class="card"><p class="empty">{{ date }} 결과를 찾을 수 없습니다.</p></div>
+            {% else %}
+            <div class="card"><p class="empty">아직 실행 결과가 없습니다. 메인 페이지에서 '실행' 버튼을 눌러주세요.</p></div>
+            {% endif %}
         {% endif %}
     </div>
 </body>

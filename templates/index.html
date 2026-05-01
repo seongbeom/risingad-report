@@ -207,7 +207,7 @@
             {% if runs %}
             <table>
                 <thead>
-                    <tr><th>계정</th><th>시작</th><th>종료</th><th>상태</th><th></th></tr>
+                    <tr><th>계정</th><th>시작</th><th>종료</th><th>상태</th><th>일자</th><th>시간별</th><th></th></tr>
                 </thead>
                 <tbody>
                     {% for r in runs %}
@@ -222,6 +222,19 @@
                                 <span class="badge badge-running">실행중</span>
                             {% else %}
                                 <span class="badge badge-error" title="{{ r.error or '' }}">실패</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size:0.85rem;color:#555">{{ r.display_date or '-' }}</td>
+                        <td>
+                            {% if r.status == 'success' %}
+                                {% if r.hourly_count and r.hourly_count >= 20 %}
+                                    <span class="badge badge-success" title="시간별 {{ r.hourly_count }}/24행 수집">{{ r.hourly_count }}/24</span>
+                                {% elif r.hourly_count and r.hourly_count > 0 %}
+                                    <span class="badge" style="background:#f0ad4e;color:#fff" title="시간별 데이터 부족">{{ r.hourly_count }}/24</span>
+                                {% else %}
+                                    <span class="badge" style="background:#aaa;color:#fff" title="시간별 미수집">0/24</span>
+                                {% endif %}
+                            {% else %}-
                             {% endif %}
                         </td>
                         <td>

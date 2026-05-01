@@ -180,6 +180,7 @@ def index():
     runs = db.list_runs(limit=30)
     for r in runs:
         r["display_date"] = _date_from_run(r)
+        r["hourly_count"] = db.count_metrics_hourly(r["account_id"], r["display_date"]) if r["display_date"] else 0
     schedules = {s["account_id"]: s for s in db.list_schedules()}
     return render_template(
         "index.html",
@@ -278,6 +279,7 @@ def results_page(account_id):
                 if result:
                     date = d
                     break
+    hourly = db.list_metrics_hourly(account_id, date) if date else []
     return render_template(
         "results.html",
         account=account,
@@ -285,6 +287,7 @@ def results_page(account_id):
         result=result,
         date=date,
         available_dates=available_dates,
+        hourly=hourly,
     )
 
 
@@ -357,6 +360,20 @@ def dashboard():
                 })
             compare_charts.append({"label": label, "unit": unit, "labels": all_dates, "datasets": datasets})
 
+    # 시간별 다계정 overlay (선택 일자의 24시간 매출/구매건수)
+    hourly_compare = None
+    panels_with_hourly = [p for p in panels if p.get("hourly")]
+    if len(panels_with_hourly) >= 1:
+        hours = list(range(24))
+        hourly_compare = {"hours": hours, "datasets": []}
+        for p in panels_with_hourly:
+            lookup = {h["hour"]: h for h in p["hourly"]}
+            hourly_compare["datasets"].append({
+                "label": p["account"]["label"] or p["account"]["cafe24_id"],
+                "sales": [lookup.get(h, {}).get("매출") for h in hours],
+                "orders": [lookup.get(h, {}).get("구매건수") for h in hours],
+            })
+
     return render_template(
         "dashboard.html",
         accounts=accounts,
@@ -366,6 +383,7 @@ def dashboard():
         prev_week=prev_week_str,
         panels=panels,
         compare_charts=compare_charts,
+        hourly_compare=hourly_compare,
         kpi_fields=[k[0] for k in KPI_FIELDS],
     )
 

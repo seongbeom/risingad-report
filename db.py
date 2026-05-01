@@ -217,6 +217,15 @@ def list_metrics_hourly(account_id, date):
         return [dict(r) for r in rows]
 
 
+def count_metrics_hourly(account_id, date):
+    with db_conn() as conn:
+        r = conn.execute(
+            "SELECT COUNT(*) FROM metrics_hourly WHERE account_id=? AND date=?",
+            (account_id, date),
+        ).fetchone()
+        return r[0] if r else 0
+
+
 # --- 계정 CRUD ---
 
 def list_accounts():

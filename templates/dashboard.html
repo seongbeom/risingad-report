@@ -165,6 +165,22 @@
     </div>
     {% endif %}
 
+    {% if hourly_compare and hourly_compare.datasets %}
+    <div class="card">
+        <h2>시간별 비교 ({{ date }})</h2>
+        <div class="chart-grid">
+            <div class="chart-box" style="grid-column: span 2">
+                <div class="chart-box-title">계정별 시간 매출</div>
+                <canvas id="hourly-compare-sales"></canvas>
+            </div>
+            <div class="chart-box" style="grid-column: span 2">
+                <div class="chart-box-title">계정별 시간 구매건수</div>
+                <canvas id="hourly-compare-orders"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {% if not panels %}
     <div class="card">
         <p class="nodata">선택된 계정이 없거나 등록된 계정이 없습니다.</p>
@@ -260,6 +276,33 @@ const baseOpts = (unit) => ({
 })();
 {% endif %}
 {% endfor %}
+
+// 시간별 다계정 비교 (매출 + 구매건수 별도 차트)
+{% if hourly_compare and hourly_compare.datasets %}
+(function() {
+    const hours = {{ hourly_compare.hours | tojson }};
+    const labels = hours.map(h => `${String(h).padStart(2, '0')}시`);
+    const datasets = {{ hourly_compare.datasets | tojson }};
+    const buildDS = (key, axisUnit) => datasets.map((ds, i) => ({
+        label: ds.label,
+        data: ds[key],
+        borderColor: PALETTE[i % PALETTE.length],
+        backgroundColor: PALETTE[i % PALETTE.length] + '22',
+        tension: 0.3,
+        pointRadius: 3,
+    }));
+    new Chart(document.getElementById('hourly-compare-sales'), {
+        type: 'line',
+        data: { labels, datasets: buildDS('sales') },
+        options: baseOpts('원')
+    });
+    new Chart(document.getElementById('hourly-compare-orders'), {
+        type: 'line',
+        data: { labels, datasets: buildDS('orders') },
+        options: baseOpts('건')
+    });
+})();
+{% endif %}
 
 // KPI별 다계정 비교 차트
 {% for cc in compare_charts %}
