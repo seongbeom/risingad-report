@@ -183,30 +183,33 @@ def set_period_range(frame, page, start_date, end_date):
                 out.append((t, b))
         return out
 
-    # 2) 시작일 button click → 캘린더 popup → 'start_day' td button click
+    def _pick_day_cell(day_num):
+        """캘린더 셀 중 day_num 매칭. 29~31은 이전달과 당월 둘 다 등장하므로 두 번째 매칭 클릭."""
+        cells = frame.query_selector_all("td button")
+        matches = [c for c in cells if c.is_visible() and c.evaluate("el => el.textContent?.trim() || ''") == str(day_num)]
+        if not matches:
+            return False
+        if day_num >= 29 and len(matches) >= 2:
+            target = matches[1]
+        else:
+            target = matches[0]
+        target.click()
+        page.wait_for_timeout(800)
+        return True
+
+    # 2) 시작일 button click → 캘린더 popup → start_day 클릭
     btns = _date_btns()
     if len(btns) >= 1:
         btns[0][1].click()
         page.wait_for_timeout(1200)
-        # 정확히 그 텍스트인 td button만 (has-text는 부분일치라 == 비교 필요)
-        cells = frame.query_selector_all("td button")
-        for c in cells:
-            if c.is_visible() and c.evaluate("el => el.textContent?.trim() || ''") == str(start_day):
-                c.click()
-                page.wait_for_timeout(800)
-                break
+        _pick_day_cell(start_day)
 
-    # 3) 종료일 button click → 캘린더 popup → 'end_day' td button click
+    # 3) 종료일 button click → 캘린더 popup → end_day 클릭
     btns = _date_btns()
     if len(btns) >= 2:
         btns[1][1].click()
         page.wait_for_timeout(1200)
-        cells = frame.query_selector_all("td button")
-        for c in cells:
-            if c.is_visible() and c.evaluate("el => el.textContent?.trim() || ''") == str(end_day):
-                c.click()
-                page.wait_for_timeout(800)
-                break
+        _pick_day_cell(end_day)
 
     # 4) 시작/종료 텍스트 검증
     btns = _date_btns()
