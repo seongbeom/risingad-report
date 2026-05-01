@@ -7,7 +7,7 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
-        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         h1 { font-size: 1.5rem; margin-bottom: 4px; }
         .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
         .nav { margin-bottom: 16px; }
@@ -18,20 +18,25 @@
         .form-group { display: flex; flex-direction: column; gap: 4px; }
         .form-group label { font-size: 0.75rem; color: #888; font-weight: 600; }
         input, select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
-        .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; background: #4a90d9; color: #fff; }
+        .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; background: #4a90d9; color: #fff; text-decoration: none; display: inline-block; }
         .btn:hover { background: #3a7bc8; }
-        .checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
-        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.9rem; cursor: pointer; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .btn-mini { padding: 4px 10px; font-size: 0.78rem; background: #e9ecef; color: #333; }
+        .btn-mini:hover { background: #d8dde2; color: #000; }
+        .checkbox-group { display: flex; gap: 8px; flex-wrap: wrap; }
+        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; cursor: pointer; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
-        .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #444; }
+        .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #444; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .panel-title .acct { color: #4a90d9; }
-        .panel-title .date { color: #888; font-size: 0.85rem; font-weight: normal; margin-left: 8px; }
+        .panel-title .date { color: #888; font-size: 0.8rem; font-weight: normal; }
+        .panel-title .meta { font-size: 0.75rem; color: #999; }
 
         .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         @media (max-width: 720px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
         .kpi { background: #fafafa; border-radius: 6px; padding: 14px; }
-        .kpi-label { font-size: 0.75rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-        .kpi-value { font-size: 1.6rem; font-weight: 700; color: #222; margin: 6px 0; }
+        .kpi-label { font-size: 0.72rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .kpi-mode { font-size: 0.65rem; color: #bbb; font-weight: 500; margin-left: 4px; }
+        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #222; margin: 6px 0; }
         .kpi-unit { font-size: 0.7rem; color: #aaa; margin-left: 2px; }
         .kpi-comparisons { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
         .kpi-comp-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; }
@@ -40,20 +45,32 @@
         .up { color: #27ae60; }
         .down { color: #e74c3c; }
         .flat { color: #888; }
-        .nodata { font-size: 0.8rem; color: #aaa; padding: 16px; text-align: center; background: #fafafa; border-radius: 6px; }
+        .nodata { font-size: 0.85rem; color: #aaa; padding: 16px; text-align: center; background: #fafafa; border-radius: 6px; }
 
         .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
         @media (max-width: 720px) { .chart-grid { grid-template-columns: 1fr; } }
         .chart-box { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 12px; }
         .chart-box-title { font-size: 0.85rem; font-weight: 600; color: #555; margin-bottom: 8px; }
-        .chart-box canvas { max-height: 220px; }
+        .chart-box .hint { font-size: 0.72rem; color: #999; font-weight: normal; margin-left: 6px; }
+        .chart-box canvas { max-height: 240px; }
+
+        .insight-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+        .insight-pill { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 16px; padding: 4px 12px; font-size: 0.78rem; color: #614700; }
+        .insight-pill strong { color: #4a90d9; }
+
+        .heatmap { display: grid; grid-template-columns: 36px repeat(24, 1fr); gap: 1px; font-size: 0.7rem; margin-top: 8px; }
+        .heatmap .h-head { text-align: center; color: #aaa; padding: 2px 0; font-size: 0.65rem; }
+        .heatmap .h-row-label { text-align: right; color: #777; padding: 2px 6px; font-weight: 600; }
+        .heatmap .h-cell { text-align: center; padding: 4px 0; color: #444; border-radius: 2px; font-variant-numeric: tabular-nums; }
+        .heatmap-legend { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #888; margin-top: 6px; }
+        .heatmap-legend .swatch { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
-    <h1>일별 KPI 대시보드</h1>
-    <p class="subtitle">{{ date }} 기준 (전일 {{ prev_day }} / 전주 {{ prev_week }} 비교)</p>
+    <h1>KPI 대시보드</h1>
+    <p class="subtitle">{{ start_date }} ~ {{ end_date }} ({{ range_days }}일) · 직전 {{ range_days }}일({{ prev_start }} ~ {{ prev_end }}) 비교</p>
     <div class="nav">
         <a href="/">← 관리자</a>
     </div>
@@ -61,11 +78,15 @@
     <!-- 필터 -->
     <div class="card">
         <h2>조회 조건</h2>
-        <form method="GET" action="/dashboard">
+        <form method="GET" action="/dashboard" id="filter-form">
             <div class="form-row">
                 <div class="form-group">
-                    <label>기준일</label>
-                    <input type="date" name="date" value="{{ date }}">
+                    <label>시작일</label>
+                    <input type="date" name="start_date" value="{{ start_date }}">
+                </div>
+                <div class="form-group">
+                    <label>종료일</label>
+                    <input type="date" name="end_date" value="{{ end_date }}">
                 </div>
                 <div class="form-group">
                     <label>계정 (선택 안 하면 전체)</label>
@@ -81,6 +102,12 @@
                 </div>
                 <button class="btn" type="submit">조회</button>
             </div>
+            <div class="preset-row">
+                <a class="btn btn-mini" href="#" data-preset="1">어제</a>
+                <a class="btn btn-mini" href="#" data-preset="7">최근 7일</a>
+                <a class="btn btn-mini" href="#" data-preset="14">최근 14일</a>
+                <a class="btn btn-mini" href="#" data-preset="30">최근 30일</a>
+            </div>
         </form>
     </div>
 
@@ -88,14 +115,22 @@
     {% for panel in panels %}
     <div class="card">
         <div class="panel-title">
-            <span class="acct">{{ panel.account.label or panel.account.cafe24_id }}</span>
-            <span class="date">{{ panel.account.cafe24_id }}</span>
+            <div>
+                <span class="acct">{{ panel.account.label or panel.account.cafe24_id }}</span>
+                <span class="date">{{ panel.account.cafe24_id }}</span>
+            </div>
+            <span class="meta">
+                {% if panel.peak_hour is not none %}
+                피크 시간: <strong>{{ '%02d시'|format(panel.peak_hour) }}</strong>
+                {% endif %}
+                · 시간별 표본 {{ panel.hourly_total_days }}일
+            </span>
         </div>
         {% if panel.has_data %}
         <div class="kpi-grid">
             {% for k in panel.kpis %}
             <div class="kpi">
-                <div class="kpi-label">{{ k.label }}</div>
+                <div class="kpi-label">{{ k.label }}<span class="kpi-mode">· {{ '합계' if k.mode=='sum' else '일평균' }}</span></div>
                 <div class="kpi-value">
                     {% if k.value is not none %}
                         {{ "{:,.0f}".format(k.value) }}<span class="kpi-unit">{{ k.unit }}</span>
@@ -104,10 +139,9 @@
                     {% endif %}
                 </div>
                 <div class="kpi-comparisons">
-                    {% for comp_key, comp_label in [('vs_day','전일'), ('vs_week','전주')] %}
-                    {% set d = k[comp_key] %}
+                    {% set d = k.vs_prev %}
                     <div class="kpi-comp-row">
-                        <span class="kpi-comp-label">{{ comp_label }}</span>
+                        <span class="kpi-comp-label">직전 {{ range_days }}일</span>
                         {% if d %}
                             {% if d.abs > 0 %}
                                 <span class="kpi-comp-value up">▲ {{ "{:,.0f}".format(d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
@@ -120,31 +154,50 @@
                             <span class="kpi-comp-value flat">데이터 없음</span>
                         {% endif %}
                     </div>
-                    {% endfor %}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="nodata">{{ date }} 데이터가 없습니다 (스크래핑 미실행 또는 미동기화)</div>
+        <div class="nodata">{{ start_date }} ~ {{ end_date }} 기간 데이터가 없습니다</div>
         {% endif %}
 
         {% if panel.history %}
         <div class="chart-grid">
             {% for k in kpi_fields %}
             <div class="chart-box">
-                <div class="chart-box-title">{{ k }} (최근 14일)</div>
+                <div class="chart-box-title">{{ k }} 일별 추이</div>
                 <canvas id="chart-{{ panel.account.id }}-{{ loop.index }}"></canvas>
             </div>
             {% endfor %}
         </div>
         {% endif %}
 
-        {% if panel.hourly %}
+        {% if panel.hourly_total_days > 0 %}
         <div class="chart-grid" style="margin-top:20px">
-            <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">시간별 매출 / 구매건수 ({{ date }})</div>
-                <canvas id="hourly-{{ panel.account.id }}"></canvas>
+            <div class="chart-box">
+                <div class="chart-box-title">시간대 평균 매출 / 구매건수 <span class="hint">({{ panel.hourly_total_days }}일 평균)</span></div>
+                <canvas id="hour-avg-{{ panel.account.id }}"></canvas>
+            </div>
+            <div class="chart-box">
+                <div class="chart-box-title">시간대별 누적 매출 비중 <span class="hint">(영업 진행률)</span></div>
+                <canvas id="cum-{{ panel.account.id }}"></canvas>
+            </div>
+            <div class="chart-box">
+                <div class="chart-box-title">요일별 평균 일매출</div>
+                <canvas id="dow-{{ panel.account.id }}"></canvas>
+            </div>
+            <div class="chart-box">
+                <div class="chart-box-title">요일 × 시간 매출 합계 히트맵</div>
+                <div class="heatmap" id="heatmap-{{ panel.account.id }}"></div>
+                <div class="heatmap-legend">
+                    <span>낮음</span>
+                    <span class="swatch" style="background:#eef5fc"></span>
+                    <span class="swatch" style="background:#a8d0ee"></span>
+                    <span class="swatch" style="background:#4a90d9"></span>
+                    <span class="swatch" style="background:#1a5e9c"></span>
+                    <span>높음</span>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -153,7 +206,7 @@
 
     {% if compare_charts %}
     <div class="card">
-        <h2>계정 비교 (최근 14일)</h2>
+        <h2>계정 비교 (일별 추이)</h2>
         <div class="chart-grid">
             {% for cc in compare_charts %}
             <div class="chart-box">
@@ -167,14 +220,14 @@
 
     {% if hourly_compare and hourly_compare.datasets %}
     <div class="card">
-        <h2>시간별 비교 ({{ date }})</h2>
+        <h2>계정별 시간대 평균 비교</h2>
         <div class="chart-grid">
             <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">계정별 시간 매출</div>
+                <div class="chart-box-title">시간 평균 매출</div>
                 <canvas id="hourly-compare-sales"></canvas>
             </div>
             <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">계정별 시간 구매건수</div>
+                <div class="chart-box-title">시간 평균 구매건수</div>
                 <canvas id="hourly-compare-orders"></canvas>
             </div>
         </div>
@@ -190,14 +243,14 @@
 
 <script>
 const PALETTE = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12", "#9b59b6"];
+const DAYS_KO = {{ days_ko | tojson }};
+
 const baseOpts = (unit) => ({
     responsive: true,
     plugins: {
         legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
         tooltip: {
-            callbacks: {
-                label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()} ${unit}`
-            }
+            callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()} ${unit||''}` }
         }
     },
     scales: {
@@ -206,47 +259,48 @@ const baseOpts = (unit) => ({
     }
 });
 
-// 계정별 패널 차트
-{% for panel in panels %}
-{% if panel.hourly %}
-(function() {
-    const hourly = {{ panel.hourly | tojson }};
-    const allHours = Array.from({length: 24}, (_, h) => h);
-    const lookup = {};
-    hourly.forEach(r => { lookup[r.hour] = r; });
-    const sales = allHours.map(h => (lookup[h] || {}).매출 ?? null);
-    const orders = allHours.map(h => (lookup[h] || {}).구매건수 ?? null);
-    new Chart(document.getElementById(`hourly-{{ panel.account.id }}`), {
-        type: 'line',
-        data: {
-            labels: allHours.map(h => `${String(h).padStart(2, '0')}시`),
-            datasets: [
-                {label: "매출", data: sales, borderColor: "#4a90d9", backgroundColor: "#4a90d922", tension: 0.3, pointRadius: 3, yAxisID: 'y'},
-                {label: "구매건수", data: orders, borderColor: "#e74c3c", backgroundColor: "#e74c3c22", tension: 0.3, pointRadius: 3, yAxisID: 'y1'},
-            ]
-        },
-        options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
-                tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()}` } }
-            },
-            scales: {
-                x: { ticks: { font: { size: 10 } } },
-                y: { type: 'linear', position: 'left', ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() }, beginAtZero: true, title: { display: true, text: '매출 (원)', font: { size: 10 } } },
-                y1: { type: 'linear', position: 'right', ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() }, beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: '구매건수 (건)', font: { size: 10 } } }
-            }
-        }
+// 프리셋 버튼: 종료일=어제, 시작일=종료일-(N-1)
+document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const n = parseInt(btn.dataset.preset, 10);
+        const end = new Date();
+        end.setDate(end.getDate() - 1);
+        const start = new Date(end);
+        start.setDate(start.getDate() - (n - 1));
+        const fmt = (d) => d.toISOString().slice(0, 10);
+        document.querySelector('input[name=start_date]').value = fmt(start);
+        document.querySelector('input[name=end_date]').value = fmt(end);
+        document.getElementById('filter-form').submit();
     });
-})();
-{% endif %}
+});
+
+// 색상 보간 (heatmap)
+function heatColor(ratio) {
+    // ratio 0~1 → 흰색→#1a5e9c
+    const stops = [
+        [0.0, [255, 255, 255]],
+        [0.25, [238, 245, 252]],
+        [0.5,  [168, 208, 238]],
+        [0.75, [74, 144, 217]],
+        [1.0, [26, 94, 156]],
+    ];
+    let lo = stops[0], hi = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (ratio >= stops[i][0] && ratio <= stops[i+1][0]) { lo = stops[i]; hi = stops[i+1]; break; }
+    }
+    const t = (ratio - lo[0]) / (hi[0] - lo[0] || 1);
+    const c = lo[1].map((v, i) => Math.round(v + (hi[1][i] - v) * t));
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
+// 패널별 차트
+{% for panel in panels %}
+{% set acct_id = panel.account.id %}
+
 {% if panel.history %}
-{% set p_loop = loop %}
-{% set hist = panel.history %}
 (function() {
-    const labels = {{ hist | map(attribute='date') | list | tojson }};
-    const acctName = {{ (panel.account.label or panel.account.cafe24_id) | tojson }};
+    const labels = {{ panel.history | map(attribute='date') | list | tojson }};
     const colors = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12"];
     const fields = [
         {col: "방문자수", unit: "명"},
@@ -254,74 +308,132 @@ const baseOpts = (unit) => ({
         {col: "구매건수", unit: "건"},
         {col: "객단가", unit: "원"},
     ];
-    const histData = {{ hist | tojson }};
+    const histData = {{ panel.history | tojson }};
     fields.forEach((f, i) => {
         const data = histData.map(h => h[f.col] ?? null);
-        new Chart(document.getElementById(`chart-{{ panel.account.id }}-${i+1}`), {
+        new Chart(document.getElementById(`chart-{{ acct_id }}-${i+1}`), {
             type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: f.col,
-                    data: data,
-                    borderColor: colors[i],
-                    backgroundColor: colors[i] + '22',
-                    tension: 0.3,
-                    pointRadius: 3,
-                }]
-            },
+            data: { labels, datasets: [{label: f.col, data, borderColor: colors[i], backgroundColor: colors[i]+'22', tension: 0.3, pointRadius: 3, fill: true}] },
             options: baseOpts(f.unit)
         });
     });
 })();
 {% endif %}
-{% endfor %}
 
-// 시간별 다계정 비교 (매출 + 구매건수 별도 차트)
-{% if hourly_compare and hourly_compare.datasets %}
+{% if panel.hourly_total_days > 0 %}
 (function() {
-    const hours = {{ hourly_compare.hours | tojson }};
-    const labels = hours.map(h => `${String(h).padStart(2, '0')}시`);
-    const datasets = {{ hourly_compare.datasets | tojson }};
-    const buildDS = (key, axisUnit) => datasets.map((ds, i) => ({
-        label: ds.label,
-        data: ds[key],
-        borderColor: PALETTE[i % PALETTE.length],
-        backgroundColor: PALETTE[i % PALETTE.length] + '22',
-        tension: 0.3,
-        pointRadius: 3,
-    }));
-    new Chart(document.getElementById('hourly-compare-sales'), {
-        type: 'line',
-        data: { labels, datasets: buildDS('sales') },
-        options: baseOpts('원')
+    const hourLabels = Array.from({length: 24}, (_, h) => `${String(h).padStart(2,'0')}시`);
+    const avgSales = {{ panel.avg_sales_by_hour | tojson }};
+    const avgOrders = {{ panel.avg_orders_by_hour | tojson }};
+    const cumPct = {{ panel.cum_pct | tojson }};
+    const dowAvg = {{ panel.avg_sales_by_dow | tojson }};
+
+    // 시간 평균 (bar+line dual)
+    new Chart(document.getElementById(`hour-avg-{{ acct_id }}`), {
+        data: {
+            labels: hourLabels,
+            datasets: [
+                {type: 'bar', label: '평균 매출(원)', data: avgSales, backgroundColor: '#4a90d966', borderColor: '#4a90d9', yAxisID: 'y'},
+                {type: 'line', label: '평균 구매건수', data: avgOrders, borderColor: '#e74c3c', backgroundColor: '#e74c3c22', tension: 0.3, pointRadius: 3, yAxisID: 'y1'},
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()}` } } },
+            scales: {
+                x: { ticks: { font: { size: 9 } } },
+                y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() } },
+                y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
+            }
+        }
     });
-    new Chart(document.getElementById('hourly-compare-orders'), {
+
+    // 누적 매출 비중 (line, 0~100%)
+    new Chart(document.getElementById(`cum-{{ acct_id }}`), {
         type: 'line',
-        data: { labels, datasets: buildDS('orders') },
-        options: baseOpts('건')
+        data: { labels: hourLabels, datasets: [{label: '누적 매출 비중(%)', data: cumPct, borderColor: '#27ae60', backgroundColor: '#27ae6033', tension: 0.3, fill: true, pointRadius: 3}] },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.parsed.y}%` } } },
+            scales: { x: { ticks: { font: { size: 9 } } }, y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+        }
     });
+
+    // 요일 평균 매출 (bar)
+    new Chart(document.getElementById(`dow-{{ acct_id }}`), {
+        type: 'bar',
+        data: {
+            labels: DAYS_KO,
+            datasets: [{label: '평균 일매출(원)', data: dowAvg, backgroundColor: DAYS_KO.map((_, i) => i >= 5 ? '#e74c3c99' : '#4a90d999')}]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${Number(ctx.parsed.y || 0).toLocaleString()}원` } } },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } } }
+        }
+    });
+
+    // 히트맵 (요일 × 시간)
+    const dowHourSales = {{ panel.dow_hour_sales | tojson }};
+    const dowHourCount = {{ panel.dow_hour_count | tojson }};
+    const flat = [];
+    for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+        const cnt = dowHourCount[d][h];
+        if (cnt > 0) flat.push(dowHourSales[d][h] / cnt);
+    }
+    const maxV = flat.length ? Math.max(...flat) : 1;
+    const grid = document.getElementById(`heatmap-{{ acct_id }}`);
+    let html = '<div></div>';
+    for (let h = 0; h < 24; h++) html += `<div class="h-head">${String(h).padStart(2,'0')}</div>`;
+    for (let d = 0; d < 7; d++) {
+        html += `<div class="h-row-label">${DAYS_KO[d]}</div>`;
+        for (let h = 0; h < 24; h++) {
+            const cnt = dowHourCount[d][h];
+            const avg = cnt > 0 ? dowHourSales[d][h] / cnt : 0;
+            const ratio = maxV > 0 ? avg / maxV : 0;
+            const bg = cnt > 0 ? heatColor(ratio) : '#f5f5f5';
+            const txtColor = ratio > 0.55 ? '#fff' : '#333';
+            const display = cnt > 0 ? Math.round(avg / 1000) + 'k' : '-';
+            const tip = cnt > 0 ? `${DAYS_KO[d]} ${String(h).padStart(2,'0')}시: ${Math.round(avg).toLocaleString()}원 (${cnt}일 평균)` : `${DAYS_KO[d]} ${String(h).padStart(2,'0')}시: 데이터 없음`;
+            html += `<div class="h-cell" style="background:${bg};color:${txtColor}" title="${tip}">${display}</div>`;
+        }
+    }
+    grid.innerHTML = html;
 })();
 {% endif %}
 
-// KPI별 다계정 비교 차트
+{% endfor %}
+
+// 시간 평균 다계정 overlay
+{% if hourly_compare and hourly_compare.datasets %}
+(function() {
+    const hours = {{ hourly_compare.hours | tojson }};
+    const labels = hours.map(h => `${String(h).padStart(2,'0')}시`);
+    const datasets = {{ hourly_compare.datasets | tojson }};
+    const buildDS = (key) => datasets.map((ds, i) => ({
+        label: ds.label, data: ds[key],
+        borderColor: PALETTE[i % PALETTE.length],
+        backgroundColor: PALETTE[i % PALETTE.length] + '22',
+        tension: 0.3, pointRadius: 3,
+    }));
+    new Chart(document.getElementById('hourly-compare-sales'), { type: 'line', data: { labels, datasets: buildDS('sales') }, options: baseOpts('원') });
+    new Chart(document.getElementById('hourly-compare-orders'), { type: 'line', data: { labels, datasets: buildDS('orders') }, options: baseOpts('건') });
+})();
+{% endif %}
+
+// 계정 비교 차트
 {% for cc in compare_charts %}
 (function() {
     const idx = {{ loop.index }};
     const labels = {{ cc.labels | tojson }};
     const datasets = {{ cc.datasets | tojson }}.map((ds, i) => ({
-        label: ds.label,
-        data: ds.data,
+        label: ds.label, data: ds.data,
         borderColor: PALETTE[i % PALETTE.length],
         backgroundColor: PALETTE[i % PALETTE.length] + '22',
-        tension: 0.3,
-        pointRadius: 3,
+        tension: 0.3, pointRadius: 3,
     }));
-    new Chart(document.getElementById(`compare-${idx}`), {
-        type: 'line',
-        data: { labels, datasets },
-        options: baseOpts({{ cc.unit | tojson }})
-    });
+    new Chart(document.getElementById(`compare-${idx}`), { type: 'line', data: { labels, datasets }, options: baseOpts({{ cc.unit | tojson }}) });
 })();
 {% endfor %}
 </script>

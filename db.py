@@ -224,6 +224,21 @@ def list_metrics_hourly(account_id, date):
         return [dict(r) for r in rows]
 
 
+def list_metrics_hourly_range(account_id, start_date, end_date):
+    """기간 내 시간별 행 (date asc, hour asc). account_id 단일 or list."""
+    sql = "SELECT * FROM metrics_hourly WHERE date BETWEEN ? AND ?"
+    params = [start_date, end_date]
+    if isinstance(account_id, (list, tuple)):
+        sql += f" AND account_id IN ({','.join('?' * len(account_id))})"
+        params.extend(account_id)
+    else:
+        sql += " AND account_id=?"
+        params.append(account_id)
+    sql += " ORDER BY date ASC, hour ASC"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
 def count_metrics_hourly(account_id, date):
     with db_conn() as conn:
         r = conn.execute(

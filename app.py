@@ -294,21 +294,32 @@ def results_page(account_id):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    """일별 KPI 대시보드 (단일/다계정 + 전일·전주 비교)."""
+    """기간 범위 KPI + 시간별 인사이트 대시보드."""
     accounts = db.list_accounts()
     all_ids = [a["id"] for a in accounts]
     selected_ids = request.args.getlist("account_id") or all_ids
-    date_str = request.args.get("date") or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    base = datetime.strptime(date_str, "%Y-%m-%d")
-    prev_day_str = (base - timedelta(days=1)).strftime("%Y-%m-%d")
-    prev_week_str = (base - timedelta(days=7)).strftime("%Y-%m-%d")
+    # 기간: 기본 어제로부터 6일 전 ~ 어제 (7일)
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    end_str = request.args.get("end_date") or yesterday
+    start_str = request.args.get("start_date") or (datetime.strptime(end_str, "%Y-%m-%d") - timedelta(days=6)).strftime("%Y-%m-%d")
+    start_dt = datetime.strptime(start_str, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_str, "%Y-%m-%d")
+    if start_dt > end_dt:
+        start_dt, end_dt = end_dt, start_dt
+        start_str, end_str = end_str, start_str
+    range_days = (end_dt - start_dt).days + 1
+    # 직전 동일 기간 (비교용)
+    prev_end_dt = start_dt - timedelta(days=1)
+    prev_start_dt = prev_end_dt - timedelta(days=range_days - 1)
+    prev_start_str = prev_start_dt.strftime("%Y-%m-%d")
+    prev_end_str = prev_end_dt.strftime("%Y-%m-%d")
 
     KPI_FIELDS = [
-        ("방문자수", "방문자수", "명"),
-        ("매출", "매출", "원"),
-        ("구매건수", "구매건수", "건"),
-        ("객단가", "객단가", "원"),
+        ("방문자수", "방문자수", "명", "sum"),
+        ("매출", "매출", "원", "sum"),
+        ("구매건수", "구매건수", "건", "sum"),
+        ("객단가", "객단가", "원", "avg"),  # 일평균 객단가
     ]
 
     def _diff(cur, ref):
@@ -316,41 +327,103 @@ def dashboard():
             return None
         return {"abs": cur - ref, "pct": (cur - ref) / ref * 100}
 
-    history_start = (base - timedelta(days=13)).strftime("%Y-%m-%d")  # 14일 윈도우 (오늘 포함)
+    def _aggregate(rows, col, mode):
+        vals = [r.get(col) for r in rows if r.get(col) is not None]
+        if not vals:
+            return None
+        if mode == "sum":
+            return sum(vals)
+        if mode == "avg":
+            return sum(vals) / len(vals)
+        return None
+
+    DAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
+
     panels = []
     for aid in selected_ids:
         account = next((a for a in accounts if a["id"] == aid), None)
         if not account:
             continue
-        cur = db.get_metric(aid, date_str) or {}
-        d1 = db.get_metric(aid, prev_day_str) or {}
-        d7 = db.get_metric(aid, prev_week_str) or {}
+        history = db.list_metrics(aid, start_str, end_str)
+        prev_history = db.list_metrics(aid, prev_start_str, prev_end_str)
+        hourly_rows = db.list_metrics_hourly_range(aid, start_str, end_str)
+
         kpis = []
-        for label, col, unit in KPI_FIELDS:
-            v = cur.get(col)
+        for label, col, unit, mode in KPI_FIELDS:
+            v = _aggregate(history, col, mode)
+            ref = _aggregate(prev_history, col, mode)
             kpis.append({
                 "label": label,
                 "value": v,
                 "unit": unit,
-                "vs_day": _diff(v, d1.get(col)),
-                "vs_week": _diff(v, d7.get(col)),
+                "mode": mode,
+                "vs_prev": _diff(v, ref),
             })
-        history = db.list_metrics(aid, history_start, date_str)
-        hourly = db.list_metrics_hourly(aid, date_str)
+
+        # 시간대 평균 (24시간) - 기간 평균 매출/건수
+        hour_buckets_sales = [[] for _ in range(24)]
+        hour_buckets_orders = [[] for _ in range(24)]
+        # 요일×시간 히트맵 (매출 sum)
+        dow_hour_sales = [[0] * 24 for _ in range(7)]
+        dow_hour_count = [[0] * 24 for _ in range(7)]  # 표본 일자 수
+        for r in hourly_rows:
+            h = r["hour"]
+            hour_buckets_sales[h].append(r.get("매출") or 0)
+            hour_buckets_orders[h].append(r.get("구매건수") or 0)
+            try:
+                d = datetime.strptime(r["date"], "%Y-%m-%d")
+                dow = d.weekday()
+                dow_hour_sales[dow][h] += (r.get("매출") or 0)
+                dow_hour_count[dow][h] += 1
+            except Exception:
+                pass
+
+        avg_sales_by_hour = [round(sum(b) / len(b)) if b else None for b in hour_buckets_sales]
+        avg_orders_by_hour = [round(sum(b) / len(b), 1) if b else None for b in hour_buckets_orders]
+
+        # 요일별 평균 매출 (시간 합쳐 일별 sum → 평균)
+        dow_daily = [[] for _ in range(7)]
+        for m in history:
+            try:
+                dow = datetime.strptime(m["date"], "%Y-%m-%d").weekday()
+                if m.get("매출") is not None:
+                    dow_daily[dow].append(m["매출"])
+            except Exception:
+                pass
+        avg_sales_by_dow = [round(sum(b) / len(b)) if b else None for b in dow_daily]
+
+        # 피크 시간 (기간 평균 기준)
+        valid_hours = [(h, avg_sales_by_hour[h]) for h in range(24) if avg_sales_by_hour[h] is not None]
+        peak_hour = max(valid_hours, key=lambda x: x[1])[0] if valid_hours else None
+        # 누적 매출 곡선 (24시간 - 평균 매출 누적)
+        cum = []
+        s = 0
+        for v in avg_sales_by_hour:
+            s += (v or 0)
+            cum.append(s)
+        cum_total = cum[-1] if cum else 0
+        cum_pct = [round(c / cum_total * 100, 1) if cum_total else None for c in cum]
+
         panels.append({
             "account": account,
             "kpis": kpis,
-            "has_data": bool(cur),
+            "has_data": bool(history),
             "history": history,
-            "hourly": hourly,
+            "avg_sales_by_hour": avg_sales_by_hour,
+            "avg_orders_by_hour": avg_orders_by_hour,
+            "avg_sales_by_dow": avg_sales_by_dow,
+            "dow_hour_sales": dow_hour_sales,
+            "dow_hour_count": dow_hour_count,
+            "peak_hour": peak_hour,
+            "cum_pct": cum_pct,
+            "hourly_total_days": len({r["date"] for r in hourly_rows}),
         })
 
-    # KPI별 다계정 비교 데이터 (선택된 계정이 2개 이상일 때 의미)
+    # 다계정 비교: 일별 KPI line
     compare_charts = []
     if len(panels) >= 2:
-        # 14일치 날짜 라벨 통합
         all_dates = sorted({m["date"] for p in panels for m in p["history"]})
-        for label, col, unit in KPI_FIELDS:
+        for label, col, unit, _ in KPI_FIELDS:
             datasets = []
             for p in panels:
                 lookup = {m["date"]: m.get(col) for m in p["history"]}
@@ -360,31 +433,35 @@ def dashboard():
                 })
             compare_charts.append({"label": label, "unit": unit, "labels": all_dates, "datasets": datasets})
 
-    # 시간별 다계정 overlay (선택 일자의 24시간 매출/구매건수)
+    # 시간대 평균 다계정 overlay
     hourly_compare = None
-    panels_with_hourly = [p for p in panels if p.get("hourly")]
-    if len(panels_with_hourly) >= 1:
-        hours = list(range(24))
-        hourly_compare = {"hours": hours, "datasets": []}
-        for p in panels_with_hourly:
-            lookup = {h["hour"]: h for h in p["hourly"]}
-            hourly_compare["datasets"].append({
-                "label": p["account"]["label"] or p["account"]["cafe24_id"],
-                "sales": [lookup.get(h, {}).get("매출") for h in hours],
-                "orders": [lookup.get(h, {}).get("구매건수") for h in hours],
-            })
+    if any(any(v is not None for v in p["avg_sales_by_hour"]) for p in panels):
+        hourly_compare = {
+            "hours": list(range(24)),
+            "datasets": [
+                {
+                    "label": p["account"]["label"] or p["account"]["cafe24_id"],
+                    "sales": p["avg_sales_by_hour"],
+                    "orders": p["avg_orders_by_hour"],
+                }
+                for p in panels
+            ],
+        }
 
     return render_template(
         "dashboard.html",
         accounts=accounts,
         selected_ids=selected_ids,
-        date=date_str,
-        prev_day=prev_day_str,
-        prev_week=prev_week_str,
+        start_date=start_str,
+        end_date=end_str,
+        range_days=range_days,
+        prev_start=prev_start_str,
+        prev_end=prev_end_str,
         panels=panels,
         compare_charts=compare_charts,
         hourly_compare=hourly_compare,
         kpi_fields=[k[0] for k in KPI_FIELDS],
+        days_ko=DAYS_KO,
     )
 
 
