@@ -203,7 +203,9 @@ def set_period_range(frame, page, start_date, end_date):
                         if (el.disabled) return true;
                         if (el.getAttribute('aria-disabled') === 'true') return true;
                         const cls = ' ' + (el.className || '') + ' ';
-                        return cls.includes(' rdp-day_outside ') || cls.includes(' rdp-day_disabled ');
+                        return cls.includes(' day-outside ')
+                            || cls.includes(' rdp-day_outside ')
+                            || cls.includes(' rdp-day_disabled ');
                     }""")
                     if not skip:
                         cand = c
