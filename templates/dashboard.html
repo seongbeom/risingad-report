@@ -58,10 +58,11 @@
         .insight-pill { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 16px; padding: 4px 12px; font-size: 0.78rem; color: #614700; }
         .insight-pill strong { color: #4a90d9; }
 
-        .heatmap { display: grid; grid-template-columns: 36px repeat(24, 1fr); gap: 1px; font-size: 0.7rem; margin-top: 8px; }
-        .heatmap .h-head { text-align: center; color: #aaa; padding: 2px 0; font-size: 0.65rem; }
-        .heatmap .h-row-label { text-align: right; color: #777; padding: 2px 6px; font-weight: 600; }
-        .heatmap .h-cell { text-align: center; padding: 4px 0; color: #444; border-radius: 2px; font-variant-numeric: tabular-nums; }
+        .heatmap-wrap { overflow-x: auto; margin-top: 8px; }
+        .heatmap { display: grid; grid-template-columns: 28px repeat(24, minmax(22px, 1fr)); gap: 1px; font-size: 0.62rem; min-width: 600px; }
+        .heatmap .h-head { text-align: center; color: #aaa; padding: 2px 0; font-size: 0.6rem; }
+        .heatmap .h-row-label { text-align: right; color: #777; padding: 2px 4px; font-weight: 600; font-size: 0.7rem; }
+        .heatmap .h-cell { text-align: center; padding: 4px 0; color: #444; border-radius: 2px; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; }
         .heatmap-legend { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #888; margin-top: 6px; }
         .heatmap-legend .swatch { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
     </style>
@@ -187,17 +188,19 @@
                 <div class="chart-box-title">요일별 평균 일매출</div>
                 <canvas id="dow-{{ panel.account.id }}"></canvas>
             </div>
-            <div class="chart-box">
-                <div class="chart-box-title">요일 × 시간 매출 합계 히트맵</div>
+        </div>
+        <div class="chart-box" style="margin-top:16px">
+            <div class="chart-box-title">요일 × 시간 매출 히트맵 <span class="hint">(셀 = 해당 요일·시간 평균 매출)</span></div>
+            <div class="heatmap-wrap">
                 <div class="heatmap" id="heatmap-{{ panel.account.id }}"></div>
-                <div class="heatmap-legend">
-                    <span>낮음</span>
-                    <span class="swatch" style="background:#eef5fc"></span>
-                    <span class="swatch" style="background:#a8d0ee"></span>
-                    <span class="swatch" style="background:#4a90d9"></span>
-                    <span class="swatch" style="background:#1a5e9c"></span>
-                    <span>높음</span>
-                </div>
+            </div>
+            <div class="heatmap-legend">
+                <span>낮음</span>
+                <span class="swatch" style="background:#eef5fc"></span>
+                <span class="swatch" style="background:#a8d0ee"></span>
+                <span class="swatch" style="background:#4a90d9"></span>
+                <span class="swatch" style="background:#1a5e9c"></span>
+                <span>높음</span>
             </div>
         </div>
         {% endif %}
