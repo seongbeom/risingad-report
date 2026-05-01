@@ -184,16 +184,26 @@ def set_period_range(frame, page, start_date, end_date):
         return out
 
     def _pick_day_cell(day_num):
-        """캘린더 셀 중 day_num 매칭. 29~31은 이전달과 당월 둘 다 등장하므로 두 번째 매칭 클릭."""
+        """캘린더 셀 중 day_num 매칭하면서 disabled/이전달·다음달 회색 셀은 skip.
+        남은 enabled 셀의 첫 매칭 클릭 (당월 day_num 의미)."""
         cells = frame.query_selector_all("td button")
-        matches = [c for c in cells if c.is_visible() and c.evaluate("el => el.textContent?.trim() || ''") == str(day_num)]
+        matches = []
+        for c in cells:
+            if not c.is_visible():
+                continue
+            if c.evaluate("el => el.textContent?.trim() || ''") != str(day_num):
+                continue
+            disabled = c.evaluate("""el => {
+                if (el.disabled || el.getAttribute('aria-disabled') === 'true') return true;
+                const cls = (el.className || '') + ' ' + ((el.closest('td') || {}).className || '');
+                return /disabled|grey|gray|other[-_]month|prev[-_]month|next[-_]month|outside/i.test(cls);
+            }""")
+            if disabled:
+                continue
+            matches.append(c)
         if not matches:
             return False
-        if day_num >= 29 and len(matches) >= 2:
-            target = matches[1]
-        else:
-            target = matches[0]
-        target.click()
+        matches[0].click()
         page.wait_for_timeout(800)
         return True
 
