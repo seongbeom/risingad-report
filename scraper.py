@@ -184,83 +184,75 @@ def set_period_range(frame, page, start_date, end_date):
                 out.append((t, b))
         return out
 
-    def _navigate_calendar_to(target_y, target_m):
-        """react-day-picker (rdp-) 캘린더가 target year-month 가 되도록 prev/next 클릭.
-        헤더 텍스트(예: 'April 2026' / '2026년 4월')를 보고 target과 비교해 navigate."""
-        for _ in range(36):  # 안전 한도
-            hdr = frame.locator(".rdp-caption_label, .rdp-month_caption").first
-            if hdr.count() == 0:
-                break
-            label = (hdr.evaluate("el => el.textContent?.trim() || ''") or "").strip()
-            cur_y, cur_m = None, None
-            m1 = re.search(r"(\d{4})[년\s\-./](\s*)(\d{1,2})\s*월", label)
-            if m1:
-                cur_y, cur_m = int(m1.group(1)), int(m1.group(3))
-            else:
-                months_en = ["January","February","March","April","May","June","July","August","September","October","November","December"]
-                for i, name in enumerate(months_en, 1):
-                    if name.lower() in label.lower():
-                        cur_m = i
-                        my = re.search(r"(\d{4})", label)
-                        if my:
-                            cur_y = int(my.group(1))
+    def _click_target_date(target_date_str, idx):
+        """캘린더 popup이 열려있다 가정. target_date 가 잡히도록 trial-and-error.
+        - 현재 캘린더에서 target_d 매칭 enabled (outside/disabled 아닌) 셀 찾아 클릭
+        - 클릭 후 idx(0=시작일, 1=종료일) button 텍스트가 target_date 가 됐는지 검증
+        - 안 됐으면 prev 한 번 누르고 재시도. 캘린더 popup이 닫혔으면 button 다시 클릭
+        - 최대 24개월 prev (RDP 헤더 못 읽어도 작동)."""
+        target_d = int(target_date_str[8:10])
+        for attempt in range(24):
+            cand = None
+            for c in frame.query_selector_all("td button"):
+                try:
+                    if not c.is_visible():
+                        continue
+                    if c.evaluate("el => el.textContent?.trim() || ''") != str(target_d):
+                        continue
+                    skip = c.evaluate("""el => {
+                        if (el.disabled) return true;
+                        if (el.getAttribute('aria-disabled') === 'true') return true;
+                        const cls = ' ' + (el.className || '') + ' ';
+                        return cls.includes(' rdp-day_outside ') || cls.includes(' rdp-day_disabled ');
+                    }""")
+                    if not skip:
+                        cand = c
                         break
-            if cur_y is None or cur_m is None:
-                break
-            diff = (cur_y * 12 + cur_m) - (target_y * 12 + target_m)
-            if diff == 0:
-                return True
-            sel = "button[aria-label='Go to previous month']" if diff > 0 else "button[aria-label='Go to next month']"
-            btn = frame.locator(sel).first
-            if btn.count() == 0:
-                break
-            btn.click()
-            page.wait_for_timeout(400)
+                except Exception:
+                    continue
+
+            if cand:
+                try:
+                    cand.click()
+                    page.wait_for_timeout(800)
+                except Exception:
+                    pass
+                btns = _date_btns()
+                if len(btns) > idx and btns[idx][0] == target_date_str:
+                    return True
+                # 잘못된 month 였음 → 캘린더 popup 다시 열기
+                if len(btns) > idx:
+                    try:
+                        btns[idx][1].click()
+                        page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
+
+            # target month 아직 안 보임 → prev 한 번
+            prev_btn = frame.locator("button[aria-label='Go to previous month']").first
+            try:
+                if prev_btn.count() > 0 and prev_btn.is_visible():
+                    prev_btn.click()
+                    page.wait_for_timeout(400)
+                else:
+                    return False
+            except Exception:
+                return False
         return False
 
-    def _pick_day_cell(day_num):
-        """캘린더 셀 중 day_num 매칭. rdp-day_outside (이전/다음달 회색) 와
-        disabled / aria-disabled 셀은 skip. 남은 첫 셀 클릭."""
-        cells = frame.query_selector_all("td button")
-        matches = []
-        for c in cells:
-            if not c.is_visible():
-                continue
-            if c.evaluate("el => el.textContent?.trim() || ''") != str(day_num):
-                continue
-            skip = c.evaluate("""el => {
-                if (el.disabled) return true;
-                if (el.getAttribute('aria-disabled') === 'true') return true;
-                const cls = ' ' + (el.className || '') + ' ';
-                return cls.includes(' rdp-day_outside ') || cls.includes(' rdp-day_disabled ');
-            }""")
-            if skip:
-                continue
-            matches.append(c)
-        if not matches:
-            return False
-        matches[0].click()
-        page.wait_for_timeout(800)
-        return True
-
-    start_y, start_m = int(start_date[:4]), int(start_date[5:7])
-    end_y, end_m = int(end_date[:4]), int(end_date[5:7])
-
-    # 2) 시작일 button click → 캘린더 popup → 해당 month 까지 navigate → start_day 클릭
+    # 2) 시작일 button click → 캘린더 popup → start_date 클릭 (trial-and-error month nav)
     btns = _date_btns()
     if len(btns) >= 1:
         btns[0][1].click()
         page.wait_for_timeout(1200)
-        _navigate_calendar_to(start_y, start_m)
-        _pick_day_cell(start_day)
+        _click_target_date(start_date, 0)
 
-    # 3) 종료일 button click → 캘린더 popup → end_day 클릭
+    # 3) 종료일 button click → 캘린더 popup → end_date 클릭
     btns = _date_btns()
     if len(btns) >= 2:
         btns[1][1].click()
         page.wait_for_timeout(1200)
-        _navigate_calendar_to(end_y, end_m)
-        _pick_day_cell(end_day)
+        _click_target_date(end_date, 1)
 
     # 4) 시작/종료 텍스트 검증
     btns = _date_btns()
