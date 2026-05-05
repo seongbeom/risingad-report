@@ -198,7 +198,7 @@ def index():
 @login_required
 def add_account():
     cafe24_id = request.form["cafe24_id"].strip()
-    sub_id = request.form["sub_id"].strip()
+    sub_id = request.form.get("sub_id", "").strip()
     password = request.form["password"].strip()
     label = request.form.get("label", "").strip()
     spreadsheet_id = request.form.get("spreadsheet_id", "").strip()
