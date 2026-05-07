@@ -121,6 +121,20 @@ def _date_from_run(run):
     return (run.get("started_at") or "")[:10]
 
 
+def _short_error(err):
+    """traceback 전체에서 사람이 빠르게 읽을 수 있는 한 줄 요약을 뽑는다.
+    마지막 비어있지 않은 라인이 보통 'ExceptionType: 메시지' 형태라 그걸 우선."""
+    if not err:
+        return ""
+    lines = [ln.strip() for ln in str(err).splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    last = lines[-1]
+    if len(last) > 140:
+        last = last[:137] + "..."
+    return last
+
+
 def _scheduled_job(account_id):
     """스케줄러에서 직접 호출 (max_workers=1로 큐잉돼 직렬 실행됨).
     수동 실행은 별도 thread로 띄우되 _run_lock으로 동일하게 직렬화."""
@@ -181,6 +195,7 @@ def index():
     for r in runs:
         r["display_date"] = _date_from_run(r)
         r["hourly_count"] = db.count_metrics_hourly(r["account_id"], r["display_date"]) if r["display_date"] else 0
+        r["error_summary"] = _short_error(r.get("error"))
     schedules = {s["account_id"]: s for s in db.list_schedules()}
     return render_template(
         "index.html",

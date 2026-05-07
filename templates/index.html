@@ -204,6 +204,12 @@
         <!-- 최근 실행 기록 -->
         <div class="card">
             <h2>최근 실행 기록</h2>
+            <p style="font-size:0.78rem;color:#888;margin:-6px 0 12px">
+                <strong>시간별</strong> 컬럼은 해당 일자에 DB로 저장된 시간 행 개수입니다.
+                카페24가 매출 0원이거나 활동 없는 새벽 시간대는 행 자체를 안 주기도 해서
+                24개가 다 안 모이는 날도 있어요. 20시간 이상이면 정상(녹색), 1~19시간은 경고(주황),
+                0이면 시간별 미수집(회색).
+            </p>
             {% if runs %}
             <table>
                 <thead>
@@ -221,18 +227,18 @@
                             {% elif r.status == 'running' %}
                                 <span class="badge badge-running">실행중</span>
                             {% else %}
-                                <span class="badge badge-error" title="{{ r.error or '' }}">실패</span>
+                                <span class="badge badge-error">실패</span>
                             {% endif %}
                         </td>
                         <td style="font-size:0.85rem;color:#555">{{ r.display_date or '-' }}</td>
                         <td>
                             {% if r.status == 'success' %}
                                 {% if r.hourly_count and r.hourly_count >= 20 %}
-                                    <span class="badge badge-success" title="시간별 {{ r.hourly_count }}/24행 수집">{{ r.hourly_count }}/24</span>
+                                    <span class="badge badge-success" title="시간별 {{ r.hourly_count }}시간 수집됨">{{ r.hourly_count }}시간</span>
                                 {% elif r.hourly_count and r.hourly_count > 0 %}
-                                    <span class="badge" style="background:#f0ad4e;color:#fff" title="시간별 데이터 부족">{{ r.hourly_count }}/24</span>
+                                    <span class="badge" style="background:#f0ad4e;color:#fff" title="시간별 {{ r.hourly_count }}시간만 수집 (24개 미만)">{{ r.hourly_count }}시간</span>
                                 {% else %}
-                                    <span class="badge" style="background:#aaa;color:#fff" title="시간별 미수집">0/24</span>
+                                    <span class="badge" style="background:#aaa;color:#fff" title="시간별 미수집">미수집</span>
                                 {% endif %}
                             {% else %}-
                             {% endif %}
@@ -243,6 +249,19 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if r.status not in ['success', 'running'] and r.error_summary %}
+                    <tr>
+                        <td colspan="7" style="background:#fff5f5;border-top:none;padding:6px 12px">
+                            <details style="font-size:0.8rem;color:#721c24">
+                                <summary style="cursor:pointer;font-weight:500">
+                                    <span style="color:#c0392b">실패 사유:</span> {{ r.error_summary }}
+                                    <span style="color:#999;font-weight:normal;font-size:0.75rem">(클릭하면 전체 traceback)</span>
+                                </summary>
+                                <pre style="margin-top:6px;white-space:pre-wrap;word-break:break-word;font-size:0.72rem;color:#555;background:#fff;padding:8px;border-radius:4px;border:1px solid #f1d0d0;max-height:240px;overflow:auto">{{ r.error }}</pre>
+                            </details>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
