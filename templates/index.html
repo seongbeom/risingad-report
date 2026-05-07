@@ -229,6 +229,12 @@
                             {% else %}
                                 <span class="badge badge-error">실패</span>
                             {% endif %}
+                            {% set att = r.attempts or 1 %}
+                            {% if att > 1 %}
+                                <span style="font-size:0.72rem;color:#c0392b;margin-left:4px" title="{{ att }}회 시도 (재시도 {{ att - 1 }}회)">↻ {{ att }}회</span>
+                            {% elif r.status == 'success' %}
+                                <span style="font-size:0.72rem;color:#999;margin-left:4px" title="1회 시도 (재시도 없음)">1회</span>
+                            {% endif %}
                         </td>
                         <td style="font-size:0.85rem;color:#555">{{ r.display_date or '-' }}</td>
                         <td>

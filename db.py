@@ -110,6 +110,11 @@ def init_db():
         if "spreadsheet_id" not in cols:
             conn.execute("ALTER TABLE accounts ADD COLUMN spreadsheet_id TEXT DEFAULT ''")
 
+        # runs.attempts 마이그레이션 (1회 시도가 기본, 재시도 시 증가)
+        run_cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
+        if "attempts" not in run_cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN attempts INTEGER DEFAULT 1")
+
 
 # --- 일별 지표 CRUD ---
 
@@ -329,12 +334,18 @@ def add_run(account_id):
         return cur.lastrowid
 
 
-def finish_run(run_id, status, result_file=None, error=None):
+def finish_run(run_id, status, result_file=None, error=None, attempts=None):
     with db_conn() as conn:
-        conn.execute(
-            "UPDATE runs SET finished_at=datetime('now','localtime'), status=?, result_file=?, error=? WHERE id=?",
-            (status, result_file, error, run_id),
-        )
+        if attempts is not None:
+            conn.execute(
+                "UPDATE runs SET finished_at=datetime('now','localtime'), status=?, result_file=?, error=?, attempts=? WHERE id=?",
+                (status, result_file, error, attempts, run_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE runs SET finished_at=datetime('now','localtime'), status=?, result_file=?, error=? WHERE id=?",
+                (status, result_file, error, run_id),
+            )
 
 
 def list_runs(account_id=None, limit=20):

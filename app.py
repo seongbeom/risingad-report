@@ -61,10 +61,12 @@ def _run_scrape_task(account_id):
         run_id = db.add_run(account_id)
         _running[account_id] = run_id
 
+        attempts_used = 0
         try:
             results = None
             last_err = None
             for attempt in range(1, SCRAPE_MAX_ATTEMPTS + 1):
+                attempts_used = attempt
                 try:
                     results = scraper.run_scrape(account)
                     break
@@ -74,7 +76,7 @@ def _run_scrape_task(account_id):
                     if attempt < SCRAPE_MAX_ATTEMPTS:
                         time.sleep(SCRAPE_RETRY_DELAY_SEC)
             if results is None:
-                db.finish_run(run_id, "error", error=last_err or "scrape failed after retries")
+                db.finish_run(run_id, "error", error=last_err or "scrape failed after retries", attempts=attempts_used)
                 return
 
             scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
@@ -84,7 +86,7 @@ def _run_scrape_task(account_id):
             if results.get("_is_sample"):
                 msg = f"[{account_id}] is_sample=True - 카페24 Premium 만료 또는 권한 문제. 시트/DB 입력 스킵"
                 print(msg)
-                db.finish_run(run_id, "error", error="cafe24 returned sample data (premium expired?)")
+                db.finish_run(run_id, "error", error="cafe24 returned sample data (premium expired?)", attempts=attempts_used)
                 return
 
             # DB 저장 (대시보드 쿼리용)
@@ -106,9 +108,9 @@ def _run_scrape_task(account_id):
             else:
                 print(f"[{account_id}] spreadsheet_id 미설정 - 시트 입력 스킵, JSON만 저장됨")
 
-            db.finish_run(run_id, "success", result_file=result_file)
+            db.finish_run(run_id, "success", result_file=result_file, attempts=attempts_used)
         except Exception:
-            db.finish_run(run_id, "error", error=traceback.format_exc())
+            db.finish_run(run_id, "error", error=traceback.format_exc(), attempts=attempts_used or 1)
         finally:
             _running.pop(account_id, None)
 
