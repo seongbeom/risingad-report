@@ -252,6 +252,11 @@
                         <td>
                             {% if r.status == 'success' %}
                                 <a href="/results/{{ r.account_id }}?date={{ r.display_date or r.started_at[:10] }}" class="btn btn-primary btn-sm" style="text-decoration:none">보기</a>
+                            {% elif r.status not in ['running'] %}
+                                <form method="POST" action="/run/{{ r.account_id }}" style="display:inline" onsubmit="return confirm('{{ r.display_date or r.started_at[:10] }} 일자로 다시 스크래핑할까요?')">
+                                    <input type="hidden" name="date" value="{{ r.display_date or r.started_at[:10] }}">
+                                    <button class="btn btn-sm" type="submit" style="background:#e67e22;color:#fff" title="해당 일자로 재시도">↻ 재시도</button>
+                                </form>
                             {% endif %}
                         </td>
                     </tr>

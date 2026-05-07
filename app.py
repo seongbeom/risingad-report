@@ -50,9 +50,10 @@ SCRAPE_MAX_ATTEMPTS = 3  # 1차 + 재시도 2회 (reCAPTCHA 풀이 운에 의존
 SCRAPE_RETRY_DELAY_SEC = 15
 
 
-def _run_scrape_task(account_id):
+def _run_scrape_task(account_id, target_date=None):
     """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지).
-    실패 시 N회 재시도. is_sample(Premium 만료)는 재시도 의미 없으니 즉시 종료."""
+    실패 시 N회 재시도. is_sample(Premium 만료)는 재시도 의미 없으니 즉시 종료.
+    target_date 지정 시 해당 일자로, 미지정 시 어제."""
     with _run_lock:
         account = db.get_account(account_id)
         if not account:
@@ -68,7 +69,7 @@ def _run_scrape_task(account_id):
             for attempt in range(1, SCRAPE_MAX_ATTEMPTS + 1):
                 attempts_used = attempt
                 try:
-                    results = scraper.run_scrape(account)
+                    results = scraper.run_scrape(account, target_date=target_date)
                     break
                 except Exception:
                     last_err = traceback.format_exc()
@@ -268,7 +269,13 @@ def delete_schedule(account_id):
 def run_now(account_id):
     if account_id in _running:
         return jsonify({"error": "이미 실행 중입니다"}), 409
-    t = threading.Thread(target=_run_scrape_task, args=(account_id,), daemon=True)
+    target_date = (request.form.get("date") or "").strip() or None
+    if target_date:
+        try:
+            datetime.strptime(target_date, "%Y-%m-%d")
+        except ValueError:
+            target_date = None
+    t = threading.Thread(target=_run_scrape_task, args=(account_id, target_date), daemon=True)
     t.start()
     return redirect(url_for("index"))
 
