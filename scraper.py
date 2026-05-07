@@ -76,12 +76,31 @@ def login(page, account):
         detector = Detector()
         for ko, en in KO_ALIAS.items():
             detector.challenge_alias[ko] = en
-        challenger = SyncChallenger(page, click_timeout=3000)
-        challenger.detector = detector
-        try:
-            challenger.solve_recaptcha()
-        except Exception:
-            pass  # invisible 등 풀 수 없는 경우 그냥 진행
+
+        def _attempt_solve():
+            challenger = SyncChallenger(page, click_timeout=3000)
+            challenger.detector = detector
+            try:
+                challenger.solve_recaptcha()
+            except Exception as e:
+                print(f"[login] solve_recaptcha 실패: {e}")
+
+        def _challenge_open():
+            # bframe = 이미지 챌린지 popup. 열려있으면 로그인 버튼 클릭 가능 못함
+            try:
+                return page.locator("iframe[title*='reCAPTCHA 보안문자']").first.is_visible()
+            except Exception:
+                return False
+
+        for solve_try in range(3):
+            _attempt_solve()
+            page.wait_for_timeout(1500)
+            if not _challenge_open():
+                break
+            print(f"[login] 챌린지 iframe 아직 열림 - 재시도 {solve_try + 1}/3")
+
+        if _challenge_open():
+            raise RuntimeError("reCAPTCHA 이미지 챌린지를 풀지 못해 로그인 버튼이 가려져 있음 (3회 시도 실패)")
 
     page.wait_for_timeout(1000)
     page.click("button.btnStrong.large")
