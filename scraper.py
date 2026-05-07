@@ -72,38 +72,44 @@ def login(page, account):
 
     # reCAPTCHA: 있으면 풀고, 없으면 스킵
     recaptcha_iframe = page.query_selector("iframe[title*='reCAPTCHA']")
-    if recaptcha_iframe:
+    has_captcha = bool(recaptcha_iframe)
+    detector = None
+    if has_captcha:
         detector = Detector()
         for ko, en in KO_ALIAS.items():
             detector.challenge_alias[ko] = en
 
-        def _attempt_solve():
-            challenger = SyncChallenger(page, click_timeout=3000)
-            challenger.detector = detector
-            try:
-                challenger.solve_recaptcha()
-            except Exception as e:
-                print(f"[login] solve_recaptcha 실패: {e}")
+    def _attempt_solve():
+        if not has_captcha:
+            return
+        challenger = SyncChallenger(page, click_timeout=3000)
+        challenger.detector = detector
+        try:
+            challenger.solve_recaptcha()
+        except Exception as e:
+            print(f"[login] solve_recaptcha 실패: {e}")
 
-        def _challenge_open():
-            # bframe = 이미지 챌린지 popup. 열려있으면 로그인 버튼 클릭 가능 못함
-            try:
-                return page.locator("iframe[title*='reCAPTCHA 보안문자']").first.is_visible()
-            except Exception:
-                return False
+    if has_captcha:
+        _attempt_solve()
+        page.wait_for_timeout(1500)
 
-        for solve_try in range(3):
-            _attempt_solve()
-            page.wait_for_timeout(1500)
-            if not _challenge_open():
-                break
-            print(f"[login] 챌린지 iframe 아직 열림 - 재시도 {solve_try + 1}/3")
-
-        if _challenge_open():
-            raise RuntimeError("reCAPTCHA 이미지 챌린지를 풀지 못해 로그인 버튼이 가려져 있음 (3회 시도 실패)")
-
-    page.wait_for_timeout(1000)
-    page.click("button.btnStrong.large")
+    # 로그인 버튼 클릭: 챌린지 iframe이 가리는 상태면 캡챠 다시 풀고 재시도.
+    # 검출은 .is_visible() 보다 실제 click 시도 결과로 판단하는 게 더 안정적임 (bframe 래퍼가 hidden 처럼 보일 때가 있음)
+    page.wait_for_timeout(500)
+    last_err = None
+    for click_try in range(4):
+        try:
+            page.click("button.btnStrong.large", timeout=10000)
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            print(f"[login] 로그인 버튼 클릭 실패 - {click_try + 1}/4 (캡챠 챌린지 의심)")
+            if has_captcha and click_try < 3:
+                _attempt_solve()
+                page.wait_for_timeout(2000)
+    if last_err is not None:
+        raise RuntimeError(f"로그인 버튼 클릭 실패 (reCAPTCHA 챌린지 안 풀린 것으로 추정): {last_err}")
     page.wait_for_url(lambda url: "eclogin.cafe24.com" not in url, timeout=60000)
 
 
