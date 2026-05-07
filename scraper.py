@@ -158,11 +158,26 @@ def _click_calendar_day(frame, page, day_num):
     return False
 
 
+def _wait_loading_idle(frame, page, timeout_ms=20000):
+    """카페24 분석 페이지의 반투명 로딩 마스크(bg-white/30 z-10)가 사라질 때까지 대기.
+    이 마스크가 떠있으면 dropdown/캘린더 클릭이 pointer event 가로채여 timeout 남."""
+    try:
+        overlay = frame.locator("div.bg-white\\/30").first
+        if overlay.count() > 0:
+            overlay.wait_for(state="hidden", timeout=timeout_ms)
+    except Exception:
+        pass
+    page.wait_for_timeout(200)
+
+
 def set_period_range(frame, page, start_date, end_date):
     """기간 설정: 기간 선택 모드 → 시작일 button → 캘린더에서 day → 종료일 button → 캘린더에서 day → 조회.
     카페24 캘린더는 default로 현재 월(이번 달)이 떠있어서 navigate 없이 바로 day 클릭이 정상."""
     start_day = int(start_date.split("-")[2])
     end_day = int(end_date.split("-")[2])
+
+    # 0) default 7일 데이터 로딩이 끝날 때까지 대기 (이게 끝나야 dropdown 클릭 가능)
+    _wait_loading_idle(frame, page)
 
     # 1) 기간 드롭다운 → 기간 선택
     for text in ["7일", "1개월", "3개월", "6개월", "오늘"]:
@@ -170,9 +185,19 @@ def set_period_range(frame, page, start_date, end_date):
         if b and b.evaluate("el => el.textContent?.trim() || ''") == text:
             b.click()
             page.wait_for_timeout(800)
+            _wait_loading_idle(frame, page)
             opt = frame.locator("text=기간 선택").first
             if opt.count() > 0:
-                opt.click()
+                try:
+                    opt.click(timeout=15000)
+                except Exception:
+                    # dropdown 이 닫혔으면 버튼 다시 눌러 열고 재시도
+                    b.click()
+                    page.wait_for_timeout(800)
+                    _wait_loading_idle(frame, page)
+                    opt = frame.locator("text=기간 선택").first
+                    if opt.count() > 0:
+                        opt.click(timeout=15000)
                 page.wait_for_timeout(1200)
             break
 
@@ -261,11 +286,13 @@ def set_period_range(frame, page, start_date, end_date):
     if btns:
         print(f"[set_period_range] 적용된 버튼 텍스트: {[t for t,_ in btns]}")
 
-    # 5) 조회 클릭
+    # 5) 조회 클릭 (이전 로딩이 안 끝났으면 대기)
+    _wait_loading_idle(frame, page)
     search_btn = frame.query_selector("button:has-text('조회')")
     if search_btn:
         search_btn.click()
         page.wait_for_timeout(5000)
+        _wait_loading_idle(frame, page)
 
 
 def scrape_table(frame, table_index=0):
