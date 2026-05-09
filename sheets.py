@@ -153,31 +153,42 @@ def extract_metrics(result):
     return m
 
 
+DEFAULT_HOURLY_HEADERS = ["일시", "구매자수", "구매건수", "구매개수", "매출액", "비교값", "증감"]
+
+
 def extract_hourly_rows(result):
-    """result['매출종합_시간별'] popup 테이블에서 24시간 row 파싱.
+    """result['매출종합_시간별'] popup 테이블에서 시간 row 파싱.
     cafe24 시간단위 매출종합 컬럼: ['일시', '구매자수', '구매건수', '구매개수', '매출액', '비교값', '증감'].
-    24행 짜리 테이블(헤더에 '일시' 포함, row[0]이 시간)을 우선 매칭.
+    매출 적은 계정은 매출 0인 시간 행을 cafe24가 생략해서 1~3행만 올 수도 있으므로 row count 필터 안 함.
+    헤더에 '일시'/'시간' 포함된 테이블이 hourly (합계 테이블은 '구분'으로 시작).
     반환: list of dict {hour, 매출, 구매건수, 객단가, 매출액비교, 매출액증감}.
     """
     section = result.get("매출종합_시간별", {})
     if not isinstance(section, dict):
         return []
-    # 헤더에 '일시' 들어가고 row 24개에 가까운 테이블 선택
     table = None
     for v in section.values():
         if not isinstance(v, dict):
             continue
         headers = v.get("headers") or []
-        if any("일시" in h or "시간" in h for h in headers) and len(v.get("rows") or []) >= 5:
+        if any("일시" in h or "시간" in h for h in headers) and v.get("rows"):
             table = v
             break
     if not table:
         return []
 
     headers = table.get("headers") or []
+
     def col_index(*candidates):
+        # 1) 실제 헤더에서 매칭
         for cand in candidates:
             for i, h in enumerate(headers):
+                if cand in h:
+                    return i
+        # 2) 헤더가 truncate 됐을 수 있음 (cafe24가 적은 데이터 day엔 headers 일부만 줌)
+        # 표준 컬럼 순서로 fallback
+        for cand in candidates:
+            for i, h in enumerate(DEFAULT_HOURLY_HEADERS):
                 if cand in h:
                     return i
         return None
