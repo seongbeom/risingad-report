@@ -1,0 +1,339 @@
+{# 팀 메모/피드백 FAB + 슬라이드 패널. base 레이아웃 없는 환경에서 각 페이지 끝에 include #}
+{% if user %}
+<style>
+  .fb-fab { position: fixed; right: 22px; bottom: 22px; z-index: 50; width: 52px; height: 52px;
+    border-radius: 50%; border: none; background: #4a90d9; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform .15s; }
+  .fb-fab:hover { transform: translateY(-2px); }
+  .fb-fab svg { width: 24px; height: 24px; }
+  .fb-badge { position: absolute; top: -4px; right: -4px; background: #e74c3c; color: #fff; font-size: 0.72rem;
+    font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 6px; display: none;
+    align-items: center; justify-content: center; line-height: 1; }
+  .fb-badge.on { display: inline-flex; }
+  .fb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.32); z-index: 60; display: none; }
+  .fb-overlay.open { display: block; }
+  .fb-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 400px; max-width: 92vw; background: #fff;
+    z-index: 61; box-shadow: -4px 0 18px rgba(0,0,0,0.18); transform: translateX(110%); transition: transform .25s;
+    display: flex; flex-direction: column; }
+  .fb-panel.open { transform: translateX(0); }
+  .fb-header { padding: 14px 18px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .fb-header h3 { font-size: 1rem; margin: 0; }
+  .fb-close { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: #888; line-height: 1; }
+  .fb-body { flex: 1; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .fb-compose { display: flex; flex-direction: column; gap: 6px; }
+  .fb-compose textarea { padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.88rem;
+    resize: vertical; min-height: 60px; font-family: inherit; }
+  .fb-compose .row { display: flex; justify-content: space-between; align-items: center; }
+  .fb-btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
+    background: #4a90d9; color: #fff; font-weight: 500; }
+  .fb-btn:hover { background: #3a7bc8; }
+  .fb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .fb-btn-mini { padding: 3px 8px; font-size: 0.74rem; background: #e9ecef; color: #333; }
+  .fb-btn-mini:hover { background: #d5dade; color: #000; }
+  .fb-btn-danger { background: transparent; color: #c0392b; padding: 2px 6px; font-size: 0.74rem; }
+  .fb-btn-danger:hover { background: #fff0ee; }
+  .fb-thread { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 10px 12px; }
+  .fb-thread-meta { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; color: #777; margin-bottom: 6px; flex-wrap: wrap; }
+  .fb-thread-meta .author { font-weight: 600; color: #333; }
+  .fb-thread-meta .spacer { flex: 1; }
+  .fb-status-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+  .fb-status-open { background: #e9ecef; color: #495057; }
+  .fb-status-in_progress { background: #ede9fe; color: #6d28d9; }
+  .fb-status-done { background: #d4edda; color: #155724; }
+  .fb-status-select { font-size: 0.74rem; padding: 1px 4px; border-radius: 4px; border: 1px solid #ddd; background: #fff; }
+  .fb-thread-body { font-size: 0.88rem; color: #222; white-space: pre-wrap; word-break: break-word; }
+  .fb-replies-toggle { margin-top: 8px; cursor: pointer; font-size: 0.78rem; color: #4a90d9; user-select: none; }
+  .fb-replies { margin-top: 8px; display: none; padding-left: 10px; border-left: 2px solid #e0e0e0; flex-direction: column; gap: 8px; }
+  .fb-replies.open { display: flex; }
+  .fb-reply { font-size: 0.82rem; }
+  .fb-reply-meta { font-size: 0.7rem; color: #888; display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
+  .fb-reply-body { color: #555; white-space: pre-wrap; word-break: break-word; }
+  .fb-reply-form { display: flex; gap: 6px; margin-top: 6px; }
+  .fb-reply-form textarea { flex: 1; min-height: 40px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.82rem; font-family: inherit; resize: vertical; }
+  .fb-empty { text-align: center; padding: 20px; color: #aaa; font-size: 0.85rem; }
+</style>
+
+<button class="fb-fab" id="fb-fab" title="팀 메모">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+  </svg>
+  <span class="fb-badge" id="fb-badge">0</span>
+</button>
+
+<div class="fb-overlay" id="fb-overlay"></div>
+<aside class="fb-panel" id="fb-panel" aria-hidden="true">
+  <div class="fb-header">
+    <h3>팀 메모 / 피드백</h3>
+    <button class="fb-close" id="fb-close" aria-label="닫기">&times;</button>
+  </div>
+  <div class="fb-body">
+    <div class="fb-compose">
+      <textarea id="fb-new-body" placeholder="새 메모, 요구사항, 피드백 입력... (Cmd/Ctrl+Enter 등록)"></textarea>
+      <div class="row">
+        <span style="font-size:0.72rem;color:#999" id="fb-user-hint"></span>
+        <button class="fb-btn" id="fb-new-submit">등록</button>
+      </div>
+    </div>
+    <div id="fb-threads"></div>
+  </div>
+</aside>
+
+<script>
+(function() {
+  const fab = document.getElementById('fb-fab');
+  const badge = document.getElementById('fb-badge');
+  const panel = document.getElementById('fb-panel');
+  const overlay = document.getElementById('fb-overlay');
+  const closeBtn = document.getElementById('fb-close');
+  const threadsEl = document.getElementById('fb-threads');
+  const newBody = document.getElementById('fb-new-body');
+  const newSubmit = document.getElementById('fb-new-submit');
+  const userHint = document.getElementById('fb-user-hint');
+
+  let currentUser = null;
+  let isAdmin = false;
+  let threads = [];
+
+  const STATUS_LABELS = { open: '확인', in_progress: '진행중', done: '완료' };
+
+  function fmtTime(ts) {
+    const d = new Date(ts * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    if (sameDay) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function setBadge(n) {
+    if (n > 0) {
+      badge.textContent = n > 99 ? '99+' : n;
+      badge.classList.add('on');
+    } else {
+      badge.classList.remove('on');
+    }
+  }
+
+  function el(tag, attrs = {}, children = []) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k === 'style') e.style.cssText = v;
+      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else if (k === 'text') e.textContent = v;
+      else e.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) {
+      if (c == null) continue;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return e;
+  }
+
+  function renderReply(reply, parentId) {
+    const meta = el('div', { class: 'fb-reply-meta' }, [
+      el('strong', { text: reply.author }),
+      ` · ${fmtTime(reply.created_at)}`,
+      (reply.author === currentUser || isAdmin)
+        ? el('button', {
+            class: 'fb-btn fb-btn-danger',
+            onclick: () => deleteReply(parentId, reply.id),
+            title: '삭제',
+          }, '삭제')
+        : null,
+    ]);
+    const body = el('div', { class: 'fb-reply-body' });
+    body.textContent = reply.body;
+    return el('div', { class: 'fb-reply' }, [meta, body]);
+  }
+
+  function renderThread(t) {
+    const wrap = el('div', { class: 'fb-thread', 'data-id': t.id });
+
+    const select = el('select', {
+      class: 'fb-status-select',
+      title: '상태 변경',
+      onchange: (e) => changeStatus(t.id, e.target.value),
+    });
+    for (const s of ['open', 'in_progress', 'done']) {
+      const opt = el('option', { value: s, text: STATUS_LABELS[s] });
+      if (s === t.status) opt.selected = true;
+      select.appendChild(opt);
+    }
+
+    const meta = el('div', { class: 'fb-thread-meta' }, [
+      el('span', { class: `fb-status-badge fb-status-${t.status}`, text: STATUS_LABELS[t.status] }),
+      el('span', { class: 'author', text: t.author }),
+      ` · ${fmtTime(t.created_at)}`,
+      el('span', { class: 'spacer' }),
+      select,
+      (t.author === currentUser || isAdmin)
+        ? el('button', {
+            class: 'fb-btn fb-btn-danger',
+            onclick: () => deleteThread(t.id),
+            title: '삭제',
+          }, '삭제')
+        : null,
+    ]);
+
+    const body = el('div', { class: 'fb-thread-body' });
+    body.textContent = t.body;
+
+    const repliesEl = el('div', { class: 'fb-replies' });
+    const replyTextarea = el('textarea', { placeholder: '답글...' });
+    const replyForm = el('div', { class: 'fb-reply-form' }, [
+      replyTextarea,
+      el('button', {
+        class: 'fb-btn fb-btn-mini',
+        onclick: () => submitReply(t.id, replyTextarea),
+      }, '답글'),
+    ]);
+    for (const r of (t.replies || [])) repliesEl.appendChild(renderReply(r, t.id));
+    repliesEl.appendChild(replyForm);
+
+    const replyCount = (t.replies || []).length;
+    const toggleLabel = el('span', {
+      class: 'fb-replies-toggle',
+      text: `▸ 답글 ${replyCount}개`,
+      onclick: () => {
+        repliesEl.classList.toggle('open');
+        toggleLabel.textContent = (repliesEl.classList.contains('open') ? '▾' : '▸') + ` 답글 ${replyCount}개`;
+      },
+    });
+
+    wrap.appendChild(meta);
+    wrap.appendChild(body);
+    wrap.appendChild(toggleLabel);
+    wrap.appendChild(repliesEl);
+    return { wrap, repliesEl };
+  }
+
+  function renderAll() {
+    threadsEl.innerHTML = '';
+    if (!threads.length) {
+      threadsEl.appendChild(el('div', { class: 'fb-empty', text: '아직 메모가 없습니다. 첫 메모를 남겨보세요.' }));
+      return;
+    }
+    for (const t of threads) {
+      threadsEl.appendChild(renderThread(t).wrap);
+    }
+  }
+
+  async function fetchThreads(silent = false) {
+    try {
+      const res = await fetch('/api/feedback', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      currentUser = data.user;
+      isAdmin = !!data.is_admin;
+      threads = data.threads || [];
+      const unresolved = threads.filter(t => t.status !== 'done').length;
+      setBadge(unresolved);
+      if (userHint) userHint.textContent = `로그인: ${currentUser}` + (isAdmin ? ' (admin)' : '');
+      if (!silent) renderAll();
+    } catch (e) { console.warn('feedback fetch fail', e); }
+  }
+
+  async function postJson(url, payload) {
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+    return res;
+  }
+
+  async function submitNew() {
+    const body = newBody.value.trim();
+    if (!body) return;
+    newSubmit.disabled = true;
+    try {
+      const res = await postJson('/api/feedback', { body });
+      if (!res.ok) { alert('등록 실패'); return; }
+      const data = await res.json();
+      threads.unshift(data.thread);
+      newBody.value = '';
+      setBadge(threads.filter(t => t.status !== 'done').length);
+      renderAll();
+    } finally {
+      newSubmit.disabled = false;
+    }
+  }
+
+  async function submitReply(threadId, textarea) {
+    const body = textarea.value.trim();
+    if (!body) return;
+    const res = await postJson(`/api/feedback/${threadId}/reply`, { body });
+    if (!res.ok) { alert('답글 등록 실패'); return; }
+    const data = await res.json();
+    const t = threads.find(x => x.id === threadId);
+    if (t) {
+      t.replies = (t.replies || []).concat(data.reply);
+      renderAll();
+      // 답글 등록 후 해당 스레드의 답글 패널 다시 펼치기
+      const node = threadsEl.querySelector(`.fb-thread[data-id="${threadId}"] .fb-replies`);
+      if (node) {
+        node.classList.add('open');
+        const tog = threadsEl.querySelector(`.fb-thread[data-id="${threadId}"] .fb-replies-toggle`);
+        if (tog) tog.textContent = `▾ 답글 ${t.replies.length}개`;
+      }
+    }
+  }
+
+  async function changeStatus(threadId, status) {
+    const res = await postJson(`/api/feedback/${threadId}/status`, { status });
+    if (!res.ok) { alert('상태 변경 실패'); return; }
+    const t = threads.find(x => x.id === threadId);
+    if (t) t.status = status;
+    setBadge(threads.filter(t => t.status !== 'done').length);
+    renderAll();
+  }
+
+  async function deleteThread(threadId) {
+    if (!confirm('스레드를 삭제할까요? (답글도 함께 삭제됩니다)')) return;
+    const res = await postJson(`/api/feedback/${threadId}/delete`);
+    if (!res.ok) { alert('삭제 실패'); return; }
+    threads = threads.filter(t => t.id !== threadId);
+    setBadge(threads.filter(t => t.status !== 'done').length);
+    renderAll();
+  }
+
+  async function deleteReply(threadId, replyId) {
+    if (!confirm('답글을 삭제할까요?')) return;
+    const res = await postJson(`/api/feedback/${replyId}/delete`);
+    if (!res.ok) { alert('삭제 실패'); return; }
+    const t = threads.find(x => x.id === threadId);
+    if (t) t.replies = (t.replies || []).filter(r => r.id !== replyId);
+    renderAll();
+  }
+
+  function open() {
+    overlay.classList.add('open');
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fetchThreads();
+  }
+
+  function close() {
+    overlay.classList.remove('open');
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+
+  fab.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) close();
+  });
+  newSubmit.addEventListener('click', submitNew);
+  newBody.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitNew(); }
+  });
+
+  // 페이지 로드 시 silent 카운트 갱신
+  fetchThreads(true);
+})();
+</script>
+{% endif %}

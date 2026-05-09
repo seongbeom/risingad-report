@@ -19,9 +19,31 @@ import sheets
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cafe24-scraper-secret-key-change-me")
 
-# 로그인 설정 (.env 의 ADMIN_USER / ADMIN_PASS 우선)
+# 로그인 설정 (.env)
+# ADMIN_USERS="alice:pw1,bob:pw2" 형식으로 여러 사용자 지정 가능 (첫 번째가 super admin)
+# 미지정 시 기존 ADMIN_USER / ADMIN_PASS 단일 계정으로 fallback (그 단일 계정이 admin)
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
+
+
+def _users():
+    raw = os.environ.get("ADMIN_USERS", "").strip()
+    pairs = []
+    if raw:
+        for chunk in raw.split(","):
+            chunk = chunk.strip()
+            if ":" in chunk:
+                u, p = chunk.split(":", 1)
+                if u and p:
+                    pairs.append((u.strip(), p.strip()))
+    if not pairs:
+        pairs = [(ADMIN_USER, ADMIN_PASS)]
+    return pairs
+
+
+def _is_admin(username):
+    pairs = _users()
+    return bool(pairs) and pairs[0][0] == username
 
 
 def login_required(f):
@@ -31,6 +53,13 @@ def login_required(f):
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
     return decorated
+
+
+@app.context_processor
+def _inject_user():
+    """모든 템플릿에서 user / is_admin 사용 가능하도록."""
+    user = session.get("username")
+    return {"user": user, "is_admin": _is_admin(user) if user else False}
 
 # 잡을 스케줄러 큐로 직렬 실행 (동시 Chromium 구동 방지 — 메모리 보호)
 # timezone 명시 (Asia/Seoul) — 안 하면 서버 UTC로 동작해서 한국시간과 9시간 어긋남
@@ -175,9 +204,13 @@ reload_schedules()
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
     if request.method == "POST":
-        if request.form["username"] == ADMIN_USER and request.form["password"] == ADMIN_PASS:
-            session["logged_in"] = True
-            return redirect(url_for("index"))
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "").strip()
+        for valid_u, valid_p in _users():
+            if u == valid_u and p == valid_p:
+                session["logged_in"] = True
+                session["username"] = valid_u
+                return redirect(url_for("index"))
         return render_template("login.html", error="아이디 또는 비밀번호가 틀렸습니다.")
     return render_template("login.html")
 
@@ -185,6 +218,7 @@ def login_page():
 @app.route("/logout")
 def logout():
     session.pop("logged_in", None)
+    session.pop("username", None)
     return redirect(url_for("login_page"))
 
 
@@ -500,6 +534,110 @@ def api_status():
             for j in scheduler.get_jobs()
         ],
     })
+
+
+# ===== 팀 피드백/메모 위젯 =====
+
+def _current_user_or_401():
+    user = session.get("username")
+    if not user:
+        return None
+    return user
+
+
+@app.route("/api/feedback", methods=["GET"])
+@login_required
+def api_feedback_list():
+    user = _current_user_or_401()
+    if not user:
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({
+        "user": user,
+        "is_admin": _is_admin(user),
+        "threads": db.list_feedback_threads(),
+    })
+
+
+@app.route("/api/feedback", methods=["POST"])
+@login_required
+def api_feedback_create():
+    user = _current_user_or_401()
+    if not user:
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    body = (payload.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "body 비어있음"}), 400
+    thread = db.add_feedback_thread(user, body, time.time())
+    return jsonify({"thread": thread})
+
+
+@app.route("/api/feedback/<int:fid>/reply", methods=["POST"])
+@login_required
+def api_feedback_reply(fid):
+    user = _current_user_or_401()
+    if not user:
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    body = (payload.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "body 비어있음"}), 400
+    reply = db.add_feedback_reply(fid, user, body, time.time())
+    if reply is None:
+        return jsonify({"error": "스레드 루트가 아님"}), 404
+    return jsonify({"reply": reply})
+
+
+@app.route("/api/feedback/<int:fid>/status", methods=["POST"])
+@login_required
+def api_feedback_status(fid):
+    user = _current_user_or_401()
+    if not user:
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    status = (payload.get("status") or "").strip()
+    if status not in db.FEEDBACK_STATUSES:
+        return jsonify({"error": "허용되지 않은 status"}), 400
+    res = db.update_feedback_status(fid, status)
+    if res is None:
+        return jsonify({"error": "스레드 루트가 아님"}), 404
+    if not res:
+        return jsonify({"error": "잘못된 status"}), 400
+    return jsonify({"ok": True, "id": fid, "status": status})
+
+
+@app.route("/api/feedback/<int:fid>/delete", methods=["POST"])
+@login_required
+def api_feedback_delete(fid):
+    user = _current_user_or_401()
+    if not user:
+        return jsonify({"error": "unauthorized"}), 401
+    target = db.get_feedback(fid)
+    if not target:
+        return jsonify({"error": "not found"}), 404
+    if target["author"] != user and not _is_admin(user):
+        return jsonify({"error": "권한 없음"}), 403
+    db.delete_feedback(fid)
+    return jsonify({"ok": True, "id": fid})
+
+
+@app.route("/feedback")
+@login_required
+def feedback_page():
+    return render_template("feedback.html", threads=db.list_feedback_threads())
+
+
+@app.route("/feedback/<int:fid>/status", methods=["POST"])
+@login_required
+def feedback_status_form(fid):
+    """위젯 없이 form-redirect 로 status 변경 (전체 페이지에서)."""
+    user = _current_user_or_401()
+    if not user:
+        return redirect(url_for("login_page"))
+    status = request.form.get("status", "").strip()
+    if status in db.FEEDBACK_STATUSES:
+        db.update_feedback_status(fid, status)
+    return redirect(request.referrer or url_for("feedback_page"))
 
 
 if __name__ == "__main__":

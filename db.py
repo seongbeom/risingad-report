@@ -103,6 +103,18 @@ def init_db():
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_metrics_hourly_date ON metrics_hourly(date);
+
+            -- 팀 메모/피드백 (단일 테이블, parent_id 로 1단계 답글)
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER REFERENCES feedback(id) ON DELETE CASCADE,
+                author TEXT NOT NULL,
+                body TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_feedback_parent ON feedback(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
         """)
 
         # 기존 DB에 spreadsheet_id 컬럼 없으면 추가 (마이그레이션)
@@ -114,6 +126,11 @@ def init_db():
         run_cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
         if "attempts" not in run_cols:
             conn.execute("ALTER TABLE runs ADD COLUMN attempts INTEGER DEFAULT 1")
+
+        # feedback.status 마이그레이션 (이전 버전 테이블 호환)
+        fb_cols = [r[1] for r in conn.execute("PRAGMA table_info(feedback)").fetchall()]
+        if fb_cols and "status" not in fb_cols:
+            conn.execute("ALTER TABLE feedback ADD COLUMN status TEXT NOT NULL DEFAULT 'open'")
 
 
 # --- 일별 지표 CRUD ---
@@ -434,6 +451,116 @@ def list_result_dates(account_id):
         else:
             dates.add(stem)
     return sorted(dates, reverse=True)
+
+
+# --- 팀 피드백 / 메모 ---
+
+FEEDBACK_STATUSES = ("open", "in_progress", "done")
+FEEDBACK_BODY_MAX = 2000
+
+
+def _feedback_row_to_dict(r):
+    return {
+        "id": r["id"],
+        "parent_id": r["parent_id"],
+        "author": r["author"],
+        "body": r["body"],
+        "status": r["status"],
+        "created_at": r["created_at"],
+    }
+
+
+def list_feedback_threads():
+    """루트 스레드(parent_id IS NULL)와 그 답글들을 묶어 반환. 스레드는 최신순, 답글은 작성순 오름차순."""
+    with db_conn() as conn:
+        roots = conn.execute(
+            "SELECT * FROM feedback WHERE parent_id IS NULL ORDER BY created_at DESC"
+        ).fetchall()
+        replies = conn.execute(
+            "SELECT * FROM feedback WHERE parent_id IS NOT NULL ORDER BY created_at ASC"
+        ).fetchall()
+    by_parent = {}
+    for r in replies:
+        by_parent.setdefault(r["parent_id"], []).append(_feedback_row_to_dict(r))
+    threads = []
+    for r in roots:
+        d = _feedback_row_to_dict(r)
+        d["replies"] = by_parent.get(r["id"], [])
+        threads.append(d)
+    return threads
+
+
+def add_feedback_thread(author, body, ts):
+    body = (body or "").strip()[:FEEDBACK_BODY_MAX]
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO feedback (parent_id, author, body, status, created_at) VALUES (NULL, ?, ?, 'open', ?)",
+            (author, body, ts),
+        )
+        new_id = cur.lastrowid
+    return get_feedback(new_id, include_replies=True)
+
+
+def add_feedback_reply(parent_id, author, body, ts):
+    body = (body or "").strip()[:FEEDBACK_BODY_MAX]
+    with db_conn() as conn:
+        parent = conn.execute(
+            "SELECT id, parent_id FROM feedback WHERE id=?", (parent_id,)
+        ).fetchone()
+        if not parent or parent["parent_id"] is not None:
+            return None  # 부모가 루트가 아님
+        cur = conn.execute(
+            "INSERT INTO feedback (parent_id, author, body, status, created_at) VALUES (?, ?, ?, 'open', ?)",
+            (parent_id, author, body, ts),
+        )
+        new_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM feedback WHERE id=?", (new_id,)).fetchone()
+    return _feedback_row_to_dict(row)
+
+
+def update_feedback_status(feedback_id, status):
+    if status not in FEEDBACK_STATUSES:
+        return False
+    with db_conn() as conn:
+        row = conn.execute("SELECT id, parent_id FROM feedback WHERE id=?", (feedback_id,)).fetchone()
+        if not row or row["parent_id"] is not None:
+            return None  # 답글에는 status 변경 불가
+        conn.execute("UPDATE feedback SET status=? WHERE id=?", (status, feedback_id))
+    return True
+
+
+def get_feedback(feedback_id, include_replies=False):
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM feedback WHERE id=?", (feedback_id,)).fetchone()
+        if not row:
+            return None
+        d = _feedback_row_to_dict(row)
+        if include_replies and row["parent_id"] is None:
+            replies = conn.execute(
+                "SELECT * FROM feedback WHERE parent_id=? ORDER BY created_at ASC",
+                (feedback_id,),
+            ).fetchall()
+            d["replies"] = [_feedback_row_to_dict(r) for r in replies]
+    return d
+
+
+def delete_feedback(feedback_id):
+    """대상 row + cascade 로 답글까지 삭제. (account 와 무관, FK CASCADE 가 처리)"""
+    with db_conn() as conn:
+        # SQLite는 FK CASCADE 가 PRAGMA foreign_keys=ON 일 때만 동작
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("DELETE FROM feedback WHERE id=?", (feedback_id,))
+        # 보험: cascade 안 먹는 환경 대비 명시 삭제
+        conn.execute("DELETE FROM feedback WHERE parent_id=?", (feedback_id,))
+
+
+def count_unresolved_feedback():
+    """미해결(open + in_progress) 루트 스레드 수. FAB 뱃지용."""
+    with db_conn() as conn:
+        r = conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE parent_id IS NULL AND status != 'done'"
+        ).fetchone()
+        return r[0] if r else 0
 
 
 # 초기화
