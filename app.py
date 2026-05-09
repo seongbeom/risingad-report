@@ -85,10 +85,11 @@ SCRAPE_MAX_ATTEMPTS = 3  # 1차 + 재시도 2회 (reCAPTCHA 풀이 운에 의존
 SCRAPE_RETRY_DELAY_SEC = 15
 
 
-def _run_scrape_task(account_id, target_date=None):
+def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
     """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지).
     실패 시 N회 재시도. is_sample(Premium 만료)는 재시도 의미 없으니 즉시 종료.
-    target_date 지정 시 해당 일자로, 미지정 시 어제."""
+    target_date 지정 시 해당 일자로, 미지정 시 어제.
+    skip_sheet=True 면 Google Sheet write 건너뜀 (라이브 모드용 - 오늘 진행중인 데이터 시트 오염 방지)."""
     with _run_lock:
         account = db.get_account(account_id)
         if not account:
@@ -136,7 +137,9 @@ def _run_scrape_task(account_id, target_date=None):
                 print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
 
             spreadsheet_id = account.get("spreadsheet_id") or ""
-            if spreadsheet_id:
+            if skip_sheet:
+                print(f"[{account_id}] live 모드 - 시트 write 스킵")
+            elif spreadsheet_id:
                 try:
                     sheets.write_result(results, spreadsheet_id=spreadsheet_id)
                 except Exception:
@@ -179,14 +182,41 @@ def _scheduled_job(account_id):
     _run_scrape_task(account_id)
 
 
+def _live_global_job():
+    """글로벌 라이브 인터벌. 활성 시간대면 모든 계정을 직렬로 오늘 데이터 스크랩 (시트 write 안 함)."""
+    s = db.get_live_settings()
+    if s["interval_min"] <= 0:
+        return
+    now_h = datetime.now().hour
+    # 활성 시간 체크 (start_hour <= now < end_hour, end_hour=24 면 23시까지 포함)
+    start, end = s["start_hour"], s["end_hour"]
+    if start <= end:
+        active = start <= now_h < end
+    else:  # end < start (예: 22~6 야간)
+        active = now_h >= start or now_h < end
+    if not active:
+        print(f"[live] {now_h}시는 활성 시간({start}~{end}) 아님 - 스킵")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    accounts = db.list_accounts()
+    print(f"[live] {today} {len(accounts)}계정 시작")
+    for a in accounts:
+        try:
+            _run_scrape_task(a["id"], target_date=today, skip_sheet=True)
+        except Exception:
+            traceback.print_exc()
+    print(f"[live] {today} cycle done")
+
+
 def reload_schedules():
     """DB의 스케줄을 APScheduler에 반영"""
-    # 기존 job 제거
+    # 기존 job 제거 (cron + live)
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_"):
+        if job.id.startswith("scrape_") or job.id == "live_global":
             scheduler.remove_job(job.id)
 
-    # DB에서 활성 스케줄 로드
+    # DB에서 활성 스케줄 로드 (계정별 cron - 어제 데이터 + 시트 write)
     for s in db.list_schedules():
         if s["enabled"]:
             job_id = f"scrape_{s['account_id']}"
@@ -199,6 +229,18 @@ def reload_schedules():
                 id=job_id,
                 replace_existing=True,
             )
+
+    # 글로벌 라이브 인터벌 (오늘 데이터 누적 - 시트 write 안 함)
+    live = db.get_live_settings()
+    if live["interval_min"] > 0:
+        scheduler.add_job(
+            _live_global_job,
+            "interval",
+            minutes=live["interval_min"],
+            id="live_global",
+            replace_existing=True,
+        )
+        print(f"[scheduler] live_global 등록: {live['interval_min']}분 간격, 활성 {live['start_hour']}~{live['end_hour']}시")
 
 
 # 서버 시작 시 스케줄 로드
@@ -240,12 +282,14 @@ def index():
         r["hourly_count"] = db.count_metrics_hourly(r["account_id"], r["display_date"]) if r["display_date"] else 0
         r["error_summary"] = _short_error(r.get("error"))
     schedules = {s["account_id"]: s for s in db.list_schedules()}
+    live = db.get_live_settings()
     return render_template(
         "index.html",
         accounts=accounts,
         runs=runs,
         schedules=schedules,
         running=_running,
+        live=live,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
 
@@ -298,6 +342,23 @@ def save_schedule():
 @login_required
 def delete_schedule(account_id):
     db.delete_schedule(account_id)
+    reload_schedules()
+    return redirect(url_for("index"))
+
+
+@app.route("/settings/live", methods=["POST"])
+@login_required
+def save_live_settings():
+    """글로벌 라이브 스크랩 설정 저장. 인터벌 0 이면 비활성. start/end_hour 범위 0~24."""
+    try:
+        interval = max(0, int(request.form.get("live_interval_min", "0")))
+        start = max(0, min(24, int(request.form.get("live_start_hour", "8"))))
+        end = max(0, min(24, int(request.form.get("live_end_hour", "24"))))
+    except ValueError:
+        return redirect(url_for("index"))
+    db.set_setting("live_interval_min", interval)
+    db.set_setting("live_start_hour", start)
+    db.set_setting("live_end_hour", end)
     reload_schedules()
     return redirect(url_for("index"))
 

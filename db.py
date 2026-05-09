@@ -115,7 +115,21 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_feedback_parent ON feedback(parent_id);
             CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
+
+            -- 글로벌 설정 (k/v). 라이브 스크랩 인터벌/활성시간 등.
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
         """)
+        # 라이브 스크랩 기본값
+        defaults = {
+            "live_interval_min": "30",  # 0 이면 비활성
+            "live_start_hour": "8",
+            "live_end_hour": "24",
+        }
+        for k, v in defaults.items():
+            conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
         # 기존 DB에 spreadsheet_id 컬럼 없으면 추가 (마이그레이션)
         cols = [r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()]
@@ -552,6 +566,30 @@ def delete_feedback(feedback_id):
         conn.execute("DELETE FROM feedback WHERE id=?", (feedback_id,))
         # 보험: cascade 안 먹는 환경 대비 명시 삭제
         conn.execute("DELETE FROM feedback WHERE parent_id=?", (feedback_id,))
+
+
+# --- 글로벌 설정 ---
+
+def get_setting(key, default=None):
+    with db_conn() as conn:
+        r = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return r["value"] if r else default
+
+
+def set_setting(key, value):
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, str(value)),
+        )
+
+
+def get_live_settings():
+    return {
+        "interval_min": int(get_setting("live_interval_min", "30") or 0),
+        "start_hour": int(get_setting("live_start_hour", "8") or 0),
+        "end_hour": int(get_setting("live_end_hour", "24") or 0),
+    }
 
 
 def count_unresolved_feedback():

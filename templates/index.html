@@ -201,6 +201,34 @@
             {% endif %}
         </div>
 
+        <!-- 라이브 스크랩 설정 (글로벌) -->
+        <div class="card">
+            <h2>⚡ 라이브 스크랩 (오늘 데이터 누적 갱신)</h2>
+            <p style="font-size:0.78rem;color:#888;margin:-6px 0 12px">
+                글로벌 인터벌로 모든 계정을 직렬 스크랩해 <strong>오늘 데이터</strong>를 metrics/metrics_hourly에 갱신합니다.
+                Google Sheet 에는 쓰지 <strong>않음</strong> (오늘 진행중인 데이터 시트 오염 방지).
+                인터벌 0이면 비활성. 시작/종료 시간 24면 자정 포함.
+            </p>
+            <form method="POST" action="/settings/live" class="form-row">
+                <div class="form-group">
+                    <label>인터벌 (분)</label>
+                    <input name="live_interval_min" type="number" min="0" max="1440" value="{{ live.interval_min }}" style="width:90px">
+                </div>
+                <div class="form-group">
+                    <label>활성 시작 시각</label>
+                    <input name="live_start_hour" type="number" min="0" max="24" value="{{ live.start_hour }}" style="width:80px">
+                </div>
+                <div class="form-group">
+                    <label>활성 종료 시각</label>
+                    <input name="live_end_hour" type="number" min="0" max="24" value="{{ live.end_hour }}" style="width:80px">
+                </div>
+                <button class="btn btn-primary" type="submit">저장</button>
+            </form>
+            <p style="font-size:0.75rem;color:#aaa;margin-top:8px">
+                현재: <strong>{% if live.interval_min %}{{ live.interval_min }}분 간격, {{ live.start_hour }}~{{ live.end_hour }}시{% else %}비활성{% endif %}</strong>
+            </p>
+        </div>
+
         <!-- 최근 실행 기록 -->
         <div class="card">
             <h2>최근 실행 기록</h2>
