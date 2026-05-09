@@ -2,6 +2,7 @@
 
 import functools
 import os
+import subprocess
 import threading
 import time
 import traceback
@@ -83,6 +84,50 @@ _run_lock = threading.Lock()  # 수동 실행과 스케줄 잡이 동시에 안 
 
 SCRAPE_MAX_ATTEMPTS = 3  # 1차 + 재시도 2회 (reCAPTCHA 풀이 운에 의존하기 때문)
 SCRAPE_RETRY_DELAY_SEC = 15
+
+# t3.small (2GB) 메모리 가드 - 다음 chromium 띄우기 전 free memory 확보 대기
+MIN_FREE_MB_BEFORE_NEXT = 350
+MEM_WAIT_MAX_SEC = 90
+INTER_ACCOUNT_COOLDOWN_SEC = 8
+
+
+def _free_memory_mb():
+    """/proc/meminfo 의 MemAvailable (kB) 를 MB 로 반환. 실패 시 None."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        return None
+    return None
+
+
+def _kill_leftover_chromium():
+    """앞 사이클에서 남은 chromium / playwright node 좀비 정리. t3.small 메모리 회복용."""
+    try:
+        subprocess.run(["pkill", "-9", "-f", "chromium-browser-"], timeout=5, check=False)
+        subprocess.run(["pkill", "-9", "-f", "playwright/driver/node"], timeout=5, check=False)
+    except Exception:
+        pass
+
+
+def _wait_for_memory(label=""):
+    """다음 계정 시작 전 free memory 확보. 부족하면 chromium 정리 후 대기."""
+    free = _free_memory_mb()
+    if free is None or free >= MIN_FREE_MB_BEFORE_NEXT:
+        return
+    print(f"[mem] {label} free={free}MB < {MIN_FREE_MB_BEFORE_NEXT}MB, chromium 정리 후 대기")
+    _kill_leftover_chromium()
+    waited = 0
+    while waited < MEM_WAIT_MAX_SEC:
+        time.sleep(5)
+        waited += 5
+        free = _free_memory_mb()
+        if free is not None and free >= MIN_FREE_MB_BEFORE_NEXT:
+            print(f"[mem] {label} 회복: free={free}MB ({waited}s)")
+            return
+    print(f"[mem] {label} 회복 안 됨 (free={free}MB) - 그래도 진행")
 
 
 def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
@@ -200,13 +245,17 @@ def _live_global_job():
 
     today = datetime.now().strftime("%Y-%m-%d")
     accounts = db.list_accounts()
-    print(f"[live] {today} {len(accounts)}계정 시작")
-    for a in accounts:
+    print(f"[live] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
+    for i, a in enumerate(accounts):
+        _wait_for_memory(f"before {a['id']}")
         try:
             _run_scrape_task(a["id"], target_date=today, skip_sheet=True)
         except Exception:
             traceback.print_exc()
-    print(f"[live] {today} cycle done")
+        if i < len(accounts) - 1:
+            time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
+    _kill_leftover_chromium()
+    print(f"[live] {today} cycle done free={_free_memory_mb()}MB")
 
 
 def reload_schedules():
