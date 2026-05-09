@@ -57,8 +57,14 @@ def login_required(f):
 
 @app.context_processor
 def _inject_user():
-    """모든 템플릿에서 user / is_admin 사용 가능하도록."""
+    """모든 템플릿에서 user / is_admin 사용 가능하도록.
+    구버전 세션(logged_in 만 있고 username 없는 경우)도 첫 번째 admin 으로 자동 채움."""
     user = session.get("username")
+    if not user and session.get("logged_in"):
+        pairs = _users()
+        if pairs:
+            user = pairs[0][0]
+            session["username"] = user
     return {"user": user, "is_admin": _is_admin(user) if user else False}
 
 # 잡을 스케줄러 큐로 직렬 실행 (동시 Chromium 구동 방지 — 메모리 보호)
@@ -540,9 +546,12 @@ def api_status():
 
 def _current_user_or_401():
     user = session.get("username")
-    if not user:
-        return None
-    return user
+    if not user and session.get("logged_in"):
+        pairs = _users()
+        if pairs:
+            user = pairs[0][0]
+            session["username"] = user
+    return user or None
 
 
 @app.route("/api/feedback", methods=["GET"])
