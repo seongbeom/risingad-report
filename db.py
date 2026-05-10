@@ -122,11 +122,14 @@ def init_db():
                 value TEXT
             );
         """)
-        # 라이브 스크랩 기본값
+        # 라이브 / 데일리 finalize 기본값
         defaults = {
-            "live_interval_min": "30",  # 0 이면 비활성
+            "live_interval_min": "60",  # 0 이면 비활성. t3.small 기준 한 사이클 ~20분 → 60분 권장
             "live_start_hour": "8",
             "live_end_hour": "24",
+            # 매일 어제 데이터를 시트에 기록 + DB 확정 (모든 계정 풀스크랩)
+            "daily_finalize_hour": "3",
+            "daily_finalize_minute": "0",
         }
         for k, v in defaults.items():
             conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
@@ -586,9 +589,16 @@ def set_setting(key, value):
 
 def get_live_settings():
     return {
-        "interval_min": int(get_setting("live_interval_min", "30") or 0),
+        "interval_min": int(get_setting("live_interval_min", "60") or 0),
         "start_hour": int(get_setting("live_start_hour", "8") or 0),
         "end_hour": int(get_setting("live_end_hour", "24") or 0),
+    }
+
+
+def get_daily_finalize_settings():
+    return {
+        "hour": int(get_setting("daily_finalize_hour", "3") or 3),
+        "minute": int(get_setting("daily_finalize_minute", "0") or 0),
     }
 
 

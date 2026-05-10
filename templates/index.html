@@ -65,7 +65,6 @@
                         <th>쇼핑몰 ID</th>
                         <th>부운영자 ID</th>
                         <th>구글 시트 ID</th>
-                        <th>스케줄</th>
                         <th>동작</th>
                     </tr>
                 </thead>
@@ -82,17 +81,6 @@
                                        placeholder="시트 ID" style="width:200px; font-size:0.75rem;">
                                 <button class="btn btn-sm" type="submit">저장</button>
                             </form>
-                        </td>
-                        <td>
-                            {% if a.id in schedules %}
-                                {% set s = schedules[a.id] %}
-                                <span class="badge {{ 'badge-on' if s.enabled else 'badge-off' }}">
-                                    {{ '%02d' % s.cron_hour }}:{{ '%02d' % s.cron_minute }}
-                                    {{ 'ON' if s.enabled else 'OFF' }}
-                                </span>
-                            {% else %}
-                                <span class="badge badge-off">미설정</span>
-                            {% endif %}
                         </td>
                         <td>
                             <div class="actions">
@@ -143,89 +131,46 @@
             </form>
         </div>
 
-        <!-- 스케줄 설정 -->
+        <!-- 스케줄러 설정 (글로벌) -->
         <div class="card">
-            <h2>스케줄 설정</h2>
-            {% if accounts %}
-            <form method="POST" action="/schedules" class="form-row">
-                <div class="form-group">
-                    <label>계정</label>
-                    <select name="account_id">
-                        {% for a in accounts %}
-                        <option value="{{ a.id }}">{{ a.label or a.cafe24_id }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>실행 시각</label>
-                    <div class="schedule-inline">
-                        <input name="hour" type="number" min="0" max="23" value="8" class="time-input">
-                        <span>시</span>
-                        <input name="minute" type="number" min="0" max="59" value="0" class="time-input">
-                        <span>분</span>
+            <h2>⏱ 스케줄러 (글로벌)</h2>
+            <p style="font-size:0.78rem;color:#888;margin:-6px 0 12px">
+                <strong>라이브 스크랩</strong>: 활성 시간대에 글로벌 인터벌로 모든 계정 → 오늘 데이터 DB 갱신 (시트 write 안 함).<br>
+                <strong>일일 시트 기록</strong>: 매일 정해진 시각 한 번 → 어제 데이터 풀스크랩 + Google Sheet 기록.
+            </p>
+            <form method="POST" action="/settings/scheduler">
+                <div class="form-row" style="margin-bottom:14px">
+                    <strong style="font-size:0.85rem;color:#4a90d9;align-self:center;width:100px">⚡ 라이브</strong>
+                    <div class="form-group">
+                        <label>인터벌 (분)</label>
+                        <input name="live_interval_min" type="number" min="0" max="1440" value="{{ live.interval_min }}" style="width:90px">
+                    </div>
+                    <div class="form-group">
+                        <label>활성 시작 시각</label>
+                        <input name="live_start_hour" type="number" min="0" max="24" value="{{ live.start_hour }}" style="width:80px">
+                    </div>
+                    <div class="form-group">
+                        <label>활성 종료 시각</label>
+                        <input name="live_end_hour" type="number" min="0" max="24" value="{{ live.end_hour }}" style="width:80px">
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>&nbsp;</label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="enabled" checked>
-                        활성화
-                    </label>
+                <div class="form-row">
+                    <strong style="font-size:0.85rem;color:#27ae60;align-self:center;width:100px">📋 시트기록</strong>
+                    <div class="form-group">
+                        <label>매일 시각</label>
+                        <div class="schedule-inline">
+                            <input name="daily_finalize_hour" type="number" min="0" max="23" value="{{ daily.hour }}" class="time-input">
+                            <span>시</span>
+                            <input name="daily_finalize_minute" type="number" min="0" max="59" value="{{ daily.minute }}" class="time-input">
+                            <span>분</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" type="submit" style="margin-left:auto">저장</button>
                 </div>
-                <button class="btn btn-primary" type="submit">저장</button>
             </form>
-
-            {% if schedules %}
-            <table style="margin-top: 16px;">
-                <thead>
-                    <tr><th>계정</th><th>시각</th><th>상태</th><th></th></tr>
-                </thead>
-                <tbody>
-                    {% for aid, s in schedules.items() %}
-                    <tr>
-                        <td>{{ s.label or s.cafe24_id }}</td>
-                        <td>매일 {{ '%02d' % s.cron_hour }}:{{ '%02d' % s.cron_minute }}</td>
-                        <td><span class="badge {{ 'badge-on' if s.enabled else 'badge-off' }}">{{ 'ON' if s.enabled else 'OFF' }}</span></td>
-                        <td>
-                            <form method="POST" action="/schedules/{{ aid }}/delete" style="display:inline">
-                                <button class="btn btn-danger btn-sm" type="submit">삭제</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% endif %}
-            {% else %}
-            <p class="empty">먼저 계정을 추가하세요.</p>
-            {% endif %}
-        </div>
-
-        <!-- 라이브 스크랩 설정 (글로벌) -->
-        <div class="card">
-            <h2>⚡ 라이브 스크랩 (오늘 데이터 누적 갱신)</h2>
-            <p style="font-size:0.78rem;color:#888;margin:-6px 0 12px">
-                글로벌 인터벌로 모든 계정을 직렬 스크랩해 <strong>오늘 데이터</strong>를 metrics/metrics_hourly에 갱신합니다.
-                Google Sheet 에는 쓰지 <strong>않음</strong> (오늘 진행중인 데이터 시트 오염 방지).
-                인터벌 0이면 비활성. 시작/종료 시간 24면 자정 포함.
-            </p>
-            <form method="POST" action="/settings/live" class="form-row">
-                <div class="form-group">
-                    <label>인터벌 (분)</label>
-                    <input name="live_interval_min" type="number" min="0" max="1440" value="{{ live.interval_min }}" style="width:90px">
-                </div>
-                <div class="form-group">
-                    <label>활성 시작 시각</label>
-                    <input name="live_start_hour" type="number" min="0" max="24" value="{{ live.start_hour }}" style="width:80px">
-                </div>
-                <div class="form-group">
-                    <label>활성 종료 시각</label>
-                    <input name="live_end_hour" type="number" min="0" max="24" value="{{ live.end_hour }}" style="width:80px">
-                </div>
-                <button class="btn btn-primary" type="submit">저장</button>
-            </form>
-            <p style="font-size:0.75rem;color:#aaa;margin-top:8px">
-                현재: <strong>{% if live.interval_min %}{{ live.interval_min }}분 간격, {{ live.start_hour }}~{{ live.end_hour }}시{% else %}비활성{% endif %}</strong>
+            <p style="font-size:0.75rem;color:#aaa;margin-top:10px">
+                현재 라이브: <strong>{% if live.interval_min %}{{ live.interval_min }}분 간격, {{ live.start_hour }}~{{ live.end_hour }}시{% else %}비활성{% endif %}</strong> ·
+                시트 기록: <strong>매일 {{ '%02d' % daily.hour }}:{{ '%02d' % daily.minute }}</strong>
             </p>
         </div>
 

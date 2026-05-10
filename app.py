@@ -222,9 +222,27 @@ def _short_error(err):
 
 
 def _scheduled_job(account_id):
-    """스케줄러에서 직접 호출 (max_workers=1로 큐잉돼 직렬 실행됨).
-    수동 실행은 별도 thread로 띄우되 _run_lock으로 동일하게 직렬화."""
+    """(레거시) 스케줄러에서 직접 호출. 신규 아키텍처에선 _daily_finalize_job 으로 일원화됨.
+    호환을 위해 남겨둠 - 수동 실행은 _run_scrape_task 가 직접 처리."""
     _run_scrape_task(account_id)
+
+
+def _daily_finalize_job():
+    """매일 새벽 글로벌 cron. 어제 데이터를 모든 계정 풀스크랩 + 시트 write.
+    라이브가 어제 23:30 직전까지 채워뒀어도 보정용 + 시트 기록을 위해 한 번 더 정리."""
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    accounts = db.list_accounts()
+    print(f"[daily-finalize] {yesterday} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
+    for i, a in enumerate(accounts):
+        _wait_for_memory(f"before {a['id']}")
+        try:
+            _run_scrape_task(a["id"], target_date=yesterday, skip_sheet=False)
+        except Exception:
+            traceback.print_exc()
+        if i < len(accounts) - 1:
+            time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
+    _kill_leftover_chromium()
+    print(f"[daily-finalize] {yesterday} done free={_free_memory_mb()}MB")
 
 
 def _live_global_job():
@@ -259,37 +277,30 @@ def _live_global_job():
 
 
 def reload_schedules():
-    """DB의 스케줄을 APScheduler에 반영"""
-    # 기존 job 제거 (cron + live)
+    """DB 설정을 APScheduler 에 반영. 글로벌 잡 2개:
+    - live_global: 오늘 데이터 누적 갱신 (DB only)
+    - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
+    계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id == "live_global":
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize"):
             scheduler.remove_job(job.id)
 
-    # DB에서 활성 스케줄 로드 (계정별 cron - 어제 데이터 + 시트 write)
-    for s in db.list_schedules():
-        if s["enabled"]:
-            job_id = f"scrape_{s['account_id']}"
-            scheduler.add_job(
-                _scheduled_job,
-                "cron",
-                hour=s["cron_hour"],
-                minute=s["cron_minute"],
-                args=[s["account_id"]],
-                id=job_id,
-                replace_existing=True,
-            )
-
-    # 글로벌 라이브 인터벌 (오늘 데이터 누적 - 시트 write 안 함)
     live = db.get_live_settings()
     if live["interval_min"] > 0:
         scheduler.add_job(
-            _live_global_job,
-            "interval",
+            _live_global_job, "interval",
             minutes=live["interval_min"],
-            id="live_global",
-            replace_existing=True,
+            id="live_global", replace_existing=True,
         )
-        print(f"[scheduler] live_global 등록: {live['interval_min']}분 간격, 활성 {live['start_hour']}~{live['end_hour']}시")
+        print(f"[scheduler] live_global: {live['interval_min']}분, {live['start_hour']}~{live['end_hour']}시")
+
+    df = db.get_daily_finalize_settings()
+    scheduler.add_job(
+        _daily_finalize_job, "cron",
+        hour=df["hour"], minute=df["minute"],
+        id="daily_finalize", replace_existing=True,
+    )
+    print(f"[scheduler] daily_finalize: 매일 {df['hour']:02d}:{df['minute']:02d}")
 
 
 # 서버 시작 시 스케줄 로드
@@ -332,6 +343,7 @@ def index():
         r["error_summary"] = _short_error(r.get("error"))
     schedules = {s["account_id"]: s for s in db.list_schedules()}
     live = db.get_live_settings()
+    daily = db.get_daily_finalize_settings()
     return render_template(
         "index.html",
         accounts=accounts,
@@ -339,6 +351,7 @@ def index():
         schedules=schedules,
         running=_running,
         live=live,
+        daily=daily,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
 
@@ -395,19 +408,23 @@ def delete_schedule(account_id):
     return redirect(url_for("index"))
 
 
-@app.route("/settings/live", methods=["POST"])
+@app.route("/settings/scheduler", methods=["POST"])
 @login_required
-def save_live_settings():
-    """글로벌 라이브 스크랩 설정 저장. 인터벌 0 이면 비활성. start/end_hour 범위 0~24."""
+def save_scheduler_settings():
+    """글로벌 스케줄러 설정 저장 (라이브 + 데일리 finalize)."""
     try:
         interval = max(0, int(request.form.get("live_interval_min", "0")))
         start = max(0, min(24, int(request.form.get("live_start_hour", "8"))))
         end = max(0, min(24, int(request.form.get("live_end_hour", "24"))))
+        df_h = max(0, min(23, int(request.form.get("daily_finalize_hour", "3"))))
+        df_m = max(0, min(59, int(request.form.get("daily_finalize_minute", "0"))))
     except ValueError:
         return redirect(url_for("index"))
     db.set_setting("live_interval_min", interval)
     db.set_setting("live_start_hour", start)
     db.set_setting("live_end_hour", end)
+    db.set_setting("daily_finalize_hour", df_h)
+    db.set_setting("daily_finalize_minute", df_m)
     reload_schedules()
     return redirect(url_for("index"))
 
@@ -468,7 +485,117 @@ def results_page(account_id):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    """기간 범위 KPI + 시간별 인사이트 대시보드."""
+    """데일리 대시보드 - 오늘 누적 + 최근 7일 표 + 시간대 표 (숫자 중심)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    last_week_same = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    range_start = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")  # 오늘 포함 9일
+
+    accounts = db.list_accounts()
+    all_metrics = db.list_metrics(start_date=range_start, end_date=today)
+    # (account_id, date) -> metrics row
+    by_key = {(m["account_id"], m["date"]): m for m in all_metrics}
+
+    # 시간대 평균 계산용: 최근 7일(어제부터 8일전까지) hourly
+    hourly_start = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")
+    all_hourly = db.list_metrics_hourly_range([a["id"] for a in accounts], hourly_start, yesterday)
+    hour_buckets = {}  # account_id -> list[24] of list of values
+    for r in all_hourly:
+        hour_buckets.setdefault(r["account_id"], [[] for _ in range(24)])[r["hour"]].append(r.get("매출") or 0)
+
+    def _pct(cur, ref):
+        if cur is None or ref is None or not ref:
+            return None
+        return round((cur - ref) / ref * 100, 1)
+
+    # 최근 7일 (오늘 제외) 평균 계산용
+    last7_start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    last7_dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+
+    rows = []
+    for a in accounts:
+        aid = a["id"]
+        m_today = by_key.get((aid, today), {}) or {}
+        m_yest = by_key.get((aid, yesterday), {}) or {}
+        m_lw = by_key.get((aid, last_week_same), {}) or {}
+        # 최근 7일(어제~7일 전) 평균
+        last7_vals_sales = [by_key.get((aid, d), {}).get("매출") for d in last7_dates if by_key.get((aid, d))]
+        last7_avg_sales = round(sum(v for v in last7_vals_sales if v is not None) / len(last7_vals_sales)) if last7_vals_sales else None
+
+        today_sales = m_today.get("매출")
+        today_orders = m_today.get("구매건수")
+        today_visitors = m_today.get("방문자수")
+        today_aov = m_today.get("객단가")
+
+        rows.append({
+            "id": aid,
+            "label": a.get("label") or a["cafe24_id"],
+            "cafe24_id": a["cafe24_id"],
+            "today": {
+                "매출": today_sales,
+                "구매건수": today_orders,
+                "방문자수": today_visitors,
+                "객단가": today_aov,
+            },
+            "yesterday": {
+                "매출": m_yest.get("매출"),
+                "구매건수": m_yest.get("구매건수"),
+                "방문자수": m_yest.get("방문자수"),
+                "객단가": m_yest.get("객단가"),
+            },
+            "last_week": {"매출": m_lw.get("매출")},
+            "last7_avg_sales": last7_avg_sales,
+            "vs_yesterday_pct": _pct(today_sales, m_yest.get("매출")),
+            "vs_lastweek_pct": _pct(today_sales, m_lw.get("매출")),
+            "vs_7avg_pct": _pct(today_sales, last7_avg_sales),
+        })
+
+    # 최근 9일 (오늘~8일 전) 매출 그리드
+    DAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
+    grid_dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(8, -1, -1)]  # 8일전~오늘
+    grid_dows = [DAYS_KO[datetime.strptime(d, "%Y-%m-%d").weekday()] for d in grid_dates]
+    grid = []
+    for a in accounts:
+        aid = a["id"]
+        cells = []
+        for d in grid_dates:
+            m = by_key.get((aid, d))
+            cells.append({
+                "date": d,
+                "매출": m.get("매출") if m else None,
+                "구매건수": m.get("구매건수") if m else None,
+                "is_today": d == today,
+            })
+        grid.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "cells": cells})
+
+    # 시간대 평균 매출 표 (계정 × 24시간)
+    hour_grid = []
+    for a in accounts:
+        aid = a["id"]
+        buckets = hour_buckets.get(aid, [[] for _ in range(24)])
+        avg = [round(sum(b) / len(b)) if b else None for b in buckets]
+        max_v = max((v for v in avg if v is not None), default=0)
+        hour_grid.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "hours": avg, "max_v": max_v})
+
+    return render_template(
+        "dashboard.html",
+        accounts=accounts,
+        rows=rows,
+        grid=grid,
+        grid_dates=grid_dates,
+        grid_dows=grid_dows,
+        hour_grid=hour_grid,
+        today=today,
+        yesterday=yesterday,
+        last_week_same=last_week_same,
+        now=datetime.now().strftime("%H:%M"),
+    )
+
+
+@app.route("/dashboard/range")
+@login_required
+def dashboard_range():
+    """기존 기간 범위 KPI + 차트 대시보드 (옵션)."""
     accounts = db.list_accounts()
     all_ids = [a["id"] for a in accounts]
     selected_ids = request.args.getlist("account_id") or all_ids
@@ -623,7 +750,7 @@ def dashboard():
         }
 
     return render_template(
-        "dashboard.html",
+        "dashboard_range.html",
         accounts=accounts,
         selected_ids=selected_ids,
         start_date=start_str,

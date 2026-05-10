@@ -3,443 +3,226 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>대시보드 - Cafe24 애널리틱스</title>
+    <title>데일리 대시보드 - Cafe24</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        h1 { font-size: 1.5rem; margin-bottom: 4px; }
-        .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
-        .nav { margin-bottom: 16px; }
-        .nav a { color: #4a90d9; text-decoration: none; margin-right: 16px; font-size: 0.9rem; }
-        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .card h2 { font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-        .form-row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
-        .form-group { display: flex; flex-direction: column; gap: 4px; }
-        .form-group label { font-size: 0.75rem; color: #888; font-weight: 600; }
-        input, select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
-        .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; background: #4a90d9; color: #fff; text-decoration: none; display: inline-block; }
-        .btn:hover { background: #3a7bc8; }
-        .btn-mini { padding: 4px 10px; font-size: 0.78rem; background: #e9ecef; color: #333; }
-        .btn-mini:hover { background: #d8dde2; color: #000; }
-        .checkbox-group { display: flex; gap: 8px; flex-wrap: wrap; }
-        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; cursor: pointer; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
-        .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .container { max-width: 1280px; margin: 0 auto; padding: 18px 20px; }
+        h1 { font-size: 1.4rem; margin-bottom: 4px; }
+        .subtitle { color: #888; font-size: 0.82rem; margin-bottom: 14px; }
+        .nav { margin-bottom: 14px; font-size: 0.85rem; }
+        .nav a { color: #4a90d9; text-decoration: none; margin-right: 14px; }
+        .nav .live-pill { background: #ff6b6b; color: #fff; padding: 1px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; margin-left: 4px; vertical-align: middle; }
 
-        .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #444; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-        .panel-title .acct { color: #4a90d9; }
-        .panel-title .date { color: #888; font-size: 0.8rem; font-weight: normal; }
-        .panel-title .meta { font-size: 0.75rem; color: #999; }
+        .card { background: #fff; border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .card h2 { font-size: 1rem; margin-bottom: 4px; color: #333; }
+        .card-sub { font-size: 0.74rem; color: #888; margin-bottom: 12px; }
 
-        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-        @media (max-width: 720px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-        .kpi { background: #fafafa; border-radius: 6px; padding: 14px; }
-        .kpi-label { font-size: 0.72rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-        .kpi-mode { font-size: 0.65rem; color: #bbb; font-weight: 500; margin-left: 4px; }
-        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #222; margin: 6px 0; }
-        .kpi-unit { font-size: 0.7rem; color: #aaa; margin-left: 2px; }
-        .kpi-comparisons { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
-        .kpi-comp-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; }
-        .kpi-comp-label { color: #888; }
-        .kpi-comp-value { font-weight: 600; }
+        /* 숫자 표 공통 */
+        table.num { width: 100%; border-collapse: collapse; font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+        table.num th, table.num td { padding: 8px 10px; text-align: right; border-bottom: 1px solid #f0f0f0; }
+        table.num th:first-child, table.num td:first-child { text-align: left; font-weight: 600; color: #333; }
+        table.num thead th { background: #fafafa; color: #666; font-weight: 600; font-size: 0.76rem; border-bottom: 2px solid #e0e0e0; }
+        table.num tbody tr:hover { background: #f9fbfd; }
+        table.num td.num-big { font-weight: 700; color: #222; font-size: 0.95rem; }
+        table.num td.dim { color: #999; }
+        table.num td .label-sub { display: block; font-size: 0.72rem; color: #aaa; font-weight: 400; }
+
+        .delta { font-size: 0.74rem; font-weight: 600; padding-left: 6px; white-space: nowrap; }
         .up { color: #27ae60; }
         .down { color: #e74c3c; }
-        .flat { color: #888; }
-        .nodata { font-size: 0.85rem; color: #aaa; padding: 16px; text-align: center; background: #fafafa; border-radius: 6px; }
+        .flat { color: #999; }
+        .nodata { color: #ccc; }
+        .pct { font-size: 0.72rem; color: #888; padding-left: 4px; }
 
-        .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
-        @media (max-width: 720px) { .chart-grid { grid-template-columns: 1fr; } }
-        .chart-box { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 12px; }
-        .chart-box-title { font-size: 0.85rem; font-weight: 600; color: #555; margin-bottom: 8px; }
-        .chart-box .hint { font-size: 0.72rem; color: #999; font-weight: normal; margin-left: 6px; }
-        .chart-box canvas { max-height: 240px; }
+        /* 7일 그리드 */
+        .grid-table th.today, .grid-table td.today { background: #fff8e1; }
+        .grid-table td .sub { display: block; font-size: 0.7rem; color: #aaa; }
+        .grid-table th { font-size: 0.74rem; }
 
-        .insight-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
-        .insight-pill { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 16px; padding: 4px 12px; font-size: 0.78rem; color: #614700; }
-        .insight-pill strong { color: #4a90d9; }
+        /* 시간 그리드 - 셀 작게 */
+        .hour-table { font-size: 0.72rem; }
+        .hour-table th, .hour-table td { padding: 4px 5px; text-align: right; }
+        .hour-table th:first-child, .hour-table td:first-child { text-align: left; padding-left: 8px; }
+        .hour-table td.empty { color: #ddd; }
+        .hour-table thead th { background: #fafafa; border-bottom: 1px solid #ddd; font-size: 0.7rem; }
 
-        .heatmap-wrap { overflow-x: auto; margin-top: 8px; }
-        .heatmap { display: grid; grid-template-columns: 28px repeat(24, minmax(22px, 1fr)); gap: 1px; font-size: 0.62rem; min-width: 600px; }
-        .heatmap .h-head { text-align: center; color: #aaa; padding: 2px 0; font-size: 0.6rem; }
-        .heatmap .h-row-label { text-align: right; color: #777; padding: 2px 4px; font-weight: 600; font-size: 0.7rem; }
-        .heatmap .h-cell { text-align: center; padding: 4px 0; color: #444; border-radius: 2px; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; }
-        .heatmap-legend { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #888; margin-top: 6px; }
-        .heatmap-legend .swatch { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
+        /* sparkline-ish bar (오로지 보조용) */
+        .bar-cell { position: relative; }
+        .bar-cell .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: #4a90d966; border-radius: 1px; }
+
+        .ts { color: #aaa; font-size: 0.72rem; }
+        .refresh-link { font-size: 0.78rem; color: #4a90d9; cursor: pointer; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
-    <h1>KPI 대시보드</h1>
-    <p class="subtitle">{{ start_date }} ~ {{ end_date }} ({{ range_days }}일) · 직전 {{ range_days }}일({{ prev_start }} ~ {{ prev_end }}) 비교</p>
+    <h1>데일리 대시보드</h1>
+    <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     <div class="nav">
         <a href="/">← 관리자</a>
+        <a href="/dashboard/range">기간 분석 →</a>
     </div>
 
-    <!-- 필터 -->
+    <!-- 1. 오늘 누적 (가장 중요한 숫자) -->
     <div class="card">
-        <h2>조회 조건</h2>
-        <form method="GET" action="/dashboard" id="filter-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>시작일</label>
-                    <input type="date" name="start_date" value="{{ start_date }}">
-                </div>
-                <div class="form-group">
-                    <label>종료일</label>
-                    <input type="date" name="end_date" value="{{ end_date }}">
-                </div>
-                <div class="form-group">
-                    <label>계정 (선택 안 하면 전체)</label>
-                    <div class="checkbox-group">
-                        {% for a in accounts %}
-                        <label class="checkbox-label">
-                            <input type="checkbox" name="account_id" value="{{ a.id }}"
-                                   {% if a.id in selected_ids %}checked{% endif %}>
-                            {{ a.label or a.cafe24_id }}
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                <button class="btn" type="submit">조회</button>
-            </div>
-            <div class="preset-row">
-                <a class="btn btn-mini" href="#" data-preset="1">어제</a>
-                <a class="btn btn-mini" href="#" data-preset="7">최근 7일</a>
-                <a class="btn btn-mini" href="#" data-preset="14">최근 14일</a>
-                <a class="btn btn-mini" href="#" data-preset="30">최근 30일</a>
-            </div>
-        </form>
-    </div>
-
-    <!-- 패널들 -->
-    {% for panel in panels %}
-    <div class="card">
-        <div class="panel-title">
-            <div>
-                <span class="acct">{{ panel.account.label or panel.account.cafe24_id }}</span>
-                <span class="date">{{ panel.account.cafe24_id }}</span>
-            </div>
-            <span class="meta">
-                {% if panel.peak_hour is not none %}
-                피크 시간: <strong>{{ '%02d시'|format(panel.peak_hour) }}</strong>
-                {% endif %}
-                · 시간별 표본 {{ panel.hourly_total_days }}일
-            </span>
-        </div>
-        {% if panel.has_data %}
-        <div class="kpi-grid">
-            {% for k in panel.kpis %}
-            <div class="kpi">
-                <div class="kpi-label">{{ k.label }}<span class="kpi-mode">· {{ '합계' if k.mode=='sum' else '일평균' }}</span></div>
-                <div class="kpi-value">
-                    {% if k.value is not none %}
-                        {{ "{:,.0f}".format(k.value) }}<span class="kpi-unit">{{ k.unit }}</span>
-                    {% else %}
-                        -
-                    {% endif %}
-                </div>
-                <div class="kpi-comparisons">
-                    {% set d = k.vs_prev %}
-                    <div class="kpi-comp-row">
-                        <span class="kpi-comp-label">직전 {{ range_days }}일</span>
-                        {% if d %}
-                            {% if d.abs > 0 %}
-                                <span class="kpi-comp-value up">▲ {{ "{:,.0f}".format(d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
-                            {% elif d.abs < 0 %}
-                                <span class="kpi-comp-value down">▼ {{ "{:,.0f}".format(-d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
+        <h2>📊 오늘 누적 — {{ today }}</h2>
+        <p class="card-sub">라이브 인터벌마다 자동 갱신됨. % 는 어제 / 지난주 같은요일 / 최근 7일 평균 대비.</p>
+        <table class="num">
+            <thead>
+                <tr>
+                    <th>계정</th>
+                    <th>매출 <span class="label-sub">vs 어제</span></th>
+                    <th>구매건수 <span class="label-sub">vs 어제</span></th>
+                    <th>방문자수 <span class="label-sub">vs 어제</span></th>
+                    <th>객단가 <span class="label-sub">vs 어제</span></th>
+                    <th>매출 vs 지난주</th>
+                    <th>매출 vs 7일평균</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    {% for col in ['매출', '구매건수', '방문자수', '객단가'] %}
+                    {% set cur = r.today[col] %}
+                    {% set ref = r.yesterday[col] %}
+                    <td class="num-big">
+                        {% if cur is not none %}
+                            {{ "{:,.0f}".format(cur) }}
+                            {% if ref %}
+                                {% set d = cur - ref %}
+                                {% set p = (d / ref * 100) if ref else 0 %}
+                                <span class="delta {{ 'up' if d>0 else ('down' if d<0 else 'flat') }}">
+                                    {% if d > 0 %}▲{% elif d < 0 %}▼{% else %}─{% endif %}
+                                    {{ "{:,.0f}".format(d|abs) }}
+                                    <span class="pct">({{ "%+.1f"|format(p) }}%)</span>
+                                </span>
                             {% else %}
-                                <span class="kpi-comp-value flat">─</span>
+                                <span class="delta nodata">─</span>
                             {% endif %}
                         {% else %}
-                            <span class="kpi-comp-value flat">데이터 없음</span>
+                            <span class="dim">—</span>
                         {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="nodata">{{ start_date }} ~ {{ end_date }} 기간 데이터가 없습니다</div>
-        {% endif %}
-
-        {% if panel.history %}
-        <div class="chart-grid">
-            {% for k in kpi_fields %}
-            <div class="chart-box">
-                <div class="chart-box-title">{{ k }} 일별 추이</div>
-                <canvas id="chart-{{ panel.account.id }}-{{ loop.index }}"></canvas>
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if panel.hourly_total_days > 0 %}
-        <div class="chart-grid" style="margin-top:20px">
-            <div class="chart-box">
-                <div class="chart-box-title">시간대 평균 매출 / 구매건수 <span class="hint">({{ panel.hourly_total_days }}일 평균)</span></div>
-                <canvas id="hour-avg-{{ panel.account.id }}"></canvas>
-            </div>
-            <div class="chart-box">
-                <div class="chart-box-title">시간대별 누적 매출 비중 <span class="hint">(영업 진행률)</span></div>
-                <canvas id="cum-{{ panel.account.id }}"></canvas>
-            </div>
-            <div class="chart-box">
-                <div class="chart-box-title">요일별 평균 일매출</div>
-                <canvas id="dow-{{ panel.account.id }}"></canvas>
-            </div>
-        </div>
-        <div class="chart-box" style="margin-top:16px">
-            <div class="chart-box-title">요일 × 시간 매출 히트맵 <span class="hint">(셀 = 해당 요일·시간 평균 매출)</span></div>
-            <div class="heatmap-wrap">
-                <div class="heatmap" id="heatmap-{{ panel.account.id }}"></div>
-            </div>
-            <div class="heatmap-legend">
-                <span>낮음</span>
-                <span class="swatch" style="background:#eef5fc"></span>
-                <span class="swatch" style="background:#a8d0ee"></span>
-                <span class="swatch" style="background:#4a90d9"></span>
-                <span class="swatch" style="background:#1a5e9c"></span>
-                <span>높음</span>
-            </div>
-        </div>
-        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <!-- 매출 vs 지난주 -->
+                    <td>
+                        {% if r.vs_lastweek_pct is not none %}
+                            <span class="{{ 'up' if r.vs_lastweek_pct>0 else ('down' if r.vs_lastweek_pct<0 else 'flat') }}">{{ "%+.1f"|format(r.vs_lastweek_pct) }}%</span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <!-- 매출 vs 7일평균 -->
+                    <td>
+                        {% if r.vs_7avg_pct is not none %}
+                            <span class="{{ 'up' if r.vs_7avg_pct>0 else ('down' if r.vs_7avg_pct<0 else 'flat') }}">{{ "%+.1f"|format(r.vs_7avg_pct) }}%</span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:600; background:#fafafa">
+                    <td>합계</td>
+                    {% set agg_today = {'매출':0,'구매건수':0,'방문자수':0,'객단가':0} %}
+                    {% set agg_yest = {'매출':0,'구매건수':0,'방문자수':0,'객단가':0} %}
+                    {% for r in rows %}
+                        {% for col in ['매출','구매건수','방문자수','객단가'] %}
+                            {% if r.today[col] %}{% set _ = agg_today.update({col: agg_today[col] + r.today[col]}) %}{% endif %}
+                            {% if r.yesterday[col] %}{% set _ = agg_yest.update({col: agg_yest[col] + r.yesterday[col]}) %}{% endif %}
+                        {% endfor %}
+                    {% endfor %}
+                    {% for col in ['매출','구매건수','방문자수','객단가'] %}
+                    <td class="num-big">
+                        {{ "{:,.0f}".format(agg_today[col]) }}
+                        {% if agg_yest[col] %}
+                            {% set dd = agg_today[col] - agg_yest[col] %}
+                            {% set pp = (dd / agg_yest[col] * 100) %}
+                            <span class="delta {{ 'up' if dd>0 else ('down' if dd<0 else 'flat') }}">
+                                {% if dd > 0 %}▲{% elif dd < 0 %}▼{% else %}─{% endif %} {{ "{:,.0f}".format(dd|abs) }}
+                                <span class="pct">({{ "%+.1f"|format(pp) }}%)</span>
+                            </span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td>—</td>
+                    <td>—</td>
+                </tr>
+            </tfoot>
+        </table>
     </div>
-    {% endfor %}
 
-    {% if compare_charts %}
+    <!-- 2. 최근 9일 매출 그리드 -->
     <div class="card">
-        <h2>계정 비교 (일별 추이)</h2>
-        <div class="chart-grid">
-            {% for cc in compare_charts %}
-            <div class="chart-box">
-                <div class="chart-box-title">{{ cc.label }}</div>
-                <canvas id="compare-{{ loop.index }}"></canvas>
-            </div>
-            {% endfor %}
+        <h2>📅 최근 9일 매출</h2>
+        <p class="card-sub">셀 = 매출(원) / 구매건수. <span style="color:#b89c00">노랑</span> = 오늘 (진행중).</p>
+        <table class="num grid-table">
+            <thead>
+                <tr>
+                    <th>계정</th>
+                    {% for d in grid_dates %}
+                        <th class="{{ 'today' if d == today }}">
+                            {{ d[5:] }}
+                            <span class="sub">{{ grid_dows[loop.index0] }}</span>
+                        </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in grid %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    {% for c in row.cells %}
+                    <td class="{{ 'today' if c.is_today }}">
+                        {% if c.매출 is not none %}
+                            {{ "{:,.0f}".format(c.매출) }}
+                            <span class="sub">{{ c.구매건수 if c.구매건수 is not none else '' }}</span>
+                        {% else %}
+                            <span class="dim">—</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 3. 시간대 평균 매출 그리드 (최근 7일 평균) -->
+    <div class="card">
+        <h2>⏰ 시간대 평균 매출 — 최근 7일</h2>
+        <p class="card-sub">계정 × 시간 (0~23). 셀 = 해당 시간 평균 매출(원). 색 깊이 = 매출 크기.</p>
+        <div style="overflow-x:auto">
+            <table class="num hour-table">
+                <thead>
+                    <tr>
+                        <th>계정</th>
+                        {% for h in range(24) %}<th>{{ '%02d' % h }}</th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in hour_grid %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        {% set max_v = row.max_v %}
+                        {% for v in row.hours %}
+                            {% if v %}
+                                {% set ratio = (v / max_v) if max_v else 0 %}
+                                {% set alpha = (ratio * 0.55 + 0.05) %}
+                                <td style="background: rgba(74,144,217,{{ '%.2f'|format(alpha) }});">
+                                    {{ "{:,.0f}".format(v) if v >= 1000 else v }}
+                                </td>
+                            {% else %}
+                                <td class="empty">·</td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-    {% endif %}
-
-    {% if hourly_compare and hourly_compare.datasets %}
-    <div class="card">
-        <h2>계정별 시간대 평균 비교</h2>
-        <div class="chart-grid">
-            <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">시간 평균 매출</div>
-                <canvas id="hourly-compare-sales"></canvas>
-            </div>
-            <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">시간 평균 구매건수</div>
-                <canvas id="hourly-compare-orders"></canvas>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if not panels %}
-    <div class="card">
-        <p class="nodata">선택된 계정이 없거나 등록된 계정이 없습니다.</p>
-    </div>
-    {% endif %}
 </div>
-
-<script>
-const PALETTE = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12", "#9b59b6"];
-const DAYS_KO = {{ days_ko | tojson }};
-
-const baseOpts = (unit) => ({
-    responsive: true,
-    plugins: {
-        legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
-        tooltip: {
-            callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()} ${unit||''}` }
-        }
-    },
-    scales: {
-        x: { ticks: { font: { size: 10 }, maxRotation: 45, minRotation: 45 } },
-        y: { ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() }, beginAtZero: true }
-    }
-});
-
-// 프리셋 버튼: 종료일=어제, 시작일=종료일-(N-1)
-document.querySelectorAll('[data-preset]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const n = parseInt(btn.dataset.preset, 10);
-        const end = new Date();
-        end.setDate(end.getDate() - 1);
-        const start = new Date(end);
-        start.setDate(start.getDate() - (n - 1));
-        const fmt = (d) => d.toISOString().slice(0, 10);
-        document.querySelector('input[name=start_date]').value = fmt(start);
-        document.querySelector('input[name=end_date]').value = fmt(end);
-        document.getElementById('filter-form').submit();
-    });
-});
-
-// 색상 보간 (heatmap)
-function heatColor(ratio) {
-    // ratio 0~1 → 흰색→#1a5e9c
-    const stops = [
-        [0.0, [255, 255, 255]],
-        [0.25, [238, 245, 252]],
-        [0.5,  [168, 208, 238]],
-        [0.75, [74, 144, 217]],
-        [1.0, [26, 94, 156]],
-    ];
-    let lo = stops[0], hi = stops[stops.length - 1];
-    for (let i = 0; i < stops.length - 1; i++) {
-        if (ratio >= stops[i][0] && ratio <= stops[i+1][0]) { lo = stops[i]; hi = stops[i+1]; break; }
-    }
-    const t = (ratio - lo[0]) / (hi[0] - lo[0] || 1);
-    const c = lo[1].map((v, i) => Math.round(v + (hi[1][i] - v) * t));
-    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
-}
-
-// 패널별 차트
-{% for panel in panels %}
-{% set acct_id = panel.account.id %}
-
-{% if panel.history %}
-(function() {
-    const labels = {{ panel.history | map(attribute='date') | list | tojson }};
-    const colors = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12"];
-    const fields = [
-        {col: "방문자수", unit: "명"},
-        {col: "매출", unit: "원"},
-        {col: "구매건수", unit: "건"},
-        {col: "객단가", unit: "원"},
-    ];
-    const histData = {{ panel.history | tojson }};
-    fields.forEach((f, i) => {
-        const data = histData.map(h => h[f.col] ?? null);
-        new Chart(document.getElementById(`chart-{{ acct_id }}-${i+1}`), {
-            type: 'line',
-            data: { labels, datasets: [{label: f.col, data, borderColor: colors[i], backgroundColor: colors[i]+'22', tension: 0.3, pointRadius: 3, fill: true}] },
-            options: baseOpts(f.unit)
-        });
-    });
-})();
-{% endif %}
-
-{% if panel.hourly_total_days > 0 %}
-(function() {
-    const hourLabels = Array.from({length: 24}, (_, h) => `${String(h).padStart(2,'0')}시`);
-    const avgSales = {{ panel.avg_sales_by_hour | tojson }};
-    const avgOrders = {{ panel.avg_orders_by_hour | tojson }};
-    const cumPct = {{ panel.cum_pct | tojson }};
-    const dowAvg = {{ panel.avg_sales_by_dow | tojson }};
-
-    // 시간 평균 (bar+line dual)
-    new Chart(document.getElementById(`hour-avg-{{ acct_id }}`), {
-        data: {
-            labels: hourLabels,
-            datasets: [
-                {type: 'bar', label: '평균 매출(원)', data: avgSales, backgroundColor: '#4a90d966', borderColor: '#4a90d9', yAxisID: 'y'},
-                {type: 'line', label: '평균 구매건수', data: avgOrders, borderColor: '#e74c3c', backgroundColor: '#e74c3c22', tension: 0.3, pointRadius: 3, yAxisID: 'y1'},
-            ]
-        },
-        options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()}` } } },
-            scales: {
-                x: { ticks: { font: { size: 9 } } },
-                y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() } },
-                y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
-            }
-        }
-    });
-
-    // 누적 매출 비중 (line, 0~100%)
-    new Chart(document.getElementById(`cum-{{ acct_id }}`), {
-        type: 'line',
-        data: { labels: hourLabels, datasets: [{label: '누적 매출 비중(%)', data: cumPct, borderColor: '#27ae60', backgroundColor: '#27ae6033', tension: 0.3, fill: true, pointRadius: 3}] },
-        options: {
-            responsive: true,
-            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.parsed.y}%` } } },
-            scales: { x: { ticks: { font: { size: 9 } } }, y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
-        }
-    });
-
-    // 요일 평균 매출 (bar)
-    new Chart(document.getElementById(`dow-{{ acct_id }}`), {
-        type: 'bar',
-        data: {
-            labels: DAYS_KO,
-            datasets: [{label: '평균 일매출(원)', data: dowAvg, backgroundColor: DAYS_KO.map((_, i) => i >= 5 ? '#e74c3c99' : '#4a90d999')}]
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${Number(ctx.parsed.y || 0).toLocaleString()}원` } } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } } }
-        }
-    });
-
-    // 히트맵 (요일 × 시간)
-    const dowHourSales = {{ panel.dow_hour_sales | tojson }};
-    const dowHourCount = {{ panel.dow_hour_count | tojson }};
-    const flat = [];
-    for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
-        const cnt = dowHourCount[d][h];
-        if (cnt > 0) flat.push(dowHourSales[d][h] / cnt);
-    }
-    const maxV = flat.length ? Math.max(...flat) : 1;
-    const grid = document.getElementById(`heatmap-{{ acct_id }}`);
-    let html = '<div></div>';
-    for (let h = 0; h < 24; h++) html += `<div class="h-head">${String(h).padStart(2,'0')}</div>`;
-    for (let d = 0; d < 7; d++) {
-        html += `<div class="h-row-label">${DAYS_KO[d]}</div>`;
-        for (let h = 0; h < 24; h++) {
-            const cnt = dowHourCount[d][h];
-            const avg = cnt > 0 ? dowHourSales[d][h] / cnt : 0;
-            const ratio = maxV > 0 ? avg / maxV : 0;
-            const bg = cnt > 0 ? heatColor(ratio) : '#f5f5f5';
-            const txtColor = ratio > 0.55 ? '#fff' : '#333';
-            const display = cnt > 0 ? Math.round(avg / 1000) + 'k' : '-';
-            const tip = cnt > 0 ? `${DAYS_KO[d]} ${String(h).padStart(2,'0')}시: ${Math.round(avg).toLocaleString()}원 (${cnt}일 평균)` : `${DAYS_KO[d]} ${String(h).padStart(2,'0')}시: 데이터 없음`;
-            html += `<div class="h-cell" style="background:${bg};color:${txtColor}" title="${tip}">${display}</div>`;
-        }
-    }
-    grid.innerHTML = html;
-})();
-{% endif %}
-
-{% endfor %}
-
-// 시간 평균 다계정 overlay
-{% if hourly_compare and hourly_compare.datasets %}
-(function() {
-    const hours = {{ hourly_compare.hours | tojson }};
-    const labels = hours.map(h => `${String(h).padStart(2,'0')}시`);
-    const datasets = {{ hourly_compare.datasets | tojson }};
-    const buildDS = (key) => datasets.map((ds, i) => ({
-        label: ds.label, data: ds[key],
-        borderColor: PALETTE[i % PALETTE.length],
-        backgroundColor: PALETTE[i % PALETTE.length] + '22',
-        tension: 0.3, pointRadius: 3,
-    }));
-    new Chart(document.getElementById('hourly-compare-sales'), { type: 'line', data: { labels, datasets: buildDS('sales') }, options: baseOpts('원') });
-    new Chart(document.getElementById('hourly-compare-orders'), { type: 'line', data: { labels, datasets: buildDS('orders') }, options: baseOpts('건') });
-})();
-{% endif %}
-
-// 계정 비교 차트
-{% for cc in compare_charts %}
-(function() {
-    const idx = {{ loop.index }};
-    const labels = {{ cc.labels | tojson }};
-    const datasets = {{ cc.datasets | tojson }}.map((ds, i) => ({
-        label: ds.label, data: ds.data,
-        borderColor: PALETTE[i % PALETTE.length],
-        backgroundColor: PALETTE[i % PALETTE.length] + '22',
-        tension: 0.3, pointRadius: 3,
-    }));
-    new Chart(document.getElementById(`compare-${idx}`), { type: 'line', data: { labels, datasets }, options: baseOpts({{ cc.unit | tojson }}) });
-})();
-{% endfor %}
-</script>
 {% include '_feedback_widget.html' %}
 </body>
 </html>
