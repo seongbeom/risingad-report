@@ -226,9 +226,10 @@ def login(page, account):
         if "eclogin.cafe24.com" not in page.url:
             return  # 정상 도메인 변경
         try:
-            # 1) 비밀번호/아이디 거절 (한글 비번 같은 등록 오류 케이스)
+            # 1) 비밀번호/아이디 거절 - false positive 방지 위해 정확한 에러 문구만
+            #    (페이지에 "아이디/비밀번호 찾기" 같은 링크가 항상 있어서 광범위 매칭 X)
             if page.locator(
-                "text=/비밀번호.*일치하지|비밀번호.*확인|아이디.*비밀번호|회원정보.*일치하지|잘못된 아이디/"
+                "text=/비밀번호가 일치하지|비밀번호를 다시|회원정보가 일치하지|잘못된 아이디|등록되지 않은 아이디|존재하지 않는 아이디/"
             ).count() > 0:
                 rejected_reason = "비밀번호/아이디 거절"
                 break
