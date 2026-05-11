@@ -151,14 +151,51 @@ def login(page, account):
     page.goto(login_url, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
 
-    page.fill("#mall_id", cafe24_id)
+    # fill() 은 input.value 만 세팅하고 keystroke event 안 발생시킴.
+    # cafe24 비번 필드가 keypress/input listener 로 클라이언트 hash 등 추가 처리를 한다면
+    # type() 으로 keystroke 발생시켜야 함.
+    page.click("#mall_id")
+    page.fill("#mall_id", "")
+    page.type("#mall_id", cafe24_id, delay=30)
     if not main_admin:
-        page.fill("#userid", sub_id)
-    page.fill("#userpasswd", password)
+        page.click("#userid")
+        page.fill("#userid", "")
+        page.type("#userid", sub_id, delay=30)
+    page.click("#userpasswd")
+    page.fill("#userpasswd", "")
+    page.type("#userpasswd", password, delay=30)
+    # blur 처리 + 페이지 내부 listener 가 hash 등 처리할 시간 확보
+    try:
+        page.evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur()")
+    except Exception:
+        pass
+    page.wait_for_timeout(500)
 
     # reCAPTCHA: CapSolver API 로 v2 토큰 받아 hidden field 에 주입
     # iframe 안 떠 있으면 캡챠 없는 케이스 (세션 신뢰도 높음) - skip
-    recaptcha_iframe = page.query_selector("iframe[title*='reCAPTCHA']")
+    # 단, iframe 이 늦게 렌더링되는 경우가 있어 최대 5초까지 기다림
+    recaptcha_iframe = None
+    for _ in range(10):
+        recaptcha_iframe = page.query_selector("iframe[title*='reCAPTCHA']")
+        if recaptcha_iframe:
+            break
+        # g-recaptcha div 가 있는데 iframe 이 아직 안 뜬 경우 강제 시도
+        if page.query_selector("div.g-recaptcha, [data-sitekey]"):
+            page.wait_for_timeout(500)
+            continue
+        # g-recaptcha div 자체가 아예 없으면 캡챠가 안 뜨는 페이지 - 즉시 break
+        break
+    if not recaptcha_iframe:
+        # 명시적 g-recaptcha div 가 있는데 iframe 만 없으면 추측 가능
+        gdiv = page.query_selector("div.g-recaptcha, [data-sitekey]")
+        if gdiv:
+            sitekey_attr = gdiv.get_attribute("data-sitekey")
+            if sitekey_attr:
+                print(f"[login] iframe 미생성 but g-recaptcha div 발견, sitekey={sitekey_attr} - 강제 풀이")
+                token = capsolver_solve_recaptcha_v2(sitekey_attr, page.url, timeout=120, account_id=account.get("id"))
+                _inject_recaptcha_token(page, token)
+                page.wait_for_timeout(800)
+                recaptcha_iframe = "__handled__"
     if recaptcha_iframe:
         # iframe src 의 k= 파라미터에서 sitekey 추출
         src = recaptcha_iframe.get_attribute("src") or ""
