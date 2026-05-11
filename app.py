@@ -826,6 +826,36 @@ def dashboard():
     for d in dow_summary:
         d["pct"] = round(d["avg"] / max_dow_avg * 100) if d["avg"] and max_dow_avg else 0
 
+    # ----- 신규: 매장별 시간별 누적 매출 표 -----
+    acct_hourly_cum = []
+    for r in rows:  # 매출 desc 정렬 그대로 사용
+        aid = r["id"]
+        today_hours_map = by_acct_date_hour.get(aid, {}).get(today, {})
+        yest_hours_map = by_acct_date_hour.get(aid, {}).get(yesterday, {})
+        cells = []
+        cum_t = 0
+        cum_y = 0
+        for h in range(24):
+            cum_t += today_hours_map.get(h, 0)
+            cum_y += yest_hours_map.get(h, 0)
+            cells.append({
+                "hour": h,
+                "today_hour": today_hours_map.get(h, 0) if h <= cur_hour else None,
+                "today_cum": cum_t if h <= cur_hour else None,
+                "yest_hour": yest_hours_map.get(h, 0),
+                "yest_cum": cum_y,
+                "vs_pct": _pct(cum_t, cum_y) if (cum_y and h <= cur_hour) else None,
+                "is_now": h == cur_hour,
+                "is_future": h > cur_hour,
+            })
+        acct_hourly_cum.append({
+            "id": aid,
+            "label": r["label"],
+            "cells": cells,
+            "today_total": r["today"]["매출"] or 0,
+            "yest_total": r["yesterday"]["매출"] or 0,
+        })
+
     # ----- 신규: 알람 (주의 필요) -----
     alerts = []
     # 1) 예상 종일이 어제 종일보다 -20% 이상 하락 예상
@@ -934,6 +964,8 @@ def dashboard():
         grid_dows=grid_dows,
         hour_grid=hour_grid,
         hourly_trend=hourly_trend,
+        acct_hourly_cum=acct_hourly_cum,
+        cur_hour=cur_hour,
         dow_summary=dow_summary,
         alerts=alerts,
         ops_status=ops_status,

@@ -454,6 +454,69 @@
         </table>
     </div>
 
+    <!-- 매장별 시간별 누적 매출 (오늘) -->
+    <div class="card">
+        <h2>🏬 매장별 시간별 누적 매출 — 오늘 ({{ today }})</h2>
+        <p class="card-sub">
+            행=매장 (오늘 매출 큰 순), 열=시간(0~23). 셀=0시부터 해당 시각까지 누적 매출(원).
+            <strong style="background:#fff9e6;padding:1px 4px">노랑</strong>=현재 시각.
+            셀 위 hover → 어제 동시각 누적 + vs%.
+        </p>
+        <div style="overflow-x:auto">
+            <table class="num acct-hour" style="font-size:0.7rem;min-width:100%">
+                <thead>
+                    <tr>
+                        <th style="position:sticky;left:0;background:#fafafa;z-index:2;min-width:90px">매장</th>
+                        {% for h in range(24) %}
+                            <th style="text-align:right;padding:4px 5px;{% if h == cur_hour %}background:#fff9e6;color:#b89c00;font-weight:700{% endif %}">{{ "%02d"|format(h) }}</th>
+                        {% endfor %}
+                        <th style="text-align:right;padding:4px 6px;background:#f0f4ff">오늘<br>합계</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in acct_hourly_cum %}
+                    <tr>
+                        <td style="position:sticky;left:0;background:#fff;z-index:1;font-weight:600;font-size:0.8rem">{{ a.label }}</td>
+                        {% for c in a.cells %}
+                        <td style="text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;
+                                   {% if c.is_now %}background:#fff9e6;font-weight:700{% endif %}
+                                   {% if c.is_future %}color:#ddd{% endif %}"
+                            title="{% if c.today_cum %}오늘 누적 {{ '{:,.0f}'.format(c.today_cum) }}원
+어제 동시각 {{ '{:,.0f}'.format(c.yest_cum) }}원
+시간당 {{ '{:,.0f}'.format(c.today_hour or 0) }}원{% if c.vs_pct is not none %}
+vs 어제 {{ '%+.1f'|format(c.vs_pct) }}%{% endif %}{% endif %}">
+                            {% if c.today_cum %}
+                                {% set k = c.today_cum %}
+                                {% if k >= 1000000 %}{{ "%.1fM"|format(k/1000000) }}{% elif k >= 1000 %}{{ "%.0fK"|format(k/1000) }}{% else %}{{ k }}{% endif %}
+                                {% if c.vs_pct is not none %}
+                                    <span style="display:block;font-size:0.62rem;color:{% if c.vs_pct > 5 %}#27ae60{% elif c.vs_pct < -5 %}#e74c3c{% else %}#aaa{% endif %}">{{ "%+.0f"|format(c.vs_pct) }}%</span>
+                                {% endif %}
+                            {% elif c.is_future %}
+                                <span style="color:#eee">·</span>
+                            {% else %}
+                                <span class="dim">—</span>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                        <td style="text-align:right;padding:3px 6px;background:#f0f4ff;font-weight:700;font-size:0.78rem">
+                            {% if a.today_total %}
+                                {{ "{:,.0f}".format(a.today_total) }}
+                                {% if a.yest_total %}
+                                    {% set tdiff = (a.today_total - a.yest_total) / a.yest_total * 100 %}
+                                    <span style="display:block;font-size:0.62rem;font-weight:400;color:{% if tdiff > 0 %}#27ae60{% elif tdiff < 0 %}#e74c3c{% else %}#aaa{% endif %}">vs종일 {{ "%+.0f"|format(tdiff) }}%</span>
+                                {% endif %}
+                            {% else %}<span class="dim">—</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="card-sub" style="margin-top:8px">
+            셀 단위: K=천원, M=백만원. 작은 숫자 = 어제 동시각 누적 대비 %. 셀에 마우스 올리면 정확한 값 표시.
+        </p>
+    </div>
+
     <!-- 매장별 7일 트렌드 -->
     <div class="card">
         <h2>📈 매장별 최근 7일 트렌드</h2>
