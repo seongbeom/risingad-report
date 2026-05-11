@@ -750,6 +750,174 @@ def dashboard():
         max_v = max((v for v in avg if v is not None), default=0)
         hour_grid.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "hours": avg, "max_v": max_v})
 
+    # ----- 신규: 시간별 누적 매출 (전 계정 합계, 오늘 vs 어제 동시각) -----
+    today_hourly = db.list_metrics_hourly_range([a["id"] for a in accounts], today, today)
+    today_hour_map = {}  # hour -> 매출 합
+    today_hour_orders = {}  # hour -> 건수 합
+    for r in today_hourly:
+        today_hour_map[r["hour"]] = today_hour_map.get(r["hour"], 0) + (r.get("매출") or 0)
+        today_hour_orders[r["hour"]] = today_hour_orders.get(r["hour"], 0) + (r.get("구매건수") or 0)
+    yest_hour_map = {}
+    for aid in [a["id"] for a in accounts]:
+        for h, v in by_acct_date_hour.get(aid, {}).get(yesterday, {}).items():
+            yest_hour_map[h] = yest_hour_map.get(h, 0) + v
+
+    hourly_trend = []
+    cum_t = 0
+    cum_y = 0
+    for h in range(24):
+        t = today_hour_map.get(h, 0)
+        y = yest_hour_map.get(h, 0)
+        cum_t += t
+        cum_y += y
+        hourly_trend.append({
+            "hour": h,
+            "today_hour": t if h <= cur_hour else None,
+            "today_cum": cum_t if h <= cur_hour else None,
+            "today_orders": today_hour_orders.get(h, 0) if h <= cur_hour else None,
+            "yest_hour": y,
+            "yest_cum": cum_y,
+            "vs_pct": _pct(cum_t, cum_y) if h <= cur_hour else None,
+            "is_now": h == cur_hour,
+            "is_future": h > cur_hour,
+        })
+
+    # ----- 신규: 요일별 평균 매출 (최근 8일 데이터로) -----
+    DAYS_KO_FULL = ["월", "화", "수", "목", "금", "토", "일"]
+    dow_buckets = [[] for _ in range(7)]  # 0=월 ~ 6=일
+    for (aid, d), m in by_key.items():
+        if d == today:
+            continue  # 오늘은 진행중이라 제외
+        sales = m.get("매출")
+        if sales is None:
+            continue
+        wd = datetime.strptime(d, "%Y-%m-%d").weekday()
+        dow_buckets[wd].append(sales)
+    dow_summary = []
+    today_dow = datetime.now().weekday()
+    for i in range(7):
+        b = dow_buckets[i]
+        # 전 계정 매출 합계 평균 - 일별로 모든 계정 합 후 평균
+        # 위 구조는 계정별 매출이라 일별 합으로 변환 필요
+        pass
+
+    # 일별 합계로 재계산 (date -> sum_sales)
+    date_total = {}
+    for (aid, d), m in by_key.items():
+        if d == today:
+            continue
+        date_total[d] = date_total.get(d, 0) + (m.get("매출") or 0)
+    dow_day_buckets = [[] for _ in range(7)]
+    for d, total in date_total.items():
+        wd = datetime.strptime(d, "%Y-%m-%d").weekday()
+        dow_day_buckets[wd].append(total)
+    max_dow_avg = 0
+    for i in range(7):
+        b = dow_day_buckets[i]
+        avg_v = round(sum(b) / len(b)) if b else None
+        if avg_v and avg_v > max_dow_avg:
+            max_dow_avg = avg_v
+        dow_summary.append({
+            "dow": DAYS_KO_FULL[i],
+            "is_today": i == today_dow,
+            "avg": avg_v,
+            "n": len(b),
+        })
+    for d in dow_summary:
+        d["pct"] = round(d["avg"] / max_dow_avg * 100) if d["avg"] and max_dow_avg else 0
+
+    # ----- 신규: 알람 (주의 필요) -----
+    alerts = []
+    # 1) 예상 종일이 어제 종일보다 -20% 이상 하락 예상
+    for r in rows:
+        if r["expected_eod"] and r["yesterday"]["매출"]:
+            diff = (r["expected_eod"] - r["yesterday"]["매출"]) / r["yesterday"]["매출"] * 100
+            if diff <= -20:
+                alerts.append({
+                    "type": "down",
+                    "label": r["label"],
+                    "msg": f"예상 종일 {r['expected_eod']:,}원, 어제 대비 {diff:+.1f}%",
+                })
+    # 2) 미수집 (오늘 매출 0이고 시간 7시 이후)
+    if cur_hour >= 7:
+        for r in rows:
+            if (r["today"]["매출"] or 0) == 0:
+                alerts.append({
+                    "type": "missing",
+                    "label": r["label"],
+                    "msg": f"오늘 데이터 없음 (현재 {cur_hour}시)",
+                })
+    # 3) 캡솔버 실패 5회 이상 today
+    cs_today = (db.capsolver_stats() or {}).get("today", {})
+    if (cs_today.get("fail") or 0) >= 5:
+        alerts.append({
+            "type": "capsolver",
+            "label": "CapSolver",
+            "msg": f"오늘 실패 {cs_today.get('fail')}회 (성공률 {cs_today.get('success_pct')}%)",
+        })
+
+    # ----- 신규: 운영 상태 -----
+    live_settings = db.get_live_settings()
+    daily_settings = db.get_daily_finalize_settings()
+    last_live_run = None
+    last_runs = db.list_runs(limit=1)
+    if last_runs:
+        last_live_run = last_runs[0]
+    # 다음 라이브 시각 계산
+    next_live = None
+    if live_settings["interval_min"] > 0:
+        # APScheduler interval 기반 다음 실행은 정확히 알 수 없어 추정 (현재 시각 + interval)
+        next_live = (now + timedelta(minutes=live_settings["interval_min"])).strftime("%H:%M")
+    # 다음 시트 기록 시각 (내일 daily_finalize_hour:minute)
+    next_daily_dt = now.replace(hour=daily_settings["hour"], minute=daily_settings["minute"], second=0, microsecond=0)
+    if next_daily_dt <= now:
+        next_daily_dt = next_daily_dt + timedelta(days=1)
+    ops_status = {
+        "last_run": last_live_run,
+        "next_live": next_live if (live_settings["start_hour"] <= cur_hour < live_settings["end_hour"]) else f"활성시간({live_settings['start_hour']}시)",
+        "next_daily": next_daily_dt.strftime("%m/%d %H:%M"),
+        "live_interval": live_settings["interval_min"],
+        "live_active": live_settings["start_hour"] <= cur_hour < live_settings["end_hour"],
+    }
+
+    # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
+    trend_rows = []
+    for a in accounts:
+        aid = a["id"]
+        vals = []
+        for d in last7_dates:
+            m = by_key.get((aid, d))
+            if m and m.get("매출") is not None:
+                vals.append((d, m["매출"]))
+        if not vals:
+            trend_rows.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "avg": None, "best": None, "worst": None, "trend": None, "n": 0})
+            continue
+        sales_vals = [v for _, v in vals]
+        avg = round(sum(sales_vals) / len(sales_vals))
+        best = max(vals, key=lambda x: x[1])
+        worst = min(vals, key=lambda x: x[1])
+        # 추세: 앞 3일 평균 vs 뒤 3일 평균
+        if len(vals) >= 4:
+            half = len(vals) // 2
+            first_avg = sum(v for _, v in vals[:half]) / half
+            last_avg = sum(v for _, v in vals[half:]) / (len(vals) - half)
+            trend_pct = _pct(last_avg, first_avg)
+        else:
+            trend_pct = None
+        trend_rows.append({
+            "label": a.get("label") or a["cafe24_id"],
+            "id": aid,
+            "avg": avg,
+            "best_date": best[0],
+            "best_v": best[1],
+            "worst_date": worst[0],
+            "worst_v": worst[1],
+            "trend": trend_pct,
+            "n": len(vals),
+            "today_sales": by_key.get((aid, today), {}).get("매출"),
+        })
+    trend_rows.sort(key=lambda r: r["avg"] or 0, reverse=True)
+
     capsolver = db.capsolver_stats()
     capsolver["balance"] = scraper.capsolver_balance()
 
@@ -765,6 +933,11 @@ def dashboard():
         grid_dates=grid_dates,
         grid_dows=grid_dows,
         hour_grid=hour_grid,
+        hourly_trend=hourly_trend,
+        dow_summary=dow_summary,
+        alerts=alerts,
+        ops_status=ops_status,
+        trend_rows=trend_rows,
         today=today,
         yesterday=yesterday,
         last_week_same=last_week_same,

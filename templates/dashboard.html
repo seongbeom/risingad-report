@@ -375,6 +375,167 @@
         </table>
     </div>
 
+    <!-- 운영 상태 + 알람 -->
+    <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div>
+            <h2 style="border-bottom:none;padding-bottom:0">⚙️ 운영 상태</h2>
+            <table style="font-size:0.88rem;margin-top:8px">
+                <tr><td style="padding:4px 8px;color:#666">라이브 인터벌</td>
+                    <td><strong>{{ ops_status.live_interval }}분</strong>
+                        {% if ops_status.live_active %}<span class="badge badge-on" style="margin-left:6px">활성</span>
+                        {% else %}<span class="badge badge-off" style="margin-left:6px">비활성</span>{% endif %}
+                    </td></tr>
+                <tr><td style="padding:4px 8px;color:#666">다음 라이브 (추정)</td>
+                    <td><strong>{{ ops_status.next_live }}</strong></td></tr>
+                <tr><td style="padding:4px 8px;color:#666">다음 시트 기록</td>
+                    <td><strong>{{ ops_status.next_daily }}</strong></td></tr>
+                {% if ops_status.last_run %}
+                <tr><td style="padding:4px 8px;color:#666">마지막 실행</td>
+                    <td>
+                        {{ ops_status.last_run.cafe24_id }}
+                        <span class="badge badge-{{ 'success' if ops_status.last_run.status == 'success' else ('error' if ops_status.last_run.status == 'error' else 'running') }}" style="margin-left:6px">{{ ops_status.last_run.status }}</span>
+                        <span class="label-sub" style="margin-left:6px;color:#aaa">{{ ops_status.last_run.started_at[5:16] if ops_status.last_run.started_at|length >= 16 else ops_status.last_run.started_at }}</span>
+                    </td></tr>
+                {% endif %}
+            </table>
+        </div>
+        <div>
+            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length }}건</span></h2>
+            {% if alerts %}
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
+                {% for a in alerts %}
+                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;
+                            background:{% if a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% else %}#f0f4ff{% endif %};
+                            border-left:3px solid {% if a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% else %}#4a90d9{% endif %}">
+                    <span style="font-size:0.95rem">{% if a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% else %}🤖{% endif %}</span>
+                    <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty" style="margin-top:8px;font-size:0.86rem">이상 없음 ✅</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 시간별 누적 매출 (오늘 vs 어제 동시각) -->
+    <div class="card">
+        <h2>⏱ 시간별 누적 매출 — 오늘 vs 어제 동시각</h2>
+        <p class="card-sub">전 계정 합계. <strong>누적</strong> = 0시부터 해당 시각까지 매출 합. <strong>vs</strong> = 어제 같은 시각 누적 대비.</p>
+        <table class="num" style="font-size:0.86rem">
+            <thead>
+                <tr>
+                    <th>시간</th>
+                    <th>오늘 시간당</th>
+                    <th>오늘 누적</th>
+                    <th>건수</th>
+                    <th>어제 누적</th>
+                    <th>vs</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in hourly_trend %}
+                {% if not h.is_future or h.yest_cum %}
+                <tr {% if h.is_now %}style="background:#fff9e6;font-weight:600"{% endif %} {% if h.is_future %}style="color:#bbb"{% endif %}>
+                    <td><strong>{{ "%02d"|format(h.hour) }}시</strong>{% if h.is_now %} <span style="font-size:0.7rem;color:#b89c00">●NOW</span>{% endif %}</td>
+                    <td>{% if h.today_hour is not none and h.today_hour %}{{ "{:,.0f}".format(h.today_hour) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td class="num-big">{% if h.today_cum is not none and h.today_cum %}{{ "{:,.0f}".format(h.today_cum) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>{% if h.today_orders is not none and h.today_orders %}{{ h.today_orders }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>{% if h.yest_cum %}{{ "{:,.0f}".format(h.yest_cum) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>
+                        {% if h.vs_pct is not none %}
+                            <span class="{{ 'up' if h.vs_pct>0 else ('down' if h.vs_pct<0 else 'flat') }}">{{ "%+.1f"|format(h.vs_pct) }}%</span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 매장별 7일 트렌드 -->
+    <div class="card">
+        <h2>📈 매장별 최근 7일 트렌드</h2>
+        <p class="card-sub">7일 평균/최고일/최저일/추세 (앞 절반 평균 vs 뒤 절반 평균). 오늘은 제외.</p>
+        <table class="num" style="font-size:0.88rem">
+            <thead>
+                <tr>
+                    <th>매장</th>
+                    <th>7일 평균</th>
+                    <th>오늘</th>
+                    <th>최고일</th>
+                    <th>최저일</th>
+                    <th>추세</th>
+                    <th>관측일수</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in trend_rows %}
+                <tr>
+                    <td><strong>{{ t.label }}</strong></td>
+                    <td class="num-big">{% if t.avg %}{{ "{:,.0f}".format(t.avg) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>
+                        {% if t.today_sales %}
+                            {{ "{:,.0f}".format(t.today_sales) }}
+                            {% if t.avg %}
+                                {% set diff = (t.today_sales - t.avg) / t.avg * 100 %}
+                                <span class="label-sub" style="display:block; color:{{ '#27ae60' if diff>0 else '#e74c3c' }}">{{ "%+.0f"|format(diff) }}% vs 평균</span>
+                            {% endif %}
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if t.best_v %}
+                            {{ "{:,.0f}".format(t.best_v) }}
+                            <span class="label-sub" style="display:block;color:#27ae60">{{ t.best_date[5:] }}</span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if t.worst_v %}
+                            {{ "{:,.0f}".format(t.worst_v) }}
+                            <span class="label-sub" style="display:block;color:#e74c3c">{{ t.worst_date[5:] }}</span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if t.trend is not none %}
+                            <span class="{{ 'up' if t.trend>0 else ('down' if t.trend<0 else 'flat') }}">
+                                {% if t.trend > 0 %}▲{% elif t.trend < 0 %}▼{% else %}─{% endif %} {{ "%+.1f"|format(t.trend) }}%
+                            </span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <td>{{ t.n }}일</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 요일별 평균 매출 -->
+    <div class="card">
+        <h2>📅 요일별 평균 매출 (전 계정 합계)</h2>
+        <p class="card-sub">최근 8일 데이터로 계산. 막대 길이 = 해당 요일 평균 / 최고 요일 평균.</p>
+        <table class="num" style="font-size:0.9rem">
+            <thead>
+                <tr><th>요일</th><th>평균 매출</th><th>표본일수</th><th style="width:50%">비교</th></tr>
+            </thead>
+            <tbody>
+                {% for d in dow_summary %}
+                <tr {% if d.is_today %}style="background:#fff9e6;font-weight:600"{% endif %}>
+                    <td><strong>{{ d.dow }}</strong>{% if d.is_today %} <span style="font-size:0.7rem;color:#b89c00">●오늘</span>{% endif %}</td>
+                    <td class="num-big">{% if d.avg %}{{ "{:,.0f}".format(d.avg) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>{{ d.n }}일</td>
+                    <td>
+                        {% if d.pct %}
+                            <span class="pace-bar" style="width:100%;max-width:340px"><span class="fill" style="width:{{ d.pct }}%; background:#4a90d9"></span></span>
+                            <span style="color:#666;font-size:0.78rem;margin-left:6px">{{ d.pct }}%</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
     <!-- 2. 최근 9일 매출 그리드 -->
     <div class="card">
         <h2>📅 최근 9일 매출</h2>
