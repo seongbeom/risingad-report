@@ -486,8 +486,13 @@
 시간당 {{ '{:,.0f}'.format(c.today_hour or 0) }}원{% if c.vs_pct is not none %}
 vs 어제 {{ '%+.1f'|format(c.vs_pct) }}%{% endif %}{% endif %}">
                             {% if c.today_cum %}
-                                {% set k = c.today_cum %}
-                                {% if k >= 1000000 %}{{ "%.1fM"|format(k/1000000) }}{% elif k >= 1000 %}{{ "%.0fK"|format(k/1000) }}{% else %}{{ k }}{% endif %}
+                                {% if c.today_cum >= 1000000 %}
+                                    {{ "{:,.0f}".format(c.today_cum/10000) }}만
+                                {% elif c.today_cum >= 10000 %}
+                                    {{ "%.1f"|format(c.today_cum/10000) }}만
+                                {% else %}
+                                    {{ "{:,.0f}".format(c.today_cum) }}원
+                                {% endif %}
                                 {% if c.vs_pct is not none %}
                                     <span style="display:block;font-size:0.62rem;color:{% if c.vs_pct > 5 %}#27ae60{% elif c.vs_pct < -5 %}#e74c3c{% else %}#aaa{% endif %}">{{ "%+.0f"|format(c.vs_pct) }}%</span>
                                 {% endif %}
