@@ -193,7 +193,7 @@ def login(page, account):
             if page.locator(
                 "text=/비밀번호.*일치하지|비밀번호.*확인|아이디.*비밀번호|회원정보.*일치하지|잘못된 아이디/"
             ).count() > 0:
-                rejected_reason = "비밀번호/아이디 거절 (계정 등록 정보 확인 필요)"
+                rejected_reason = "비밀번호/아이디 거절"
                 break
             # 2) 보안문자 거절
             if page.locator(
@@ -211,15 +211,43 @@ def login(page, account):
             pass
         page.wait_for_timeout(500)
 
-    if rejected_reason:
-        raise RuntimeError(f"로그인 거절: {rejected_reason}")
-
-    # 마지막 진단: 페이지 body 텍스트 일부를 에러에 포함시켜 사용자가 원인 파악 가능하게
+    # 거절 케이스든 timeout 케이스든 body text 캡처해서 정확한 카페24 메시지 보여주기
     try:
-        body_text = page.evaluate("() => document.body && document.body.innerText ? document.body.innerText.substring(0, 300) : ''")
+        body_text = page.evaluate("""() => {
+            const visible = [];
+            // 흔히 에러 메시지가 들어가는 컨테이너 우선
+            const sels = ['.eLoginInfo', '.errorBox', '.error', '.alert', '.notice', '.info', '#err_msg', '.tit', 'p', 'div'];
+            const seen = new Set();
+            for (const sel of sels) {
+                document.querySelectorAll(sel).forEach(el => {
+                    const t = (el.innerText || '').trim();
+                    if (t && t.length > 3 && t.length < 200 && !seen.has(t)) {
+                        seen.add(t);
+                        visible.push(t);
+                    }
+                });
+                if (visible.length >= 10) break;
+            }
+            return visible.slice(0, 8).join(' | ');
+        }""")
     except Exception:
-        body_text = "(unable to read page body)"
-    raise RuntimeError(f"로그인 URL 변화 timeout (20s). 페이지 상단: {body_text!r}")
+        body_text = "(unable to read page)"
+    cur_url = page.url
+
+    # 디버그용 스크린샷 (account_id 알 수 있으면 저장)
+    aid = account.get("id") or "unknown"
+    try:
+        from pathlib import Path
+        Path("data/debug").mkdir(parents=True, exist_ok=True)
+        shot = f"data/debug/login_fail_{aid}_{int(_t.time())}.png"
+        page.screenshot(path=shot, full_page=True)
+        print(f"[login] 실패 스크린샷 저장: {shot}")
+    except Exception:
+        shot = None
+
+    if rejected_reason:
+        raise RuntimeError(f"로그인 거절: {rejected_reason} | url={cur_url} | msg={body_text[:300]!r}")
+    raise RuntimeError(f"로그인 URL 변화 timeout (20s) | url={cur_url} | msg={body_text[:300]!r}")
 
 
 def close_popups(page):
