@@ -577,6 +577,9 @@ def dashboard():
         max_v = max((v for v in avg if v is not None), default=0)
         hour_grid.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "hours": avg, "max_v": max_v})
 
+    capsolver = db.capsolver_stats()
+    capsolver["balance"] = scraper.capsolver_balance()
+
     return render_template(
         "dashboard.html",
         accounts=accounts,
@@ -588,6 +591,7 @@ def dashboard():
         today=today,
         yesterday=yesterday,
         last_week_same=last_week_same,
+        capsolver=capsolver,
         now=datetime.now().strftime("%H:%M"),
     )
 

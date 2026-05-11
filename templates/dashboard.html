@@ -64,6 +64,47 @@
         <a href="/dashboard/range">기간 분석 →</a>
     </div>
 
+    <!-- CapSolver 사용 현황 -->
+    {% if capsolver %}
+    <div class="card" style="background:#fffaf3">
+        <h2 style="display:flex; align-items:center; gap:8px">🔐 CapSolver
+            {% if capsolver.balance is not none %}
+            <span style="font-size:0.78rem; color:{{ '#27ae60' if capsolver.balance > 1 else '#e74c3c' }}; font-weight:600">
+                잔액 ${{ "%.2f"|format(capsolver.balance) }}
+            </span>
+            {% endif %}
+        </h2>
+        <p class="card-sub">reCAPTCHA 자동 풀이 API. 단가 ~$0.001/풀이. 잔액 $1 미만 시 충전 권장.</p>
+        <table class="num">
+            <thead>
+                <tr>
+                    <th>기간</th>
+                    <th>시도</th>
+                    <th>성공</th>
+                    <th>실패</th>
+                    <th>성공률</th>
+                    <th>평균 응답</th>
+                    <th>비용</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for label, key in [('오늘','today'), ('이번 달','month'), ('누적','all_time')] %}
+                {% set s = capsolver[key] %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td class="num-big">{{ s.total }}</td>
+                    <td>{{ s.success }}</td>
+                    <td class="{{ 'down' if s.fail > 0 else 'dim' }}">{{ s.fail }}</td>
+                    <td>{{ s.success_pct }}%</td>
+                    <td>{% if s.avg_latency_ms %}{{ s.avg_latency_ms }}ms{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td class="num-big">${{ "%.3f"|format(s.cost_usd) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <!-- 1. 오늘 누적 (가장 중요한 숫자) -->
     <div class="card">
         <h2>📊 오늘 누적 — {{ today }}</h2>

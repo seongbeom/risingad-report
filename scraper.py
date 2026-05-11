@@ -27,43 +27,63 @@ CAPSOLVER_API_KEY = os.environ.get("CAPSOLVER_API_KEY", "")
 CAPSOLVER_BASE = "https://api.capsolver.com"
 
 
-def capsolver_solve_recaptcha_v2(sitekey, page_url, timeout=120):
+def capsolver_solve_recaptcha_v2(sitekey, page_url, timeout=120, account_id=None):
     """CapSolver API 로 reCAPTCHA v2 풀기. g-recaptcha-response 토큰 문자열 반환.
-    실패 시 RuntimeError raise."""
+    실패 시 RuntimeError raise. db.capsolver_calls 에 호출 기록 남김."""
     if not CAPSOLVER_API_KEY:
         raise RuntimeError("CAPSOLVER_API_KEY 환경변수 미설정")
-    create = requests.post(f"{CAPSOLVER_BASE}/createTask", json={
-        "clientKey": CAPSOLVER_API_KEY,
-        "task": {
-            "type": "ReCaptchaV2TaskProxyLess",
-            "websiteURL": page_url,
-            "websiteKey": sitekey,
-        },
-    }, timeout=15).json()
-    if create.get("errorId") != 0:
-        raise RuntimeError(f"CapSolver createTask 실패: {create.get('errorDescription') or create}")
-    task_id = create.get("taskId")
-    if not task_id:
-        raise RuntimeError(f"CapSolver taskId 없음: {create}")
-
-    deadline = _time.time() + timeout
-    poll_interval = 2
-    while _time.time() < deadline:
-        _time.sleep(poll_interval)
-        r = requests.post(f"{CAPSOLVER_BASE}/getTaskResult", json={
+    t0 = _time.time()
+    import db as _db
+    try:
+        create = requests.post(f"{CAPSOLVER_BASE}/createTask", json={
             "clientKey": CAPSOLVER_API_KEY,
-            "taskId": task_id,
+            "task": {
+                "type": "ReCaptchaV2TaskProxyLess",
+                "websiteURL": page_url,
+                "websiteKey": sitekey,
+            },
         }, timeout=15).json()
-        if r.get("errorId") != 0:
-            raise RuntimeError(f"CapSolver getTaskResult 실패: {r.get('errorDescription') or r}")
-        status = r.get("status")
-        if status == "ready":
-            token = (r.get("solution") or {}).get("gRecaptchaResponse")
-            if not token:
-                raise RuntimeError(f"CapSolver solution 비어있음: {r}")
-            return token
-        # 'processing' 면 계속 폴링
-    raise RuntimeError(f"CapSolver 타임아웃 ({timeout}s)")
+        if create.get("errorId") != 0:
+            raise RuntimeError(f"createTask 실패: {create.get('errorDescription') or create}")
+        task_id = create.get("taskId")
+        if not task_id:
+            raise RuntimeError(f"taskId 없음: {create}")
+
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            _time.sleep(2)
+            r = requests.post(f"{CAPSOLVER_BASE}/getTaskResult", json={
+                "clientKey": CAPSOLVER_API_KEY,
+                "taskId": task_id,
+            }, timeout=15).json()
+            if r.get("errorId") != 0:
+                raise RuntimeError(f"getTaskResult 실패: {r.get('errorDescription') or r}")
+            if r.get("status") == "ready":
+                token = (r.get("solution") or {}).get("gRecaptchaResponse")
+                if not token:
+                    raise RuntimeError(f"solution 비어있음: {r}")
+                _db.log_capsolver_call(account_id, True, int((_time.time() - t0) * 1000))
+                return token
+        raise RuntimeError(f"타임아웃 ({timeout}s)")
+    except Exception as e:
+        try:
+            _db.log_capsolver_call(account_id, False, int((_time.time() - t0) * 1000), str(e))
+        except Exception:
+            pass
+        raise
+
+
+def capsolver_balance():
+    """남은 잔액(USD) 조회. 실패 시 None."""
+    if not CAPSOLVER_API_KEY:
+        return None
+    try:
+        r = requests.post(f"{CAPSOLVER_BASE}/getBalance", json={"clientKey": CAPSOLVER_API_KEY}, timeout=10).json()
+        if r.get("errorId") == 0:
+            return r.get("balance")
+    except Exception:
+        pass
+    return None
 
 
 def _inject_recaptcha_token(page, token):
@@ -146,7 +166,7 @@ def login(page, account):
         sitekey = m.group(1) if m else "6LehBQQTAAAAADqgKwu7R9xDHt3FB8VPiZnk0iK-"
         print(f"[login] CapSolver 요청 sitekey={sitekey}")
         try:
-            token = capsolver_solve_recaptcha_v2(sitekey, page.url, timeout=120)
+            token = capsolver_solve_recaptcha_v2(sitekey, page.url, timeout=120, account_id=account.get("id"))
             print(f"[login] CapSolver 토큰 수신 (len={len(token)})")
             _inject_recaptcha_token(page, token)
             page.wait_for_timeout(800)

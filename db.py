@@ -121,6 +121,17 @@ def init_db():
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+
+            -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
+            CREATE TABLE IF NOT EXISTS capsolver_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts REAL NOT NULL,
+                account_id TEXT,
+                success INTEGER NOT NULL,
+                latency_ms INTEGER,
+                error TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_capsolver_ts ON capsolver_calls(ts DESC);
         """)
         # 라이브 / 데일리 finalize 기본값
         defaults = {
@@ -593,6 +604,52 @@ def get_live_settings():
         "start_hour": int(get_setting("live_start_hour", "8") or 0),
         "end_hour": int(get_setting("live_end_hour", "24") or 0),
     }
+
+
+# --- CapSolver 호출 기록 ---
+
+# ReCaptchaV2TaskProxyLess 단가 (USD) - https://capsolver.com pricing 2026 기준
+CAPSOLVER_UNIT_COST_USD = 0.0008
+
+
+def log_capsolver_call(account_id, success, latency_ms=None, error=None):
+    import time as _t
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO capsolver_calls (ts, account_id, success, latency_ms, error) VALUES (?, ?, ?, ?, ?)",
+            (_t.time(), account_id, 1 if success else 0, latency_ms, (error[:300] if error else None)),
+        )
+
+
+def capsolver_stats():
+    """오늘 / 이번 달 / 누적 호출 수 + 비용. 평균 latency 도 함께."""
+    import time as _t
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    today_start = datetime(now.year, now.month, now.day).timestamp()
+    month_start = datetime(now.year, now.month, 1).timestamp()
+    with db_conn() as conn:
+        def _agg(since=None):
+            sql = "SELECT COUNT(*) AS total, SUM(success) AS ok, AVG(latency_ms) AS avg_ms FROM capsolver_calls"
+            params = []
+            if since:
+                sql += " WHERE ts >= ?"; params.append(since)
+            r = conn.execute(sql, params).fetchone()
+            total = r["total"] or 0
+            ok = r["ok"] or 0
+            return {
+                "total": total,
+                "success": ok,
+                "fail": total - ok,
+                "success_pct": round(ok / total * 100, 1) if total else 0,
+                "cost_usd": round(total * CAPSOLVER_UNIT_COST_USD, 3),
+                "avg_latency_ms": round(r["avg_ms"]) if r["avg_ms"] else None,
+            }
+        return {
+            "today": _agg(today_start),
+            "month": _agg(month_start),
+            "all_time": _agg(),
+        }
 
 
 def get_daily_finalize_settings():
