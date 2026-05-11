@@ -575,6 +575,14 @@ def dashboard():
         today_orders = m_today.get("구매건수")
         today_visitors = m_today.get("방문자수")
         today_aov = m_today.get("객단가")
+        today_new_visit = m_today.get("신규방문")
+        today_rev_visit = m_today.get("재방문")
+        today_uniq_visit = m_today.get("순방문자수")
+        today_signup = m_today.get("회원가입")
+        today_first_buy = m_today.get("처음구매")
+        today_rebuy = m_today.get("재구매")
+        today_buy_qty = m_today.get("구매개수")
+        today_visit_sales = m_today.get("방문당매출")
 
         # 어제 동시각 누적 매출 (어제 0~cur_hour 합) — 사과대사과 비교 핵심
         ydh = by_acct_date_hour.get(aid, {}).get(yesterday, {})
@@ -615,6 +623,14 @@ def dashboard():
                 "방문자수": today_visitors,
                 "객단가": today_aov,
                 "전환율": conv,
+                "신규방문": today_new_visit,
+                "재방문": today_rev_visit,
+                "순방문자수": today_uniq_visit,
+                "회원가입": today_signup,
+                "처음구매": today_first_buy,
+                "재구매": today_rebuy,
+                "구매개수": today_buy_qty,
+                "방문당매출": today_visit_sales,
             },
             "yesterday": {
                 "매출": m_yest.get("매출"),
@@ -622,6 +638,12 @@ def dashboard():
                 "방문자수": m_yest.get("방문자수"),
                 "객단가": m_yest.get("객단가"),
                 "전환율": conv_yest,
+                "신규방문": m_yest.get("신규방문"),
+                "재방문": m_yest.get("재방문"),
+                "회원가입": m_yest.get("회원가입"),
+                "처음구매": m_yest.get("처음구매"),
+                "재구매": m_yest.get("재구매"),
+                "구매개수": m_yest.get("구매개수"),
             },
             "yest_at_hour": yest_at_hour,  # 어제 같은 시각까지 누적 매출
             "vs_yest_at_hour_pct": _pct(today_sales, yest_at_hour),
@@ -640,20 +662,55 @@ def dashboard():
     sum_today_sales = sum((r["today"]["매출"] or 0) for r in rows)
     sum_today_orders = sum((r["today"]["구매건수"] or 0) for r in rows)
     sum_today_visitors = sum((r["today"]["방문자수"] or 0) for r in rows)
+    sum_today_new_visit = sum((r["today"]["신규방문"] or 0) for r in rows)
+    sum_today_rev_visit = sum((r["today"]["재방문"] or 0) for r in rows)
+    sum_today_signup = sum((r["today"]["회원가입"] or 0) for r in rows)
+    sum_today_first_buy = sum((r["today"]["처음구매"] or 0) for r in rows)
+    sum_today_rebuy = sum((r["today"]["재구매"] or 0) for r in rows)
+    sum_today_buy_qty = sum((r["today"]["구매개수"] or 0) for r in rows)
     sum_yest_at_hour = sum((r["yest_at_hour"] or 0) for r in rows)
     sum_yest_full = sum((r["yesterday"]["매출"] or 0) for r in rows)
+    sum_yest_orders = sum((r["yesterday"]["구매건수"] or 0) for r in rows)
+    sum_yest_visitors = sum((r["yesterday"]["방문자수"] or 0) for r in rows)
+    sum_yest_signup = sum((r["yesterday"]["회원가입"] or 0) for r in rows)
     sum_expected = sum((r["expected_eod"] or 0) for r in rows)
     active_count = sum(1 for r in rows if (r["today"]["매출"] or 0) > 0)
+
+    # 파생 KPI
+    avg_aov = round(sum_today_sales / sum_today_orders) if sum_today_orders else None
+    overall_conv = round(sum_today_orders / sum_today_visitors * 100, 2) if sum_today_visitors else None
+    overall_conv_yest = round(sum_yest_orders / sum_yest_visitors * 100, 2) if sum_yest_visitors else None
+    rebuy_pct = round(sum_today_rebuy / sum_today_orders * 100, 1) if sum_today_orders else None
+    new_visit_pct = round(sum_today_new_visit / (sum_today_new_visit + sum_today_rev_visit) * 100, 1) if (sum_today_new_visit + sum_today_rev_visit) else None
+    items_per_order = round(sum_today_buy_qty / sum_today_orders, 2) if sum_today_orders else None
 
     mega = {
         "today_sales": sum_today_sales,
         "today_orders": sum_today_orders,
         "today_visitors": sum_today_visitors,
+        "today_new_visit": sum_today_new_visit,
+        "today_rev_visit": sum_today_rev_visit,
+        "today_signup": sum_today_signup,
+        "today_first_buy": sum_today_first_buy,
+        "today_rebuy": sum_today_rebuy,
+        "today_buy_qty": sum_today_buy_qty,
         "yest_at_hour": sum_yest_at_hour,
         "yest_full": sum_yest_full,
+        "yest_orders": sum_yest_orders,
+        "yest_visitors": sum_yest_visitors,
+        "yest_signup": sum_yest_signup,
         "expected_eod": sum_expected,
         "vs_yest_at_hour_pct": _pct(sum_today_sales, sum_yest_at_hour),
         "vs_yest_full_pct": _pct(sum_expected if sum_expected else sum_today_sales, sum_yest_full),
+        "vs_yest_visitors_pct": _pct(sum_today_visitors, sum_yest_visitors),
+        "vs_yest_orders_pct": _pct(sum_today_orders, sum_yest_orders),
+        "vs_yest_signup_pct": _pct(sum_today_signup, sum_yest_signup),
+        "avg_aov": avg_aov,
+        "overall_conv": overall_conv,
+        "overall_conv_yest": overall_conv_yest,
+        "rebuy_pct": rebuy_pct,
+        "new_visit_pct": new_visit_pct,
+        "items_per_order": items_per_order,
         "active": active_count,
         "total_accounts": len(rows),
         "cur_hour": cur_hour,

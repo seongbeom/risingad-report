@@ -55,11 +55,14 @@
         .refresh-link { font-size: 0.78rem; color: #4a90d9; cursor: pointer; }
 
         /* 메가 KPI */
-        .mega-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+        .mega-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+        @media (max-width: 1200px) { .mega-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 900px) { .mega-grid { grid-template-columns: repeat(2, 1fr); } }
-        .mega { background: #fff; border-radius: 8px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
-        .mega-label { font-size: 0.74rem; color: #888; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 6px; }
-        .mega-value { font-size: 1.7rem; font-weight: 700; color: #222; font-variant-numeric: tabular-nums; line-height: 1.1; }
+        .mega-grid .mega-hero { grid-column: span 2; }
+        @media (max-width: 900px) { .mega-grid .mega-hero { grid-column: span 2; } }
+        .mega { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
+        .mega-label { font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 4px; }
+        .mega-value { font-size: 1.55rem; font-weight: 700; color: #222; font-variant-numeric: tabular-nums; line-height: 1.15; }
         .mega-unit { font-size: 0.8rem; color: #aaa; font-weight: 400; margin-left: 2px; }
         .mega-sub { font-size: 0.78rem; color: #666; margin-top: 8px; }
         .mega-sub.up { color: #27ae60; font-weight: 600; }
@@ -167,9 +170,50 @@
             </div>
         </div>
         <div class="mega">
-            <div class="mega-label">구매건수 / 방문자</div>
+            <div class="mega-label">구매건수 (전체 합)</div>
             <div class="mega-value">{{ "{:,.0f}".format(mega.today_orders) }}<span class="mega-unit">건</span></div>
-            <div class="mega-sub">방문 {{ "{:,.0f}".format(mega.today_visitors) }} · 전환 {{ "%.2f"|format(mega.today_orders / mega.today_visitors * 100) if mega.today_visitors else '—' }}%</div>
+            <div class="mega-sub {{ 'up' if mega.vs_yest_orders_pct and mega.vs_yest_orders_pct > 0 else ('down' if mega.vs_yest_orders_pct and mega.vs_yest_orders_pct < 0 else '') }}">
+                {% if mega.vs_yest_orders_pct is not none %}어제 종일 {{ "{:,.0f}".format(mega.yest_orders) }} 대비 {{ "%+.1f"|format(mega.vs_yest_orders_pct) }}%{% else %}어제 종일 {{ "{:,.0f}".format(mega.yest_orders) }}건{% endif %}
+            </div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">방문자 (전체 합)</div>
+            <div class="mega-value">{{ "{:,.0f}".format(mega.today_visitors) }}<span class="mega-unit">명</span></div>
+            <div class="mega-sub {{ 'up' if mega.vs_yest_visitors_pct and mega.vs_yest_visitors_pct > 0 else ('down' if mega.vs_yest_visitors_pct and mega.vs_yest_visitors_pct < 0 else '') }}">
+                {% if mega.vs_yest_visitors_pct is not none %}어제 종일 {{ "{:,.0f}".format(mega.yest_visitors) }} 대비 {{ "%+.1f"|format(mega.vs_yest_visitors_pct) }}%{% else %}어제 종일 {{ "{:,.0f}".format(mega.yest_visitors) }}명{% endif %}
+            </div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">전환율 (전체)</div>
+            <div class="mega-value">{{ "%.2f"|format(mega.overall_conv) if mega.overall_conv is not none else '—' }}<span class="mega-unit">%</span></div>
+            <div class="mega-sub">
+                어제 {{ "%.2f"|format(mega.overall_conv_yest) if mega.overall_conv_yest is not none else '—' }}%
+                {% if mega.overall_conv is not none and mega.overall_conv_yest is not none %}
+                    · <span class="{{ 'up' if mega.overall_conv > mega.overall_conv_yest else ('down' if mega.overall_conv < mega.overall_conv_yest else 'flat') }}">{{ "%+.2f"|format(mega.overall_conv - mega.overall_conv_yest) }}p</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">평균 객단가</div>
+            <div class="mega-value">{{ "{:,.0f}".format(mega.avg_aov) if mega.avg_aov else '—' }}<span class="mega-unit">원</span></div>
+            <div class="mega-sub">건당 매출 (전체 매출 / 전체 건수){% if mega.items_per_order %} · 건당 {{ mega.items_per_order }}개{% endif %}</div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">신규방문 비중</div>
+            <div class="mega-value">{{ "%.1f"|format(mega.new_visit_pct) if mega.new_visit_pct is not none else '—' }}<span class="mega-unit">%</span></div>
+            <div class="mega-sub">신규 {{ "{:,.0f}".format(mega.today_new_visit) }} · 재방문 {{ "{:,.0f}".format(mega.today_rev_visit) }}</div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">재구매 비중</div>
+            <div class="mega-value">{{ "%.1f"|format(mega.rebuy_pct) if mega.rebuy_pct is not none else '—' }}<span class="mega-unit">%</span></div>
+            <div class="mega-sub">첫구매 {{ "{:,.0f}".format(mega.today_first_buy) }} · 재구매 {{ "{:,.0f}".format(mega.today_rebuy) }}</div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">회원가입</div>
+            <div class="mega-value">{{ "{:,.0f}".format(mega.today_signup) }}<span class="mega-unit">명</span></div>
+            <div class="mega-sub {{ 'up' if mega.vs_yest_signup_pct and mega.vs_yest_signup_pct > 0 else ('down' if mega.vs_yest_signup_pct and mega.vs_yest_signup_pct < 0 else '') }}">
+                {% if mega.vs_yest_signup_pct is not none %}어제 {{ mega.yest_signup }} 대비 {{ "%+.1f"|format(mega.vs_yest_signup_pct) }}%{% else %}어제 {{ mega.yest_signup }}명{% endif %}
+            </div>
         </div>
         <div class="mega">
             <div class="mega-label">활성 계정 / 전체</div>
@@ -219,9 +263,11 @@
                     <th>예상 종일</th>
                     <th>페이스</th>
                     <th>건수</th>
-                    <th>방문자</th>
+                    <th>방문자 <span class="label-sub">(신규/재방문)</span></th>
                     <th>전환율</th>
                     <th>객단가</th>
+                    <th>회원가입</th>
+                    <th>재구매 <span class="label-sub">(첫/재)</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -266,9 +312,17 @@
                         {% else %}<span class="dim">—</span>{% endif %}
                     </td>
                     <!-- 구매건수 -->
-                    <td>{% if r.today.구매건수 %}{{ "{:,.0f}".format(r.today.구매건수) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>{% if r.today.구매건수 %}{{ "{:,.0f}".format(r.today.구매건수) }}{% else %}<span class="dim">—</span>{% endif %}
+                        {% if r.today.구매개수 %}<span class="label-sub" style="display:block; color:#aaa">{{ r.today.구매개수 }}개</span>{% endif %}
+                    </td>
                     <!-- 방문자수 -->
-                    <td>{% if r.today.방문자수 %}{{ "{:,.0f}".format(r.today.방문자수) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>{% if r.today.방문자수 %}{{ "{:,.0f}".format(r.today.방문자수) }}{% else %}<span class="dim">—</span>{% endif %}
+                        {% if r.today.신규방문 is not none or r.today.재방문 is not none %}
+                            <span class="label-sub" style="display:block; color:#aaa">
+                                신 {{ "{:,.0f}".format(r.today.신규방문 or 0) }} / 재 {{ "{:,.0f}".format(r.today.재방문 or 0) }}
+                            </span>
+                        {% endif %}
+                    </td>
                     <!-- 전환율 -->
                     <td>
                         {% if r.today.전환율 is not none %}
@@ -280,6 +334,18 @@
                     </td>
                     <!-- 객단가 -->
                     <td>{% if r.today.객단가 %}{{ "{:,.0f}".format(r.today.객단가) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <!-- 회원가입 -->
+                    <td>{% if r.today.회원가입 %}{{ "{:,.0f}".format(r.today.회원가입) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <!-- 재구매 -->
+                    <td>
+                        {% if r.today.처음구매 is not none or r.today.재구매 is not none %}
+                            {% set total_buyers = (r.today.처음구매 or 0) + (r.today.재구매 or 0) %}
+                            {% if total_buyers %}
+                                {{ "%.0f"|format((r.today.재구매 or 0) / total_buyers * 100) }}%
+                                <span class="label-sub" style="display:block; color:#aaa">{{ r.today.처음구매 or 0 }} / {{ r.today.재구매 or 0 }}</span>
+                            {% else %}<span class="dim">—</span>{% endif %}
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -295,9 +361,15 @@
                     <td class="num-big">{{ "{:,.0f}".format(mega.expected_eod) if mega.expected_eod else '—' }}</td>
                     <td>—</td>
                     <td class="num-big">{{ "{:,.0f}".format(mega.today_orders) }}</td>
-                    <td class="num-big">{{ "{:,.0f}".format(mega.today_visitors) }}</td>
-                    <td>{{ "%.2f"|format(mega.today_orders / mega.today_visitors * 100) if mega.today_visitors else '—' }}%</td>
-                    <td>—</td>
+                    <td class="num-big">{{ "{:,.0f}".format(mega.today_visitors) }}
+                        <span class="label-sub" style="display:block;color:#aaa">신 {{ "{:,.0f}".format(mega.today_new_visit) }} / 재 {{ "{:,.0f}".format(mega.today_rev_visit) }}</span>
+                    </td>
+                    <td>{{ "%.2f"|format(mega.overall_conv) if mega.overall_conv is not none else '—' }}%</td>
+                    <td>{{ "{:,.0f}".format(mega.avg_aov) if mega.avg_aov else '—' }}</td>
+                    <td class="num-big">{{ "{:,.0f}".format(mega.today_signup) }}</td>
+                    <td>{{ "%.0f"|format(mega.rebuy_pct) if mega.rebuy_pct is not none else '—' }}%
+                        <span class="label-sub" style="display:block;color:#aaa">{{ "{:,.0f}".format(mega.today_first_buy) }} / {{ "{:,.0f}".format(mega.today_rebuy) }}</span>
+                    </td>
                 </tr>
             </tfoot>
         </table>
