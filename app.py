@@ -544,15 +544,16 @@ def dashboard():
     all_metrics = db.list_metrics(start_date=range_start, end_date=today)
     by_key = {(m["account_id"], m["date"]): m for m in all_metrics}
 
-    # 최근 7일 hourly (시간대 평균 + 어제 동시각 누적)
+    # 최근 8일 hourly (시간대 평균 + 어제 동시각 누적 + 오늘 시간별)
     hourly_start = (now - timedelta(days=8)).strftime("%Y-%m-%d")
-    all_hourly = db.list_metrics_hourly_range([a["id"] for a in accounts], hourly_start, yesterday)
-    # account_id -> list[24] of sales (각 시간 매출 평균 계산용)
+    all_hourly = db.list_metrics_hourly_range([a["id"] for a in accounts], hourly_start, today)
+    # account_id -> list[24] of sales (각 시간 매출 평균 계산용) — 오늘은 진행중이라 평균 표본에서 제외
     hour_buckets = {}
-    # account_id -> date -> dict[hour] = 매출 (어제 동시각 누적 + 페이스 계산용)
+    # account_id -> date -> dict[hour] = 매출
     by_acct_date_hour = {}
     for r in all_hourly:
-        hour_buckets.setdefault(r["account_id"], [[] for _ in range(24)])[r["hour"]].append(r.get("매출") or 0)
+        if r["date"] != today:
+            hour_buckets.setdefault(r["account_id"], [[] for _ in range(24)])[r["hour"]].append(r.get("매출") or 0)
         by_acct_date_hour.setdefault(r["account_id"], {}).setdefault(r["date"], {})[r["hour"]] = r.get("매출") or 0
 
     def _pct(cur, ref):
@@ -751,12 +752,12 @@ def dashboard():
         hour_grid.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "hours": avg, "max_v": max_v})
 
     # ----- 신규: 시간별 누적 매출 (전 계정 합계, 오늘 vs 어제 동시각) -----
-    today_hourly = db.list_metrics_hourly_range([a["id"] for a in accounts], today, today)
     today_hour_map = {}  # hour -> 매출 합
     today_hour_orders = {}  # hour -> 건수 합
-    for r in today_hourly:
-        today_hour_map[r["hour"]] = today_hour_map.get(r["hour"], 0) + (r.get("매출") or 0)
-        today_hour_orders[r["hour"]] = today_hour_orders.get(r["hour"], 0) + (r.get("구매건수") or 0)
+    for r in all_hourly:
+        if r["date"] == today:
+            today_hour_map[r["hour"]] = today_hour_map.get(r["hour"], 0) + (r.get("매출") or 0)
+            today_hour_orders[r["hour"]] = today_hour_orders.get(r["hour"], 0) + (r.get("구매건수") or 0)
     yest_hour_map = {}
     for aid in [a["id"] for a in accounts]:
         for h, v in by_acct_date_hour.get(aid, {}).get(yesterday, {}).items():
