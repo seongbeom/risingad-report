@@ -110,7 +110,37 @@ def login(page, account):
                 page.wait_for_timeout(2000)
     if last_err is not None:
         raise RuntimeError(f"로그인 버튼 클릭 실패 (reCAPTCHA 챌린지 안 풀린 것으로 추정): {last_err}")
-    page.wait_for_url(lambda url: "eclogin.cafe24.com" not in url, timeout=60000)
+
+    # 로그인 클릭 후 도메인 빠져나가길 기다림. 캡챠 답이 틀려 서버가 거절하면 URL 안 바뀜.
+    # 60s 그대로 기다리면 외부 재시도 루프와 함께 1계정에 3분 낭비됨 → 20s 로 줄이고
+    # 서버 거절 신호(에러 텍스트 / 챌린지 iframe 재출현)면 즉시 raise.
+    import time as _t
+    deadline = _t.time() + 20
+    rejected_reason = None
+    while _t.time() < deadline:
+        if "eclogin.cafe24.com" not in page.url:
+            return  # 정상 도메인 변경
+        try:
+            # 카페24 캡챠 거절 시 자주 등장하는 문구 패턴
+            if page.locator(
+                "text=/보안문자.*일치|보안문자.*다시|보안문자가 일치하지|입력하신 보안문자|reCAPTCHA.*다시/"
+            ).count() > 0:
+                rejected_reason = "보안문자 거절 메시지 감지"
+                break
+            # 챌린지 popup(bframe)이 다시 떠있으면 → 서버 토큰 거절 후 재챌린지
+            if page.locator("iframe[title*='reCAPTCHA 보안문자']").count() > 0:
+                # bframe 가 visible(클릭 가능 상태) 인지 추가 확인
+                box = page.locator("iframe[title*='reCAPTCHA 보안문자']").first.bounding_box()
+                if box and box.get("width", 0) > 100 and box.get("height", 0) > 100:
+                    rejected_reason = "캡챠 챌린지 재출현 - 토큰 거절"
+                    break
+        except Exception:
+            pass
+        page.wait_for_timeout(500)
+
+    if rejected_reason:
+        raise RuntimeError(f"로그인 거절 ({rejected_reason}) - 캡챠 정답 틀림 추정. 외부 재시도로 새 챌린지 시도 필요")
+    raise RuntimeError("로그인 URL 변화 timeout (20s) - 서버 거절 추정")
 
 
 def close_popups(page):
