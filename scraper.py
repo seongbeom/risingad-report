@@ -12,29 +12,95 @@ Cafe24 애널리틱스 스크래퍼
 import json
 import os
 import re
+import time as _time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import requests
 from playwright.sync_api import sync_playwright
-from recognizer import Detector
-from recognizer.agents.playwright import SyncChallenger
 
 LOGIN_URL_MAIN = "https://eclogin.cafe24.com/Shop/?url=Init&login_mode=1"
 LOGIN_URL_SUB = "https://eclogin.cafe24.com/Shop/?url=Init&login_mode=2"
 DATA_DIR = Path(__file__).parent / "data"
 
-KO_ALIAS = {
-    "자동차": "car", "차": "car", "차량": "car",
-    "택시": "taxi", "버스": "bus", "오토바이": "motorcycle",
-    "자전거": "bicycle", "보트": "boat", "배": "boat",
-    "트랙터": "tractor", "계단": "stair",
-    "야자수": "palm tree", "야자나무": "palm tree",
-    "소화전": "fire hydrant",
-    "주차 미터기": "parking meter", "주차미터기": "parking meter",
-    "횡단보도": "crosswalk", "신호등": "traffic light",
-    "다리": "bridge", "산": "mountain", "산 또는 언덕": "mountain",
-    "굴뚝": "chimney",
-}
+CAPSOLVER_API_KEY = os.environ.get("CAPSOLVER_API_KEY", "")
+CAPSOLVER_BASE = "https://api.capsolver.com"
+
+
+def capsolver_solve_recaptcha_v2(sitekey, page_url, timeout=120):
+    """CapSolver API 로 reCAPTCHA v2 풀기. g-recaptcha-response 토큰 문자열 반환.
+    실패 시 RuntimeError raise."""
+    if not CAPSOLVER_API_KEY:
+        raise RuntimeError("CAPSOLVER_API_KEY 환경변수 미설정")
+    create = requests.post(f"{CAPSOLVER_BASE}/createTask", json={
+        "clientKey": CAPSOLVER_API_KEY,
+        "task": {
+            "type": "ReCaptchaV2TaskProxyLess",
+            "websiteURL": page_url,
+            "websiteKey": sitekey,
+        },
+    }, timeout=15).json()
+    if create.get("errorId") != 0:
+        raise RuntimeError(f"CapSolver createTask 실패: {create.get('errorDescription') or create}")
+    task_id = create.get("taskId")
+    if not task_id:
+        raise RuntimeError(f"CapSolver taskId 없음: {create}")
+
+    deadline = _time.time() + timeout
+    poll_interval = 2
+    while _time.time() < deadline:
+        _time.sleep(poll_interval)
+        r = requests.post(f"{CAPSOLVER_BASE}/getTaskResult", json={
+            "clientKey": CAPSOLVER_API_KEY,
+            "taskId": task_id,
+        }, timeout=15).json()
+        if r.get("errorId") != 0:
+            raise RuntimeError(f"CapSolver getTaskResult 실패: {r.get('errorDescription') or r}")
+        status = r.get("status")
+        if status == "ready":
+            token = (r.get("solution") or {}).get("gRecaptchaResponse")
+            if not token:
+                raise RuntimeError(f"CapSolver solution 비어있음: {r}")
+            return token
+        # 'processing' 면 계속 폴링
+    raise RuntimeError(f"CapSolver 타임아웃 ({timeout}s)")
+
+
+def _inject_recaptcha_token(page, token):
+    """발급받은 토큰을 페이지의 g-recaptcha-response hidden field 에 주입.
+    cafe24 는 별도 callback 안 호출해도 form_check() 가 토큰 텍스트로 검증함."""
+    page.evaluate(
+        """(token) => {
+            // 1) 표준 hidden textarea
+            const els = document.querySelectorAll('[name="g-recaptcha-response"], #g-recaptcha-response');
+            els.forEach(el => { el.value = token; el.innerHTML = token; });
+            // 2) reCAPTCHA 가 hidden 으로 만든 textarea도 강제로 채움
+            document.querySelectorAll('textarea').forEach(t => {
+                if (t.id && t.id.startsWith('g-recaptcha-response')) {
+                    t.value = token; t.innerHTML = token;
+                }
+            });
+            // 3) reCAPTCHA 콜백이 등록돼 있으면 호출 시도
+            try {
+                if (typeof ___grecaptcha_cfg !== 'undefined') {
+                    Object.keys(___grecaptcha_cfg.clients || {}).forEach(k => {
+                        const client = ___grecaptcha_cfg.clients[k];
+                        const walk = (obj) => {
+                            for (const key in obj) {
+                                if (obj[key] && typeof obj[key] === 'object') {
+                                    if (typeof obj[key].callback === 'function') {
+                                        try { obj[key].callback(token); } catch(e){}
+                                    } else { walk(obj[key]); }
+                                }
+                            }
+                        };
+                        walk(client);
+                    });
+                }
+            } catch(e) {}
+        }""",
+        token,
+    )
 
 
 def _session_path(account_id):
@@ -70,46 +136,28 @@ def login(page, account):
         page.fill("#userid", sub_id)
     page.fill("#userpasswd", password)
 
-    # reCAPTCHA: 있으면 풀고, 없으면 스킵
+    # reCAPTCHA: CapSolver API 로 v2 토큰 받아 hidden field 에 주입
+    # iframe 안 떠 있으면 캡챠 없는 케이스 (세션 신뢰도 높음) - skip
     recaptcha_iframe = page.query_selector("iframe[title*='reCAPTCHA']")
-    has_captcha = bool(recaptcha_iframe)
-    detector = None
-    if has_captcha:
-        detector = Detector()
-        for ko, en in KO_ALIAS.items():
-            detector.challenge_alias[ko] = en
-
-    def _attempt_solve():
-        if not has_captcha:
-            return
-        challenger = SyncChallenger(page, click_timeout=3000)
-        challenger.detector = detector
+    if recaptcha_iframe:
+        # iframe src 의 k= 파라미터에서 sitekey 추출
+        src = recaptcha_iframe.get_attribute("src") or ""
+        m = re.search(r"[?&]k=([\w-]+)", src)
+        sitekey = m.group(1) if m else "6LehBQQTAAAAADqgKwu7R9xDHt3FB8VPiZnk0iK-"
+        print(f"[login] CapSolver 요청 sitekey={sitekey}")
         try:
-            challenger.solve_recaptcha()
+            token = capsolver_solve_recaptcha_v2(sitekey, page.url, timeout=120)
+            print(f"[login] CapSolver 토큰 수신 (len={len(token)})")
+            _inject_recaptcha_token(page, token)
+            page.wait_for_timeout(800)
         except Exception as e:
-            print(f"[login] solve_recaptcha 실패: {e}")
+            raise RuntimeError(f"CapSolver 풀이 실패: {e}")
 
-    if has_captcha:
-        _attempt_solve()
-        page.wait_for_timeout(1500)
-
-    # 로그인 버튼 클릭: 챌린지 iframe이 가리는 상태면 캡챠 다시 풀고 재시도.
-    # 검출은 .is_visible() 보다 실제 click 시도 결과로 판단하는 게 더 안정적임 (bframe 래퍼가 hidden 처럼 보일 때가 있음)
-    page.wait_for_timeout(500)
-    last_err = None
-    for click_try in range(4):
-        try:
-            page.click("button.btnStrong.large", timeout=10000)
-            last_err = None
-            break
-        except Exception as e:
-            last_err = e
-            print(f"[login] 로그인 버튼 클릭 실패 - {click_try + 1}/4 (캡챠 챌린지 의심)")
-            if has_captcha and click_try < 3:
-                _attempt_solve()
-                page.wait_for_timeout(2000)
-    if last_err is not None:
-        raise RuntimeError(f"로그인 버튼 클릭 실패 (reCAPTCHA 챌린지 안 풀린 것으로 추정): {last_err}")
+    # 토큰 주입 후 로그인 클릭 (iframe 닫혀있으므로 intercept 없음)
+    try:
+        page.click("button.btnStrong.large", timeout=10000)
+    except Exception as e:
+        raise RuntimeError(f"로그인 버튼 클릭 실패: {e}")
 
     # 로그인 클릭 후 도메인 빠져나가길 기다림. 캡챠 답이 틀려 서버가 거절하면 URL 안 바뀜.
     # 60s 그대로 기다리면 외부 재시도 루프와 함께 1계정에 3분 낭비됨 → 20s 로 줄이고
