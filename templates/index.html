@@ -92,11 +92,34 @@
                                     </form>
                                 {% endif %}
                                 <a href="/results/{{ a.id }}" class="btn btn-primary btn-sm" style="text-decoration:none">결과</a>
+                                <button type="button" class="btn btn-sm" style="background:#f0ad4e;color:#fff"
+                                        onclick="document.getElementById('edit-{{ a.id }}').style.display = (document.getElementById('edit-{{ a.id }}').style.display === 'table-row' ? 'none' : 'table-row')">수정</button>
                                 <form method="POST" action="/accounts/{{ a.id }}/delete" style="display:inline"
                                       onsubmit="return confirm('정말 삭제하시겠습니까?')">
                                     <button class="btn btn-danger btn-sm" type="submit">삭제</button>
                                 </form>
                             </div>
+                        </td>
+                    </tr>
+                    <tr id="edit-{{ a.id }}" style="display:none;background:#fffbea">
+                        <td colspan="5">
+                            <form method="POST" action="/accounts/{{ a.id }}/update" class="form-row" style="margin:0">
+                                <div class="form-group">
+                                    <label>라벨</label>
+                                    <input name="label" value="{{ a.label or '' }}" style="width:120px">
+                                </div>
+                                <div class="form-group">
+                                    <label>부운영자 ID</label>
+                                    <input name="sub_id" value="{{ a.sub_id or '' }}" placeholder="비우면 메인 운영자" style="width:150px">
+                                </div>
+                                <div class="form-group">
+                                    <label>새 비밀번호 (비우면 유지)</label>
+                                    <input name="password" type="password" autocomplete="new-password" placeholder="영문/숫자만" style="width:180px">
+                                </div>
+                                <button class="btn btn-primary btn-sm" type="submit">저장</button>
+                                <button type="button" class="btn btn-sm" style="background:#999;color:#fff"
+                                        onclick="document.getElementById('edit-{{ a.id }}').style.display='none'">취소</button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}

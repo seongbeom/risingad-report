@@ -328,6 +328,22 @@ def update_spreadsheet_id(account_id, spreadsheet_id):
         )
 
 
+def update_account(account_id, sub_id=None, password=None, label=None):
+    sets = []
+    vals = []
+    if sub_id is not None:
+        sets.append("sub_id=?"); vals.append(sub_id)
+    if password is not None and password != "":
+        sets.append("password=?"); vals.append(password)
+    if label is not None:
+        sets.append("label=?"); vals.append(label)
+    if not sets:
+        return
+    vals.append(account_id)
+    with db_conn() as conn:
+        conn.execute(f"UPDATE accounts SET {', '.join(sets)} WHERE id=?", vals)
+
+
 def delete_account(account_id):
     with db_conn() as conn:
         conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))

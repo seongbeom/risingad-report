@@ -378,6 +378,21 @@ def update_spreadsheet(account_id):
     return redirect(url_for("index"))
 
 
+@app.route("/accounts/<account_id>/update", methods=["POST"])
+@login_required
+def update_account_route(account_id):
+    sub_id = request.form.get("sub_id", "").strip()
+    password = request.form.get("password", "").strip()
+    label = request.form.get("label", "").strip()
+    db.update_account(
+        account_id,
+        sub_id=sub_id,
+        password=(password if password else None),
+        label=label,
+    )
+    return redirect(url_for("index"))
+
+
 @app.route("/accounts/<account_id>/delete", methods=["POST"])
 @login_required
 def delete_account(account_id):
