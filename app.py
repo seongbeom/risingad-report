@@ -893,9 +893,9 @@ def dashboard():
             trend_rows.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "avg": None, "best": None, "worst": None, "trend": None, "n": 0})
             continue
         sales_vals = [v for _, v in vals]
-        avg = round(sum(sales_vals) / len(sales_vals))
-        best = max(vals, key=lambda x: x[1])
-        worst = min(vals, key=lambda x: x[1])
+        avg_v = round(sum(sales_vals) / len(sales_vals))
+        t_best = max(vals, key=lambda x: x[1])
+        t_worst = min(vals, key=lambda x: x[1])
         # 추세: 앞 3일 평균 vs 뒤 3일 평균
         if len(vals) >= 4:
             half = len(vals) // 2
@@ -907,11 +907,11 @@ def dashboard():
         trend_rows.append({
             "label": a.get("label") or a["cafe24_id"],
             "id": aid,
-            "avg": avg,
-            "best_date": best[0],
-            "best_v": best[1],
-            "worst_date": worst[0],
-            "worst_v": worst[1],
+            "avg": avg_v,
+            "best_date": t_best[0],
+            "best_v": t_best[1],
+            "worst_date": t_worst[0],
+            "worst_v": t_worst[1],
             "trend": trend_pct,
             "n": len(vals),
             "today_sales": by_key.get((aid, today), {}).get("매출"),
