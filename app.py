@@ -485,32 +485,35 @@ def results_page(account_id):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    """데일리 대시보드 - 오늘 누적 + 최근 7일 표 + 시간대 표 (숫자 중심)."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    last_week_same = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    range_start = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")  # 오늘 포함 9일
+    """데일리 대시보드 - 오늘 누적 + 페이스/예상 + 어제 동시각 비교 + 7일 그리드 (숫자 중심)."""
+    now = datetime.now()
+    cur_hour = now.hour
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    last_week_same = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    range_start = (now - timedelta(days=8)).strftime("%Y-%m-%d")
 
     accounts = db.list_accounts()
     all_metrics = db.list_metrics(start_date=range_start, end_date=today)
-    # (account_id, date) -> metrics row
     by_key = {(m["account_id"], m["date"]): m for m in all_metrics}
 
-    # 시간대 평균 계산용: 최근 7일(어제부터 8일전까지) hourly
-    hourly_start = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")
+    # 최근 7일 hourly (시간대 평균 + 어제 동시각 누적)
+    hourly_start = (now - timedelta(days=8)).strftime("%Y-%m-%d")
     all_hourly = db.list_metrics_hourly_range([a["id"] for a in accounts], hourly_start, yesterday)
-    hour_buckets = {}  # account_id -> list[24] of list of values
+    # account_id -> list[24] of sales (각 시간 매출 평균 계산용)
+    hour_buckets = {}
+    # account_id -> date -> dict[hour] = 매출 (어제 동시각 누적 + 페이스 계산용)
+    by_acct_date_hour = {}
     for r in all_hourly:
         hour_buckets.setdefault(r["account_id"], [[] for _ in range(24)])[r["hour"]].append(r.get("매출") or 0)
+        by_acct_date_hour.setdefault(r["account_id"], {}).setdefault(r["date"], {})[r["hour"]] = r.get("매출") or 0
 
     def _pct(cur, ref):
         if cur is None or ref is None or not ref:
             return None
         return round((cur - ref) / ref * 100, 1)
 
-    # 최근 7일 (오늘 제외) 평균 계산용
-    last7_start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    last7_dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+    last7_dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
 
     rows = []
     for a in accounts:
@@ -518,7 +521,6 @@ def dashboard():
         m_today = by_key.get((aid, today), {}) or {}
         m_yest = by_key.get((aid, yesterday), {}) or {}
         m_lw = by_key.get((aid, last_week_same), {}) or {}
-        # 최근 7일(어제~7일 전) 평균
         last7_vals_sales = [by_key.get((aid, d), {}).get("매출") for d in last7_dates if by_key.get((aid, d))]
         last7_avg_sales = round(sum(v for v in last7_vals_sales if v is not None) / len(last7_vals_sales)) if last7_vals_sales else None
 
@@ -526,6 +528,34 @@ def dashboard():
         today_orders = m_today.get("구매건수")
         today_visitors = m_today.get("방문자수")
         today_aov = m_today.get("객단가")
+
+        # 어제 동시각 누적 매출 (어제 0~cur_hour 합) — 사과대사과 비교 핵심
+        ydh = by_acct_date_hour.get(aid, {}).get(yesterday, {})
+        yest_at_hour = sum(ydh.get(h, 0) for h in range(cur_hour + 1))
+
+        # 페이스 계산: 최근 7일 평균에서 0~cur_hour 매출 / 전체 매출 = 누적 비중
+        # 평균이 의미 있어야 함 (3일 이상 표본). 매출 0 인 계정 제외
+        days_with_data = set()
+        sum_at_hour = 0  # 7일 동안 0~cur_hour 매출 합
+        sum_full_day = 0  # 7일 동안 전체 매출 합
+        for d in last7_dates:
+            day_map = by_acct_date_hour.get(aid, {}).get(d)
+            if not day_map:
+                continue
+            days_with_data.add(d)
+            for h, v in day_map.items():
+                sum_full_day += v
+                if h <= cur_hour:
+                    sum_at_hour += v
+        cum_pct_at_hour = (sum_at_hour / sum_full_day * 100) if sum_full_day else None
+        # 도달 예상치 = 현재 매출 / (cum_pct / 100). cum_pct 너무 작으면(<5%) 신뢰 낮음
+        expected_eod = None
+        if today_sales and cum_pct_at_hour and cum_pct_at_hour >= 5 and len(days_with_data) >= 3:
+            expected_eod = round(today_sales / (cum_pct_at_hour / 100))
+
+        # 전환율 (구매건수/방문자수) %
+        conv = round(today_orders / today_visitors * 100, 2) if today_orders and today_visitors else None
+        conv_yest = round((m_yest.get("구매건수") or 0) / m_yest.get("방문자수") * 100, 2) if m_yest.get("방문자수") else None
 
         rows.append({
             "id": aid,
@@ -537,19 +567,57 @@ def dashboard():
                 "구매건수": today_orders,
                 "방문자수": today_visitors,
                 "객단가": today_aov,
+                "전환율": conv,
             },
             "yesterday": {
                 "매출": m_yest.get("매출"),
                 "구매건수": m_yest.get("구매건수"),
                 "방문자수": m_yest.get("방문자수"),
                 "객단가": m_yest.get("객단가"),
+                "전환율": conv_yest,
             },
-            "last_week": {"매출": m_lw.get("매출")},
+            "yest_at_hour": yest_at_hour,  # 어제 같은 시각까지 누적 매출
+            "vs_yest_at_hour_pct": _pct(today_sales, yest_at_hour),
+            "cum_pct_at_hour": cum_pct_at_hour,  # 7일 평균 기준 현재 시각 진행률
+            "expected_eod": expected_eod,
             "last7_avg_sales": last7_avg_sales,
             "vs_yesterday_pct": _pct(today_sales, m_yest.get("매출")),
             "vs_lastweek_pct": _pct(today_sales, m_lw.get("매출")),
             "vs_7avg_pct": _pct(today_sales, last7_avg_sales),
         })
+
+    # 매출 큰 순 정렬 (오늘 매출 없는 계정은 뒤로)
+    rows.sort(key=lambda r: (r["today"]["매출"] or 0), reverse=True)
+
+    # 상단 메가 KPI 집계
+    sum_today_sales = sum((r["today"]["매출"] or 0) for r in rows)
+    sum_today_orders = sum((r["today"]["구매건수"] or 0) for r in rows)
+    sum_today_visitors = sum((r["today"]["방문자수"] or 0) for r in rows)
+    sum_yest_at_hour = sum((r["yest_at_hour"] or 0) for r in rows)
+    sum_yest_full = sum((r["yesterday"]["매출"] or 0) for r in rows)
+    sum_expected = sum((r["expected_eod"] or 0) for r in rows)
+    active_count = sum(1 for r in rows if (r["today"]["매출"] or 0) > 0)
+
+    mega = {
+        "today_sales": sum_today_sales,
+        "today_orders": sum_today_orders,
+        "today_visitors": sum_today_visitors,
+        "yest_at_hour": sum_yest_at_hour,
+        "yest_full": sum_yest_full,
+        "expected_eod": sum_expected,
+        "vs_yest_at_hour_pct": _pct(sum_today_sales, sum_yest_at_hour),
+        "vs_yest_full_pct": _pct(sum_expected if sum_expected else sum_today_sales, sum_yest_full),
+        "active": active_count,
+        "total_accounts": len(rows),
+        "cur_hour": cur_hour,
+    }
+
+    # 하이라이트: 매출 1위, 가장 큰 ▲ / ▼
+    rows_with_sales = [r for r in rows if (r["today"]["매출"] or 0) > 0]
+    best = rows_with_sales[0] if rows_with_sales else None
+    rows_with_delta = [r for r in rows_with_sales if r["vs_yest_at_hour_pct"] is not None]
+    top_gainer = max(rows_with_delta, key=lambda r: r["vs_yest_at_hour_pct"]) if rows_with_delta else None
+    top_loser = min(rows_with_delta, key=lambda r: r["vs_yest_at_hour_pct"]) if rows_with_delta else None
 
     # 최근 9일 (오늘~8일 전) 매출 그리드
     DAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
@@ -585,6 +653,10 @@ def dashboard():
         "dashboard.html",
         accounts=accounts,
         rows=rows,
+        mega=mega,
+        best=best,
+        top_gainer=top_gainer,
+        top_loser=top_loser,
         grid=grid,
         grid_dates=grid_dates,
         grid_dows=grid_dows,
@@ -593,7 +665,7 @@ def dashboard():
         yesterday=yesterday,
         last_week_same=last_week_same,
         capsolver=capsolver,
-        now=datetime.now().strftime("%H:%M"),
+        now=now.strftime("%H:%M"),
     )
 
 

@@ -106,6 +106,40 @@
         </form>
     </div>
 
+    <!-- 메가 KPI: 13계정 기간 총합 -->
+    {% set ns = namespace(visits=0, sales=0, orders=0, prev_sales=0) %}
+    {% for p in panels %}
+        {% if p.kpis[0].value %}{% set ns.visits = ns.visits + p.kpis[0].value %}{% endif %}
+        {% if p.kpis[1].value %}{% set ns.sales = ns.sales + p.kpis[1].value %}{% endif %}
+        {% if p.kpis[2].value %}{% set ns.orders = ns.orders + p.kpis[2].value %}{% endif %}
+        {% if p.kpis[1].vs_prev %}{% set ns.prev_sales = ns.prev_sales + p.kpis[1].value - p.kpis[1].vs_prev.abs %}{% endif %}
+    {% endfor %}
+    {% set vs_prev_pct = ((ns.sales - ns.prev_sales) / ns.prev_sales * 100) if ns.prev_sales else None %}
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:14px;">
+        <div style="background:linear-gradient(135deg, #4a90d9 0%, #357abd 100%); color:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:0.74rem; color:rgba(255,255,255,0.85); text-transform:uppercase; letter-spacing:0.04em; font-weight:600; margin-bottom:6px">{{ range_days }}일 매출 합계</div>
+            <div style="font-size:1.7rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.1">{{ "{:,.0f}".format(ns.sales) }}<span style="font-size:0.8rem; color:rgba(255,255,255,0.7); font-weight:400; margin-left:2px">원</span></div>
+            <div style="font-size:0.78rem; color:rgba(255,255,255,0.9); margin-top:8px">
+                {% if vs_prev_pct is not none %}직전 {{ range_days }}일 대비 <strong>{% if vs_prev_pct > 0 %}▲{% elif vs_prev_pct < 0 %}▼{% endif %} {{ "%+.1f"|format(vs_prev_pct) }}%</strong>{% else %}직전 기간 비교 불가{% endif %}
+            </div>
+        </div>
+        <div style="background:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:0.74rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; font-weight:600; margin-bottom:6px">일평균 매출</div>
+            <div style="font-size:1.7rem; font-weight:700; color:#222; font-variant-numeric:tabular-nums; line-height:1.1">{{ "{:,.0f}".format(ns.sales / range_days) if range_days else 0 }}<span style="font-size:0.8rem; color:#aaa; font-weight:400">원</span></div>
+            <div style="font-size:0.78rem; color:#666; margin-top:8px">{{ panels | length }}개 계정 평균 {{ "{:,.0f}".format(ns.sales / range_days / panels | length) if (range_days and panels|length) else 0 }}원</div>
+        </div>
+        <div style="background:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:0.74rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; font-weight:600; margin-bottom:6px">구매건수 합계</div>
+            <div style="font-size:1.7rem; font-weight:700; color:#222; font-variant-numeric:tabular-nums; line-height:1.1">{{ "{:,.0f}".format(ns.orders) }}<span style="font-size:0.8rem; color:#aaa; font-weight:400">건</span></div>
+            <div style="font-size:0.78rem; color:#666; margin-top:8px">평균 객단가 {{ "{:,.0f}".format(ns.sales / ns.orders) if ns.orders else 0 }}원</div>
+        </div>
+        <div style="background:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:0.74rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; font-weight:600; margin-bottom:6px">방문자 합계 / 전환율</div>
+            <div style="font-size:1.7rem; font-weight:700; color:#222; font-variant-numeric:tabular-nums; line-height:1.1">{{ "{:,.0f}".format(ns.visits) }}</div>
+            <div style="font-size:0.78rem; color:#666; margin-top:8px">전환 {{ "%.2f"|format(ns.orders / ns.visits * 100) if ns.visits else 0 }}%</div>
+        </div>
+    </div>
+
     <!-- 1. 기간 합계 KPI -->
     <div class="card">
         <h2>📊 기간 합계 ({{ range_days }}일)</h2>

@@ -53,6 +53,45 @@
 
         .ts { color: #aaa; font-size: 0.72rem; }
         .refresh-link { font-size: 0.78rem; color: #4a90d9; cursor: pointer; }
+
+        /* 메가 KPI */
+        .mega-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+        @media (max-width: 900px) { .mega-grid { grid-template-columns: repeat(2, 1fr); } }
+        .mega { background: #fff; border-radius: 8px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
+        .mega-label { font-size: 0.74rem; color: #888; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-bottom: 6px; }
+        .mega-value { font-size: 1.7rem; font-weight: 700; color: #222; font-variant-numeric: tabular-nums; line-height: 1.1; }
+        .mega-unit { font-size: 0.8rem; color: #aaa; font-weight: 400; margin-left: 2px; }
+        .mega-sub { font-size: 0.78rem; color: #666; margin-top: 8px; }
+        .mega-sub.up { color: #27ae60; font-weight: 600; }
+        .mega-sub.down { color: #e74c3c; font-weight: 600; }
+        .mega-hero { background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%); color: #fff; }
+        .mega-hero .mega-label { color: rgba(255,255,255,0.85); }
+        .mega-hero .mega-value { color: #fff; }
+        .mega-hero .mega-sub { color: rgba(255,255,255,0.9); }
+        .mega-hero .mega-unit { color: rgba(255,255,255,0.7); }
+
+        /* 하이라이트 */
+        .hl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+        @media (max-width: 720px) { .hl-grid { grid-template-columns: 1fr; } }
+        .hl { background: #fff; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid; }
+        .hl.best { border-color: #f59e0b; }
+        .hl.gain { border-color: #27ae60; }
+        .hl.lose { border-color: #e74c3c; }
+        .hl-tag { font-size: 0.7rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+        .hl-acct { font-size: 1.05rem; font-weight: 700; color: #222; margin: 4px 0 2px; }
+        .hl-val { font-size: 0.88rem; color: #555; font-variant-numeric: tabular-nums; }
+        .hl-delta { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.74rem; font-weight: 600; margin-left: 6px; }
+        .hl-delta.up { background: #d4edda; color: #155724; }
+        .hl-delta.down { background: #f8d7da; color: #721c24; }
+
+        /* 오늘 누적 표 - 1위 행 강조 */
+        tr.top-row { background: linear-gradient(90deg, #fff8e1 0%, #fff 50%); }
+        tr.top-row td:first-child { position: relative; padding-left: 18px; }
+        tr.top-row td:first-child::before { content: '🏆'; position: absolute; left: 2px; font-size: 0.85rem; }
+
+        /* 페이스 바 */
+        .pace-bar { width: 60px; height: 4px; background: #eee; border-radius: 2px; display: inline-block; vertical-align: middle; margin-left: 4px; position: relative; }
+        .pace-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: #4a90d9; border-radius: 2px; }
     </style>
 </head>
 <body>
@@ -105,25 +144,90 @@
     </div>
     {% endif %}
 
-    <!-- 1. 오늘 누적 (가장 중요한 숫자) -->
+    <!-- 메가 KPI (전체 합계) -->
+    {% if mega %}
+    <div class="mega-grid">
+        <div class="mega mega-hero">
+            <div class="mega-label">오늘 매출 (지금까지)</div>
+            <div class="mega-value">{{ "{:,.0f}".format(mega.today_sales) }}<span class="mega-unit">원</span></div>
+            <div class="mega-sub">
+                {% if mega.vs_yest_at_hour_pct is not none %}
+                    어제 같은 시각 {{ "{:,.0f}".format(mega.yest_at_hour) }}원 대비
+                    <strong>{% if mega.vs_yest_at_hour_pct > 0 %}▲{% elif mega.vs_yest_at_hour_pct < 0 %}▼{% else %}─{% endif %} {{ "%+.1f"|format(mega.vs_yest_at_hour_pct) }}%</strong>
+                {% else %}어제 동시각 비교 불가{% endif %}
+            </div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">예상 종일 매출</div>
+            <div class="mega-value">{{ "{:,.0f}".format(mega.expected_eod) }}<span class="mega-unit">원</span></div>
+            <div class="mega-sub {{ 'up' if mega.vs_yest_full_pct and mega.vs_yest_full_pct > 0 else ('down' if mega.vs_yest_full_pct and mega.vs_yest_full_pct < 0 else '') }}">
+                {% if mega.vs_yest_full_pct is not none %}
+                    어제 종일 {{ "{:,.0f}".format(mega.yest_full) }}원 대비 {{ "%+.1f"|format(mega.vs_yest_full_pct) }}%
+                {% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">구매건수 / 방문자</div>
+            <div class="mega-value">{{ "{:,.0f}".format(mega.today_orders) }}<span class="mega-unit">건</span></div>
+            <div class="mega-sub">방문 {{ "{:,.0f}".format(mega.today_visitors) }} · 전환 {{ "%.2f"|format(mega.today_orders / mega.today_visitors * 100) if mega.today_visitors else '—' }}%</div>
+        </div>
+        <div class="mega">
+            <div class="mega-label">활성 계정 / 전체</div>
+            <div class="mega-value">{{ mega.active }}<span class="mega-unit">/ {{ mega.total_accounts }}</span></div>
+            <div class="mega-sub">매출 발생한 매장 수 · 현재 {{ mega.cur_hour }}시</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 하이라이트 (베스트 / 가장 큰 변화) -->
+    {% if best or top_gainer or top_loser %}
+    <div class="hl-grid">
+        {% if best %}
+        <div class="hl best">
+            <div class="hl-tag">🏆 오늘 매출 1위</div>
+            <div class="hl-acct">{{ best.label }}</div>
+            <div class="hl-val">{{ "{:,.0f}".format(best.today.매출) }}원 · {{ best.today.구매건수 }}건</div>
+        </div>
+        {% endif %}
+        {% if top_gainer and top_gainer.vs_yest_at_hour_pct and top_gainer.vs_yest_at_hour_pct > 0 %}
+        <div class="hl gain">
+            <div class="hl-tag">📈 어제 동시각 대비 최대 상승</div>
+            <div class="hl-acct">{{ top_gainer.label }} <span class="hl-delta up">▲ {{ "%+.1f"|format(top_gainer.vs_yest_at_hour_pct) }}%</span></div>
+            <div class="hl-val">{{ "{:,.0f}".format(top_gainer.today.매출) }}원 (어제 {{ "{:,.0f}".format(top_gainer.yest_at_hour) }})</div>
+        </div>
+        {% endif %}
+        {% if top_loser and top_loser.vs_yest_at_hour_pct and top_loser.vs_yest_at_hour_pct < 0 %}
+        <div class="hl lose">
+            <div class="hl-tag">📉 어제 동시각 대비 최대 하락</div>
+            <div class="hl-acct">{{ top_loser.label }} <span class="hl-delta down">▼ {{ "%.1f"|format(top_loser.vs_yest_at_hour_pct) }}%</span></div>
+            <div class="hl-val">{{ "{:,.0f}".format(top_loser.today.매출) }}원 (어제 {{ "{:,.0f}".format(top_loser.yest_at_hour) }})</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- 1. 오늘 누적 표 (매출 큰 순) -->
     <div class="card">
-        <h2>📊 오늘 누적 — {{ today }}</h2>
-        <p class="card-sub">라이브 인터벌마다 자동 갱신됨. % 는 어제 / 지난주 같은요일 / 최근 7일 평균 대비. 계정 옆 시각 = 마지막 스크랩 시각.</p>
+        <h2>📊 오늘 누적 — {{ today }} <span style="font-size:0.78rem; color:#888; font-weight:400">현재 {{ mega.cur_hour if mega else now }}시</span></h2>
+        <p class="card-sub">매출 큰 순 정렬. <strong>vs 어제</strong> = 어제 같은 시각까지 누적 매출 대비 (사과대사과 비교). <strong>페이스</strong> = 최근 7일 평균 누적 진행률.</p>
         <table class="num">
             <thead>
                 <tr>
                     <th>계정 <span class="label-sub">마지막 갱신</span></th>
-                    <th>매출 <span class="label-sub">vs 어제</span></th>
-                    <th>구매건수 <span class="label-sub">vs 어제</span></th>
-                    <th>방문자수 <span class="label-sub">vs 어제</span></th>
-                    <th>객단가 <span class="label-sub">vs 어제</span></th>
-                    <th>매출 vs 지난주</th>
-                    <th>매출 vs 7일평균</th>
+                    <th>매출</th>
+                    <th>vs 어제 동시각</th>
+                    <th>예상 종일</th>
+                    <th>페이스</th>
+                    <th>건수</th>
+                    <th>방문자</th>
+                    <th>전환율</th>
+                    <th>객단가</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in rows %}
-                <tr>
+                {% set is_top = loop.index == 1 and r.today.매출 %}
+                <tr class="{{ 'top-row' if is_top else '' }}">
                     <td>{{ r.label }}
                         {% if r.updated_at %}
                             <span class="label-sub" style="display:block; font-weight:400; color:#aaa">{{ r.updated_at[11:16] if r.updated_at|length >= 16 else r.updated_at }}</span>
@@ -131,68 +235,68 @@
                             <span class="label-sub" style="display:block; font-weight:400; color:#ccc">아직 없음</span>
                         {% endif %}
                     </td>
-                    {% for col in ['매출', '구매건수', '방문자수', '객단가'] %}
-                    {% set cur = r.today[col] %}
-                    {% set ref = r.yesterday[col] %}
+                    <!-- 매출 -->
                     <td class="num-big">
-                        {% if cur is not none %}
-                            {{ "{:,.0f}".format(cur) }}
-                            {% if ref %}
-                                {% set d = cur - ref %}
-                                {% set p = (d / ref * 100) if ref else 0 %}
-                                <span class="delta {{ 'up' if d>0 else ('down' if d<0 else 'flat') }}">
-                                    {% if d > 0 %}▲{% elif d < 0 %}▼{% else %}─{% endif %}
-                                    {{ "{:,.0f}".format(d|abs) }}
-                                    <span class="pct">({{ "%+.1f"|format(p) }}%)</span>
-                                </span>
-                            {% else %}
-                                <span class="delta nodata">─</span>
+                        {% if r.today.매출 %}{{ "{:,.0f}".format(r.today.매출) }}{% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <!-- vs 어제 동시각 -->
+                    <td>
+                        {% if r.vs_yest_at_hour_pct is not none %}
+                            <span class="delta {{ 'up' if r.vs_yest_at_hour_pct>0 else ('down' if r.vs_yest_at_hour_pct<0 else 'flat') }}">
+                                {% if r.vs_yest_at_hour_pct > 0 %}▲{% elif r.vs_yest_at_hour_pct < 0 %}▼{% else %}─{% endif %} {{ "%+.1f"|format(r.vs_yest_at_hour_pct) }}%
+                            </span>
+                            <span class="label-sub" style="display:block; color:#aaa">어제 {{ "{:,.0f}".format(r.yest_at_hour) }}</span>
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <!-- 예상 종일 -->
+                    <td class="num-big">
+                        {% if r.expected_eod %}
+                            {{ "{:,.0f}".format(r.expected_eod) }}
+                            {% if r.yesterday.매출 %}
+                                {% set diff_pct = (r.expected_eod - r.yesterday.매출) / r.yesterday.매출 * 100 %}
+                                <span class="label-sub" style="display:block; color:{{ '#27ae60' if diff_pct>0 else '#e74c3c' }}">{{ "%+.1f"|format(diff_pct) }}% vs 어제 종일</span>
                             {% endif %}
-                        {% else %}
-                            <span class="dim">—</span>
-                        {% endif %}
-                    </td>
-                    {% endfor %}
-                    <!-- 매출 vs 지난주 -->
-                    <td>
-                        {% if r.vs_lastweek_pct is not none %}
-                            <span class="{{ 'up' if r.vs_lastweek_pct>0 else ('down' if r.vs_lastweek_pct<0 else 'flat') }}">{{ "%+.1f"|format(r.vs_lastweek_pct) }}%</span>
                         {% else %}<span class="dim">—</span>{% endif %}
                     </td>
-                    <!-- 매출 vs 7일평균 -->
+                    <!-- 페이스 (진행률 바) -->
                     <td>
-                        {% if r.vs_7avg_pct is not none %}
-                            <span class="{{ 'up' if r.vs_7avg_pct>0 else ('down' if r.vs_7avg_pct<0 else 'flat') }}">{{ "%+.1f"|format(r.vs_7avg_pct) }}%</span>
+                        {% if r.cum_pct_at_hour %}
+                            {{ "%.0f"|format(r.cum_pct_at_hour) }}%
+                            <span class="pace-bar"><span class="fill" style="width: {{ '%.0f'|format(r.cum_pct_at_hour) }}%"></span></span>
                         {% else %}<span class="dim">—</span>{% endif %}
                     </td>
+                    <!-- 구매건수 -->
+                    <td>{% if r.today.구매건수 %}{{ "{:,.0f}".format(r.today.구매건수) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <!-- 방문자수 -->
+                    <td>{% if r.today.방문자수 %}{{ "{:,.0f}".format(r.today.방문자수) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <!-- 전환율 -->
+                    <td>
+                        {% if r.today.전환율 is not none %}
+                            {{ "%.2f"|format(r.today.전환율) }}%
+                            {% if r.yesterday.전환율 %}
+                                <span class="label-sub" style="display:block; color:#aaa">어제 {{ "%.2f"|format(r.yesterday.전환율) }}%</span>
+                            {% endif %}
+                        {% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    <!-- 객단가 -->
+                    <td>{% if r.today.객단가 %}{{ "{:,.0f}".format(r.today.객단가) }}{% else %}<span class="dim">—</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr style="font-weight:600; background:#fafafa">
-                    <td>합계</td>
-                    {% set agg_today = {'매출':0,'구매건수':0,'방문자수':0,'객단가':0} %}
-                    {% set agg_yest = {'매출':0,'구매건수':0,'방문자수':0,'객단가':0} %}
-                    {% for r in rows %}
-                        {% for col in ['매출','구매건수','방문자수','객단가'] %}
-                            {% if r.today[col] %}{% set _ = agg_today.update({col: agg_today[col] + r.today[col]}) %}{% endif %}
-                            {% if r.yesterday[col] %}{% set _ = agg_yest.update({col: agg_yest[col] + r.yesterday[col]}) %}{% endif %}
-                        {% endfor %}
-                    {% endfor %}
-                    {% for col in ['매출','구매건수','방문자수','객단가'] %}
-                    <td class="num-big">
-                        {{ "{:,.0f}".format(agg_today[col]) }}
-                        {% if agg_yest[col] %}
-                            {% set dd = agg_today[col] - agg_yest[col] %}
-                            {% set pp = (dd / agg_yest[col] * 100) %}
-                            <span class="delta {{ 'up' if dd>0 else ('down' if dd<0 else 'flat') }}">
-                                {% if dd > 0 %}▲{% elif dd < 0 %}▼{% else %}─{% endif %} {{ "{:,.0f}".format(dd|abs) }}
-                                <span class="pct">({{ "%+.1f"|format(pp) }}%)</span>
-                            </span>
-                        {% endif %}
+                    <td>합계 ({{ mega.active }}/{{ mega.total_accounts }})</td>
+                    <td class="num-big">{{ "{:,.0f}".format(mega.today_sales) }}</td>
+                    <td>
+                        {% if mega.vs_yest_at_hour_pct is not none %}
+                            <span class="{{ 'up' if mega.vs_yest_at_hour_pct>0 else ('down' if mega.vs_yest_at_hour_pct<0 else 'flat') }}">{{ "%+.1f"|format(mega.vs_yest_at_hour_pct) }}%</span>
+                        {% else %}—{% endif %}
                     </td>
-                    {% endfor %}
+                    <td class="num-big">{{ "{:,.0f}".format(mega.expected_eod) if mega.expected_eod else '—' }}</td>
                     <td>—</td>
+                    <td class="num-big">{{ "{:,.0f}".format(mega.today_orders) }}</td>
+                    <td class="num-big">{{ "{:,.0f}".format(mega.today_visitors) }}</td>
+                    <td>{{ "%.2f"|format(mega.today_orders / mega.today_visitors * 100) if mega.today_visitors else '—' }}%</td>
                     <td>—</td>
                 </tr>
             </tfoot>
