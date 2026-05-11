@@ -378,6 +378,38 @@ def update_spreadsheet(account_id):
     return redirect(url_for("index"))
 
 
+@app.route("/admin/backfill_dates", methods=["POST"])
+def admin_backfill_dates():
+    """localhost 전용 백필 트리거. _run_lock 으로 라이브 잡과 자동 직렬화.
+    body: account_id=..&dates=2026-05-08,2026-05-09 (콤마 구분)"""
+    remote = request.remote_addr or ""
+    if remote not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    account_id = request.form.get("account_id", "").strip()
+    dates_raw = request.form.get("dates", "").strip()
+    if not account_id or not dates_raw:
+        return jsonify({"error": "account_id, dates required"}), 400
+    dates = [d.strip() for d in dates_raw.split(",") if d.strip()]
+    for d in dates:
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": f"invalid date {d}"}), 400
+
+    def _run_all():
+        for d in dates:
+            print(f"[backfill] {account_id} {d} 시작", flush=True)
+            try:
+                _run_scrape_task(account_id, target_date=d, skip_sheet=False)
+            except Exception:
+                traceback.print_exc()
+            print(f"[backfill] {account_id} {d} 끝", flush=True)
+        print(f"[backfill] {account_id} 전체 완료 ({len(dates)}건)", flush=True)
+
+    threading.Thread(target=_run_all, daemon=True).start()
+    return jsonify({"ok": True, "account_id": account_id, "queued_dates": dates})
+
+
 @app.route("/accounts/<account_id>/update", methods=["POST"])
 @login_required
 def update_account_route(account_id):
