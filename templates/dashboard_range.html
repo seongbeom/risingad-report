@@ -3,83 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>대시보드 - Cafe24 애널리틱스</title>
+    <title>기간 분석 - Cafe24</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        h1 { font-size: 1.5rem; margin-bottom: 4px; }
-        .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
-        .nav { margin-bottom: 16px; }
-        .nav a { color: #4a90d9; text-decoration: none; margin-right: 16px; font-size: 0.9rem; }
-        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .card h2 { font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-        .form-row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 18px 20px; }
+        h1 { font-size: 1.4rem; margin-bottom: 4px; }
+        .subtitle { color: #888; font-size: 0.82rem; margin-bottom: 14px; }
+        .nav { margin-bottom: 14px; font-size: 0.85rem; }
+        .nav a { color: #4a90d9; text-decoration: none; margin-right: 14px; }
+        .card { background: #fff; border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .card h2 { font-size: 1rem; margin-bottom: 4px; color: #333; }
+        .card-sub { font-size: 0.74rem; color: #888; margin-bottom: 12px; }
+
+        .form-row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
         .form-group { display: flex; flex-direction: column; gap: 4px; }
-        .form-group label { font-size: 0.75rem; color: #888; font-weight: 600; }
-        input, select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
-        .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; background: #4a90d9; color: #fff; text-decoration: none; display: inline-block; }
+        .form-group label { font-size: 0.74rem; color: #888; font-weight: 600; }
+        input, select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.88rem; }
+        .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; background: #4a90d9; color: #fff; text-decoration: none; display: inline-block; }
         .btn:hover { background: #3a7bc8; }
-        .btn-mini { padding: 4px 10px; font-size: 0.78rem; background: #e9ecef; color: #333; }
-        .btn-mini:hover { background: #d8dde2; color: #000; }
-        .checkbox-group { display: flex; gap: 8px; flex-wrap: wrap; }
-        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; cursor: pointer; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
-        .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .btn-mini { padding: 3px 9px; font-size: 0.74rem; background: #e9ecef; color: #333; }
+        .btn-mini:hover { background: #d8dde2; }
+        .checkbox-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 0.82rem; cursor: pointer; padding: 3px 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .preset-row { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
 
-        .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #444; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-        .panel-title .acct { color: #4a90d9; }
-        .panel-title .date { color: #888; font-size: 0.8rem; font-weight: normal; }
-        .panel-title .meta { font-size: 0.75rem; color: #999; }
-
-        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-        @media (max-width: 720px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-        .kpi { background: #fafafa; border-radius: 6px; padding: 14px; }
-        .kpi-label { font-size: 0.72rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-        .kpi-mode { font-size: 0.65rem; color: #bbb; font-weight: 500; margin-left: 4px; }
-        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #222; margin: 6px 0; }
-        .kpi-unit { font-size: 0.7rem; color: #aaa; margin-left: 2px; }
-        .kpi-comparisons { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
-        .kpi-comp-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; }
-        .kpi-comp-label { color: #888; }
-        .kpi-comp-value { font-weight: 600; }
+        table.num { width: 100%; border-collapse: collapse; font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+        table.num th, table.num td { padding: 7px 9px; text-align: right; border-bottom: 1px solid #f0f0f0; }
+        table.num th:first-child, table.num td:first-child { text-align: left; font-weight: 600; }
+        table.num thead th { background: #fafafa; color: #666; font-weight: 600; font-size: 0.76rem; border-bottom: 2px solid #e0e0e0; }
+        table.num tbody tr:hover { background: #f9fbfd; }
+        table.num td.num-big { font-weight: 700; color: #222; font-size: 0.92rem; }
+        table.num td.dim { color: #999; }
+        table.num td .sub { display: block; font-size: 0.7rem; color: #aaa; }
+        .delta { font-size: 0.74rem; font-weight: 600; padding-left: 6px; white-space: nowrap; }
+        .pct { font-size: 0.72rem; color: #888; padding-left: 3px; }
         .up { color: #27ae60; }
         .down { color: #e74c3c; }
-        .flat { color: #888; }
-        .nodata { font-size: 0.85rem; color: #aaa; padding: 16px; text-align: center; background: #fafafa; border-radius: 6px; }
+        .flat { color: #999; }
+        .nodata { color: #ccc; }
+        tfoot tr { background: #fafafa; font-weight: 600; border-top: 2px solid #ddd; }
 
-        .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
-        @media (max-width: 720px) { .chart-grid { grid-template-columns: 1fr; } }
-        .chart-box { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 12px; }
-        .chart-box-title { font-size: 0.85rem; font-weight: 600; color: #555; margin-bottom: 8px; }
-        .chart-box .hint { font-size: 0.72rem; color: #999; font-weight: normal; margin-left: 6px; }
-        .chart-box canvas { max-height: 240px; }
+        .grid-table .weekend { background: #fef5f5; }
+        .grid-table th .sub { display: block; font-size: 0.66rem; color: #aaa; }
+        .grid-table th, .grid-table td { font-size: 0.78rem; padding: 5px 7px; }
 
-        .insight-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
-        .insight-pill { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 16px; padding: 4px 12px; font-size: 0.78rem; color: #614700; }
-        .insight-pill strong { color: #4a90d9; }
+        .hour-table { font-size: 0.72rem; }
+        .hour-table th, .hour-table td { padding: 4px 5px; text-align: right; }
+        .hour-table th:first-child, .hour-table td:first-child { text-align: left; padding-left: 8px; }
+        .hour-table thead th { background: #fafafa; border-bottom: 1px solid #ddd; font-size: 0.7rem; }
+        .hour-table td.empty { color: #ddd; }
 
         .heatmap-wrap { overflow-x: auto; margin-top: 8px; }
-        .heatmap { display: grid; grid-template-columns: 28px repeat(24, minmax(22px, 1fr)); gap: 1px; font-size: 0.62rem; min-width: 600px; }
-        .heatmap .h-head { text-align: center; color: #aaa; padding: 2px 0; font-size: 0.6rem; }
-        .heatmap .h-row-label { text-align: right; color: #777; padding: 2px 4px; font-weight: 600; font-size: 0.7rem; }
-        .heatmap .h-cell { text-align: center; padding: 4px 0; color: #444; border-radius: 2px; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; }
-        .heatmap-legend { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #888; margin-top: 6px; }
-        .heatmap-legend .swatch { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
+        .heatmap { display: grid; grid-template-columns: 28px repeat(24, minmax(28px, 1fr)); gap: 1px; font-size: 0.66rem; min-width: 720px; }
+        .heatmap .h-head { text-align: center; color: #aaa; padding: 2px 0; font-size: 0.62rem; }
+        .heatmap .h-row-label { text-align: right; color: #777; padding: 2px 4px; font-weight: 600; font-size: 0.74rem; }
+        .heatmap .h-cell { text-align: center; padding: 4px 0; color: #444; border-radius: 2px; overflow: hidden; }
+
+        .peak-pill { background: #fffbe6; border: 1px solid #ffe58f; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; color: #614700; margin-left: 6px; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
-    <h1>KPI 대시보드</h1>
-    <p class="subtitle">{{ start_date }} ~ {{ end_date }} ({{ range_days }}일) · 직전 {{ range_days }}일({{ prev_start }} ~ {{ prev_end }}) 비교</p>
+    <h1>기간 분석</h1>
+    <p class="subtitle">{{ start_date }} ~ {{ end_date }} ({{ range_days }}일) · 직전 {{ range_days }}일 ({{ prev_start }} ~ {{ prev_end }}) 비교 · 모두 숫자 기반</p>
     <div class="nav">
-        <a href="/">← 관리자</a>
+        <a href="/dashboard">← 데일리</a>
+        <a href="/">관리자</a>
     </div>
 
-    <!-- 필터 -->
     <div class="card">
         <h2>조회 조건</h2>
-        <form method="GET" action="/dashboard" id="filter-form">
+        <form method="GET" action="/dashboard/range" id="filter-form">
             <div class="form-row">
                 <div class="form-group">
                     <label>시작일</label>
@@ -90,12 +85,11 @@
                     <input type="date" name="end_date" value="{{ end_date }}">
                 </div>
                 <div class="form-group">
-                    <label>계정 (선택 안 하면 전체)</label>
+                    <label>계정 (없으면 전체)</label>
                     <div class="checkbox-group">
                         {% for a in accounts %}
                         <label class="checkbox-label">
-                            <input type="checkbox" name="account_id" value="{{ a.id }}"
-                                   {% if a.id in selected_ids %}checked{% endif %}>
+                            <input type="checkbox" name="account_id" value="{{ a.id }}" {% if a.id in selected_ids %}checked{% endif %}>
                             {{ a.label or a.cafe24_id }}
                         </label>
                         {% endfor %}
@@ -112,333 +106,239 @@
         </form>
     </div>
 
-    <!-- 패널들 -->
-    {% for panel in panels %}
+    <!-- 1. 기간 합계 KPI -->
     <div class="card">
-        <div class="panel-title">
-            <div>
-                <span class="acct">{{ panel.account.label or panel.account.cafe24_id }}</span>
-                <span class="date">{{ panel.account.cafe24_id }}</span>
-            </div>
-            <span class="meta">
-                {% if panel.peak_hour is not none %}
-                피크 시간: <strong>{{ '%02d시'|format(panel.peak_hour) }}</strong>
-                {% endif %}
-                · 시간별 표본 {{ panel.hourly_total_days }}일
-            </span>
-        </div>
-        {% if panel.has_data %}
-        <div class="kpi-grid">
-            {% for k in panel.kpis %}
-            <div class="kpi">
-                <div class="kpi-label">{{ k.label }}<span class="kpi-mode">· {{ '합계' if k.mode=='sum' else '일평균' }}</span></div>
-                <div class="kpi-value">
-                    {% if k.value is not none %}
-                        {{ "{:,.0f}".format(k.value) }}<span class="kpi-unit">{{ k.unit }}</span>
-                    {% else %}
-                        -
-                    {% endif %}
-                </div>
-                <div class="kpi-comparisons">
-                    {% set d = k.vs_prev %}
-                    <div class="kpi-comp-row">
-                        <span class="kpi-comp-label">직전 {{ range_days }}일</span>
-                        {% if d %}
-                            {% if d.abs > 0 %}
-                                <span class="kpi-comp-value up">▲ {{ "{:,.0f}".format(d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
-                            {% elif d.abs < 0 %}
-                                <span class="kpi-comp-value down">▼ {{ "{:,.0f}".format(-d.abs) }} ({{ "%.1f"|format(d.pct) }}%)</span>
-                            {% else %}
-                                <span class="kpi-comp-value flat">─</span>
+        <h2>📊 기간 합계 ({{ range_days }}일)</h2>
+        <p class="card-sub">합계(매출/건수/방문) + 일평균(객단가). %는 직전 동일 길이 기간 대비.</p>
+        <table class="num">
+            <thead>
+                <tr>
+                    <th>계정</th>
+                    <th>방문자수 합계</th>
+                    <th>매출 합계</th>
+                    <th>구매건수 합계</th>
+                    <th>일평균 객단가</th>
+                    <th>일평균 매출</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in panels %}
+                <tr>
+                    <td>{{ p.account.label or p.account.cafe24_id }}
+                        {% if p.peak_hour is not none %}<span class="peak-pill">피크 {{ '%02d시'|format(p.peak_hour) }}</span>{% endif %}
+                    </td>
+                    {% for k in p.kpis %}
+                    <td class="num-big">
+                        {% if k.value is not none %}
+                            {{ "{:,.0f}".format(k.value) }}
+                            {% if k.vs_prev %}
+                                {% set d = k.vs_prev %}
+                                <span class="delta {{ 'up' if d.abs>0 else ('down' if d.abs<0 else 'flat') }}">
+                                    {% if d.abs > 0 %}▲{% elif d.abs < 0 %}▼{% else %}─{% endif %} {{ "{:,.0f}".format(d.abs|abs) }}
+                                    <span class="pct">({{ "%+.1f"|format(d.pct) }}%)</span>
+                                </span>
                             {% endif %}
                         {% else %}
-                            <span class="kpi-comp-value flat">데이터 없음</span>
+                            <span class="dim">—</span>
                         {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="nodata">{{ start_date }} ~ {{ end_date }} 기간 데이터가 없습니다</div>
-        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="num-big">
+                        {% if p.kpis[1].value %}{{ "{:,.0f}".format(p.kpis[1].value / range_days) }}{% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td>합계 ({{ panels | length }}개)</td>
+                    {% set ns = namespace(visits=0, sales=0, orders=0, aov=0, aov_n=0) %}
+                    {% for p in panels %}
+                        {% if p.kpis[0].value %}{% set ns.visits = ns.visits + p.kpis[0].value %}{% endif %}
+                        {% if p.kpis[1].value %}{% set ns.sales = ns.sales + p.kpis[1].value %}{% endif %}
+                        {% if p.kpis[2].value %}{% set ns.orders = ns.orders + p.kpis[2].value %}{% endif %}
+                        {% if p.kpis[3].value %}{% set ns.aov = ns.aov + p.kpis[3].value %}{% set ns.aov_n = ns.aov_n + 1 %}{% endif %}
+                    {% endfor %}
+                    <td class="num-big">{{ "{:,.0f}".format(ns.visits) }}</td>
+                    <td class="num-big">{{ "{:,.0f}".format(ns.sales) }}</td>
+                    <td class="num-big">{{ "{:,.0f}".format(ns.orders) }}</td>
+                    <td class="num-big">{{ "{:,.0f}".format(ns.aov / ns.aov_n) if ns.aov_n else '—' }}</td>
+                    <td class="num-big">{{ "{:,.0f}".format(ns.sales / range_days) if range_days else '—' }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
 
-        {% if panel.history %}
-        <div class="chart-grid">
-            {% for k in kpi_fields %}
-            <div class="chart-box">
-                <div class="chart-box-title">{{ k }} 일별 추이</div>
-                <canvas id="chart-{{ panel.account.id }}-{{ loop.index }}"></canvas>
-            </div>
-            {% endfor %}
+    <!-- 2. 일별 매출 그리드 (계정 × 날짜). 35일 이내일 때만 -->
+    {% if range_dates | length <= 35 %}
+    <div class="card">
+        <h2>📅 일별 매출 그리드</h2>
+        <p class="card-sub">셀 = 매출(원) / 구매건수. <span style="background:#fef5f5; padding:0 4px">붉은 배경</span> = 주말 (토일). 마지막 열 = 계정별 기간 합계.</p>
+        <div style="overflow-x:auto">
+        <table class="num grid-table">
+            <thead>
+                <tr>
+                    <th>계정</th>
+                    {% for d in range_dates %}
+                    <th class="{{ 'weekend' if range_dows[loop.index0] in ['토','일'] else '' }}">{{ d[5:] }}<span class="sub">{{ range_dows[loop.index0] }}</span></th>
+                    {% endfor %}
+                    <th style="border-left:2px solid #ddd; background:#f0f7ff">합계</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in panels %}
+                {% set total = namespace(v=0) %}
+                <tr>
+                    <td>{{ p.account.label or p.account.cafe24_id }}</td>
+                    {% for d in range_dates %}
+                    {% set m = p.daily_lookup.get(d) %}
+                    {% set is_we = range_dows[loop.index0] in ['토','일'] %}
+                    <td class="{{ 'weekend' if is_we else '' }}">
+                        {% if m and m.매출 is not none %}
+                            {% set total.v = total.v + m.매출 %}
+                            {{ "{:,.0f}".format(m.매출) }}
+                            {% if m.구매건수 %}<span class="sub">{{ m.구매건수 }}건</span>{% endif %}
+                        {% else %}
+                            <span class="dim">—</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="num-big" style="border-left:2px solid #ddd; background:#f0f7ff">{{ "{:,.0f}".format(total.v) }}</td>
+                </tr>
+                {% endfor %}
+                <tr style="background:#fafafa; font-weight:600; border-top:2px solid #ddd">
+                    <td>날짜별 합계</td>
+                    {% set grand = namespace(v=0) %}
+                    {% for d in range_dates %}
+                    {% set day_total = namespace(v=0) %}
+                    {% for p in panels %}{% if p.daily_lookup.get(d) and p.daily_lookup.get(d).매출 %}{% set day_total.v = day_total.v + p.daily_lookup.get(d).매출 %}{% endif %}{% endfor %}
+                    {% set grand.v = grand.v + day_total.v %}
+                    {% set is_we = range_dows[loop.index0] in ['토','일'] %}
+                    <td class="{{ 'weekend' if is_we else '' }}">{{ "{:,.0f}".format(day_total.v) if day_total.v else '—' }}</td>
+                    {% endfor %}
+                    <td class="num-big" style="border-left:2px solid #ddd; background:#e6f0fb">{{ "{:,.0f}".format(grand.v) }}</td>
+                </tr>
+            </tbody>
+        </table>
         </div>
-        {% endif %}
+    </div>
+    {% else %}
+    <div class="card"><p class="card-sub">⚠️ 일별 그리드는 35일 이내일 때만 표시됩니다 (현재: {{ range_days }}일).</p></div>
+    {% endif %}
 
-        {% if panel.hourly_total_days > 0 %}
-        <div class="chart-grid" style="margin-top:20px">
-            <div class="chart-box">
-                <div class="chart-box-title">시간대 평균 매출 / 구매건수 <span class="hint">({{ panel.hourly_total_days }}일 평균)</span></div>
-                <canvas id="hour-avg-{{ panel.account.id }}"></canvas>
-            </div>
-            <div class="chart-box">
-                <div class="chart-box-title">시간대별 누적 매출 비중 <span class="hint">(영업 진행률)</span></div>
-                <canvas id="cum-{{ panel.account.id }}"></canvas>
-            </div>
-            <div class="chart-box">
-                <div class="chart-box-title">요일별 평균 일매출</div>
-                <canvas id="dow-{{ panel.account.id }}"></canvas>
+    <!-- 3. 요일별 평균 일매출 -->
+    <div class="card">
+        <h2>📆 요일별 평균 일매출</h2>
+        <p class="card-sub">기간 내 같은 요일 평균. 표본 없는 요일 = —.</p>
+        <table class="num">
+            <thead>
+                <tr>
+                    <th>계정</th>
+                    {% for d in days_ko %}<th class="{{ 'weekend' if d in ['토','일'] else '' }}">{{ d }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in panels %}
+                <tr>
+                    <td>{{ p.account.label or p.account.cafe24_id }}</td>
+                    {% for v in p.avg_sales_by_dow %}
+                    <td class="{{ 'weekend' if days_ko[loop.index0] in ['토','일'] else '' }}">
+                        {% if v %}{{ "{:,.0f}".format(v) }}{% else %}<span class="dim">—</span>{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 4. 시간대 평균 매출 그리드 -->
+    <div class="card">
+        <h2>⏰ 시간대 평균 매출 (계정 × 24시간)</h2>
+        <p class="card-sub">기간 평균. 색 깊이 = 매출 크기 (행 내 최대값 기준). 피크 시간은 위 표의 노란 pill 참조.</p>
+        <div style="overflow-x:auto">
+        <table class="num hour-table">
+            <thead>
+                <tr>
+                    <th>계정</th>
+                    {% for h in range(24) %}<th>{{ '%02d' % h }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in panels %}
+                {% set valid = p.avg_sales_by_hour | select | list %}
+                {% set max_v = (valid | max) if valid else 0 %}
+                <tr>
+                    <td>{{ p.account.label or p.account.cafe24_id }}</td>
+                    {% for v in p.avg_sales_by_hour %}
+                    {% if v %}
+                        {% set ratio = (v / max_v) if max_v else 0 %}
+                        {% set alpha = (ratio * 0.55 + 0.05) %}
+                        <td style="background: rgba(74,144,217,{{ '%.2f'|format(alpha) }});">{{ "{:,.0f}".format(v) }}</td>
+                    {% else %}
+                        <td class="empty">·</td>
+                    {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <!-- 5. 요일 × 시간 히트맵 (상위 3계정) -->
+    {% for p in panels[:3] %}
+    <div class="card">
+        <h2>🔥 {{ p.account.label or p.account.cafe24_id }} — 요일 × 시간 매출 히트맵</h2>
+        <p class="card-sub">셀 = 해당 요일·시간 평균 매출 (천원 단위). 골든타임 한눈에 식별.</p>
+        <div class="heatmap-wrap">
+            <div class="heatmap">
+                <div></div>
+                {% for h in range(24) %}<div class="h-head">{{ '%02d' % h }}</div>{% endfor %}
+                {% set ns = namespace(maxv=0) %}
+                {% for dow in range(7) %}{% for h in range(24) %}
+                    {% if p.dow_hour_count[dow][h] > 0 %}
+                        {% set avg = p.dow_hour_sales[dow][h] / p.dow_hour_count[dow][h] %}
+                        {% if avg > ns.maxv %}{% set ns.maxv = avg %}{% endif %}
+                    {% endif %}
+                {% endfor %}{% endfor %}
+                {% for dow in range(7) %}
+                <div class="h-row-label">{{ days_ko[dow] }}</div>
+                {% for h in range(24) %}
+                    {% if p.dow_hour_count[dow][h] > 0 %}
+                        {% set avg = p.dow_hour_sales[dow][h] / p.dow_hour_count[dow][h] %}
+                        {% set ratio = (avg / ns.maxv) if ns.maxv else 0 %}
+                        {% set bg_alpha = (ratio * 0.6 + 0.05) %}
+                        {% set txt = '#fff' if ratio > 0.55 else '#333' %}
+                        <div class="h-cell" style="background:rgba(74,144,217,{{ '%.2f'|format(bg_alpha) }}); color:{{ txt }}" title="{{ days_ko[dow] }} {{ '%02d'|format(h) }}시: {{ '{:,.0f}'.format(avg) }}원 ({{ p.dow_hour_count[dow][h] }}일 평균)">{{ (avg / 1000) | round | int }}k</div>
+                    {% else %}
+                        <div class="h-cell" style="background:#f5f5f5">·</div>
+                    {% endif %}
+                {% endfor %}
+                {% endfor %}
             </div>
         </div>
-        <div class="chart-box" style="margin-top:16px">
-            <div class="chart-box-title">요일 × 시간 매출 히트맵 <span class="hint">(셀 = 해당 요일·시간 평균 매출)</span></div>
-            <div class="heatmap-wrap">
-                <div class="heatmap" id="heatmap-{{ panel.account.id }}"></div>
-            </div>
-            <div class="heatmap-legend">
-                <span>낮음</span>
-                <span class="swatch" style="background:#eef5fc"></span>
-                <span class="swatch" style="background:#a8d0ee"></span>
-                <span class="swatch" style="background:#4a90d9"></span>
-                <span class="swatch" style="background:#1a5e9c"></span>
-                <span>높음</span>
-            </div>
-        </div>
-        {% endif %}
     </div>
     {% endfor %}
 
-    {% if compare_charts %}
-    <div class="card">
-        <h2>계정 비교 (일별 추이)</h2>
-        <div class="chart-grid">
-            {% for cc in compare_charts %}
-            <div class="chart-box">
-                <div class="chart-box-title">{{ cc.label }}</div>
-                <canvas id="compare-{{ loop.index }}"></canvas>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    {% if hourly_compare and hourly_compare.datasets %}
-    <div class="card">
-        <h2>계정별 시간대 평균 비교</h2>
-        <div class="chart-grid">
-            <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">시간 평균 매출</div>
-                <canvas id="hourly-compare-sales"></canvas>
-            </div>
-            <div class="chart-box" style="grid-column: span 2">
-                <div class="chart-box-title">시간 평균 구매건수</div>
-                <canvas id="hourly-compare-orders"></canvas>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
     {% if not panels %}
-    <div class="card">
-        <p class="nodata">선택된 계정이 없거나 등록된 계정이 없습니다.</p>
-    </div>
+    <div class="card"><p class="card-sub">선택된 계정이 없거나 등록된 계정이 없습니다.</p></div>
     {% endif %}
 </div>
 
 <script>
-const PALETTE = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12", "#9b59b6"];
-const DAYS_KO = {{ days_ko | tojson }};
-
-const baseOpts = (unit) => ({
-    responsive: true,
-    plugins: {
-        legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
-        tooltip: {
-            callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()} ${unit||''}` }
-        }
-    },
-    scales: {
-        x: { ticks: { font: { size: 10 }, maxRotation: 45, minRotation: 45 } },
-        y: { ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() }, beginAtZero: true }
-    }
-});
-
-// 프리셋 버튼: 종료일=어제, 시작일=종료일-(N-1)
 document.querySelectorAll('[data-preset]').forEach(btn => {
     btn.addEventListener('click', (e) => {
         e.preventDefault();
         const n = parseInt(btn.dataset.preset, 10);
-        const end = new Date();
-        end.setDate(end.getDate() - 1);
-        const start = new Date(end);
-        start.setDate(start.getDate() - (n - 1));
+        const end = new Date(); end.setDate(end.getDate() - 1);
+        const start = new Date(end); start.setDate(start.getDate() - (n - 1));
         const fmt = (d) => d.toISOString().slice(0, 10);
         document.querySelector('input[name=start_date]').value = fmt(start);
         document.querySelector('input[name=end_date]').value = fmt(end);
         document.getElementById('filter-form').submit();
     });
 });
-
-// 색상 보간 (heatmap)
-function heatColor(ratio) {
-    // ratio 0~1 → 흰색→#1a5e9c
-    const stops = [
-        [0.0, [255, 255, 255]],
-        [0.25, [238, 245, 252]],
-        [0.5,  [168, 208, 238]],
-        [0.75, [74, 144, 217]],
-        [1.0, [26, 94, 156]],
-    ];
-    let lo = stops[0], hi = stops[stops.length - 1];
-    for (let i = 0; i < stops.length - 1; i++) {
-        if (ratio >= stops[i][0] && ratio <= stops[i+1][0]) { lo = stops[i]; hi = stops[i+1]; break; }
-    }
-    const t = (ratio - lo[0]) / (hi[0] - lo[0] || 1);
-    const c = lo[1].map((v, i) => Math.round(v + (hi[1][i] - v) * t));
-    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
-}
-
-// 패널별 차트
-{% for panel in panels %}
-{% set acct_id = panel.account.id %}
-
-{% if panel.history %}
-(function() {
-    const labels = {{ panel.history | map(attribute='date') | list | tojson }};
-    const colors = ["#4a90d9", "#e74c3c", "#27ae60", "#f39c12"];
-    const fields = [
-        {col: "방문자수", unit: "명"},
-        {col: "매출", unit: "원"},
-        {col: "구매건수", unit: "건"},
-        {col: "객단가", unit: "원"},
-    ];
-    const histData = {{ panel.history | tojson }};
-    fields.forEach((f, i) => {
-        const data = histData.map(h => h[f.col] ?? null);
-        new Chart(document.getElementById(`chart-{{ acct_id }}-${i+1}`), {
-            type: 'line',
-            data: { labels, datasets: [{label: f.col, data, borderColor: colors[i], backgroundColor: colors[i]+'22', tension: 0.3, pointRadius: 3, fill: true}] },
-            options: baseOpts(f.unit)
-        });
-    });
-})();
-{% endif %}
-
-{% if panel.hourly_total_days > 0 %}
-(function() {
-    const hourLabels = Array.from({length: 24}, (_, h) => `${String(h).padStart(2,'0')}시`);
-    const avgSales = {{ panel.avg_sales_by_hour | tojson }};
-    const avgOrders = {{ panel.avg_orders_by_hour | tojson }};
-    const cumPct = {{ panel.cum_pct | tojson }};
-    const dowAvg = {{ panel.avg_sales_by_dow | tojson }};
-
-    // 시간 평균 (bar+line dual)
-    new Chart(document.getElementById(`hour-avg-{{ acct_id }}`), {
-        data: {
-            labels: hourLabels,
-            datasets: [
-                {type: 'bar', label: '평균 매출(원)', data: avgSales, backgroundColor: '#4a90d966', borderColor: '#4a90d9', yAxisID: 'y'},
-                {type: 'line', label: '평균 구매건수', data: avgOrders, borderColor: '#e74c3c', backgroundColor: '#e74c3c22', tension: 0.3, pointRadius: 3, yAxisID: 'y1'},
-            ]
-        },
-        options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()}` } } },
-            scales: {
-                x: { ticks: { font: { size: 9 } } },
-                y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { font: { size: 10 }, callback: v => Number(v).toLocaleString() } },
-                y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
-            }
-        }
-    });
-
-    // 누적 매출 비중 (line, 0~100%)
-    new Chart(document.getElementById(`cum-{{ acct_id }}`), {
-        type: 'line',
-        data: { labels: hourLabels, datasets: [{label: '누적 매출 비중(%)', data: cumPct, borderColor: '#27ae60', backgroundColor: '#27ae6033', tension: 0.3, fill: true, pointRadius: 3}] },
-        options: {
-            responsive: true,
-            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.parsed.y}%` } } },
-            scales: { x: { ticks: { font: { size: 9 } } }, y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
-        }
-    });
-
-    // 요일 평균 매출 (bar)
-    new Chart(document.getElementById(`dow-{{ acct_id }}`), {
-        type: 'bar',
-        data: {
-            labels: DAYS_KO,
-            datasets: [{label: '평균 일매출(원)', data: dowAvg, backgroundColor: DAYS_KO.map((_, i) => i >= 5 ? '#e74c3c99' : '#4a90d999')}]
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${Number(ctx.parsed.y || 0).toLocaleString()}원` } } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } } }
-        }
-    });
-
-    // 히트맵 (요일 × 시간)
-    const dowHourSales = {{ panel.dow_hour_sales | tojson }};
-    const dowHourCount = {{ panel.dow_hour_count | tojson }};
-    const flat = [];
-    for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
-        const cnt = dowHourCount[d][h];
-        if (cnt > 0) flat.push(dowHourSales[d][h] / cnt);
-    }
-    const maxV = flat.length ? Math.max(...flat) : 1;
-    const grid = document.getElementById(`heatmap-{{ acct_id }}`);
-    let html = '<div></div>';
-    for (let h = 0; h < 24; h++) html += `<div class="h-head">${String(h).padStart(2,'0')}</div>`;
-    for (let d = 0; d < 7; d++) {
-        html += `<div class="h-row-label">${DAYS_KO[d]}</div>`;
-        for (let h = 0; h < 24; h++) {
-            const cnt = dowHourCount[d][h];
-            const avg = cnt > 0 ? dowHourSales[d][h] / cnt : 0;
-            const ratio = maxV > 0 ? avg / maxV : 0;
-            const bg = cnt > 0 ? heatColor(ratio) : '#f5f5f5';
-            const txtColor = ratio > 0.55 ? '#fff' : '#333';
-            const display = cnt > 0 ? Math.round(avg / 1000) + 'k' : '-';
-            const tip = cnt > 0 ? `${DAYS_KO[d]} ${String(h).padStart(2,'0')}시: ${Math.round(avg).toLocaleString()}원 (${cnt}일 평균)` : `${DAYS_KO[d]} ${String(h).padStart(2,'0')}시: 데이터 없음`;
-            html += `<div class="h-cell" style="background:${bg};color:${txtColor}" title="${tip}">${display}</div>`;
-        }
-    }
-    grid.innerHTML = html;
-})();
-{% endif %}
-
-{% endfor %}
-
-// 시간 평균 다계정 overlay
-{% if hourly_compare and hourly_compare.datasets %}
-(function() {
-    const hours = {{ hourly_compare.hours | tojson }};
-    const labels = hours.map(h => `${String(h).padStart(2,'0')}시`);
-    const datasets = {{ hourly_compare.datasets | tojson }};
-    const buildDS = (key) => datasets.map((ds, i) => ({
-        label: ds.label, data: ds[key],
-        borderColor: PALETTE[i % PALETTE.length],
-        backgroundColor: PALETTE[i % PALETTE.length] + '22',
-        tension: 0.3, pointRadius: 3,
-    }));
-    new Chart(document.getElementById('hourly-compare-sales'), { type: 'line', data: { labels, datasets: buildDS('sales') }, options: baseOpts('원') });
-    new Chart(document.getElementById('hourly-compare-orders'), { type: 'line', data: { labels, datasets: buildDS('orders') }, options: baseOpts('건') });
-})();
-{% endif %}
-
-// 계정 비교 차트
-{% for cc in compare_charts %}
-(function() {
-    const idx = {{ loop.index }};
-    const labels = {{ cc.labels | tojson }};
-    const datasets = {{ cc.datasets | tojson }}.map((ds, i) => ({
-        label: ds.label, data: ds.data,
-        borderColor: PALETTE[i % PALETTE.length],
-        backgroundColor: PALETTE[i % PALETTE.length] + '22',
-        tension: 0.3, pointRadius: 3,
-    }));
-    new Chart(document.getElementById(`compare-${idx}`), { type: 'line', data: { labels, datasets }, options: baseOpts({{ cc.unit | tojson }}) });
-})();
-{% endfor %}
 </script>
 {% include '_feedback_widget.html' %}
 </body>

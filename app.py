@@ -724,19 +724,23 @@ def dashboard_range():
             "hourly_total_days": len({r["date"] for r in hourly_rows}),
         })
 
-    # 다계정 비교: 일별 KPI line
+    # 기간 내 모든 날짜 + 요일 (그리드용)
+    range_dates = []
+    range_dows = []
+    cur = start_dt
+    while cur <= end_dt:
+        ds = cur.strftime("%Y-%m-%d")
+        range_dates.append(ds)
+        range_dows.append(DAYS_KO[cur.weekday()])
+        cur += timedelta(days=1)
+
+    # 각 panel 에 daily lookup 추가 (그리드 셀 채울 때 사용)
+    for p in panels:
+        lookup = {m["date"]: m for m in p["history"]}
+        p["daily_lookup"] = {d: lookup.get(d) for d in range_dates}
+
+    # 다계정 비교: 일별 KPI line (옵션 차트 - 유지하되 사용 안 해도 됨)
     compare_charts = []
-    if len(panels) >= 2:
-        all_dates = sorted({m["date"] for p in panels for m in p["history"]})
-        for label, col, unit, _ in KPI_FIELDS:
-            datasets = []
-            for p in panels:
-                lookup = {m["date"]: m.get(col) for m in p["history"]}
-                datasets.append({
-                    "label": p["account"]["label"] or p["account"]["cafe24_id"],
-                    "data": [lookup.get(d) for d in all_dates],
-                })
-            compare_charts.append({"label": label, "unit": unit, "labels": all_dates, "datasets": datasets})
 
     # 시간대 평균 다계정 overlay
     hourly_compare = None
@@ -767,6 +771,8 @@ def dashboard_range():
         hourly_compare=hourly_compare,
         kpi_fields=[k[0] for k in KPI_FIELDS],
         days_ko=DAYS_KO,
+        range_dates=range_dates,
+        range_dows=range_dows,
     )
 
 
