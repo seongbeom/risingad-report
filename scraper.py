@@ -189,15 +189,20 @@ def login(page, account):
         if "eclogin.cafe24.com" not in page.url:
             return  # 정상 도메인 변경
         try:
-            # 카페24 캡챠 거절 시 자주 등장하는 문구 패턴
+            # 1) 비밀번호/아이디 거절 (한글 비번 같은 등록 오류 케이스)
+            if page.locator(
+                "text=/비밀번호.*일치하지|비밀번호.*확인|아이디.*비밀번호|회원정보.*일치하지|잘못된 아이디/"
+            ).count() > 0:
+                rejected_reason = "비밀번호/아이디 거절 (계정 등록 정보 확인 필요)"
+                break
+            # 2) 보안문자 거절
             if page.locator(
                 "text=/보안문자.*일치|보안문자.*다시|보안문자가 일치하지|입력하신 보안문자|reCAPTCHA.*다시/"
             ).count() > 0:
-                rejected_reason = "보안문자 거절 메시지 감지"
+                rejected_reason = "보안문자 거절"
                 break
-            # 챌린지 popup(bframe)이 다시 떠있으면 → 서버 토큰 거절 후 재챌린지
+            # 3) 챌린지 popup(bframe) 재출현 → 서버 토큰 거절 후 재챌린지
             if page.locator("iframe[title*='reCAPTCHA 보안문자']").count() > 0:
-                # bframe 가 visible(클릭 가능 상태) 인지 추가 확인
                 box = page.locator("iframe[title*='reCAPTCHA 보안문자']").first.bounding_box()
                 if box and box.get("width", 0) > 100 and box.get("height", 0) > 100:
                     rejected_reason = "캡챠 챌린지 재출현 - 토큰 거절"
@@ -207,8 +212,14 @@ def login(page, account):
         page.wait_for_timeout(500)
 
     if rejected_reason:
-        raise RuntimeError(f"로그인 거절 ({rejected_reason}) - 캡챠 정답 틀림 추정. 외부 재시도로 새 챌린지 시도 필요")
-    raise RuntimeError("로그인 URL 변화 timeout (20s) - 서버 거절 추정")
+        raise RuntimeError(f"로그인 거절: {rejected_reason}")
+
+    # 마지막 진단: 페이지 body 텍스트 일부를 에러에 포함시켜 사용자가 원인 파악 가능하게
+    try:
+        body_text = page.evaluate("() => document.body && document.body.innerText ? document.body.innerText.substring(0, 300) : ''")
+    except Exception:
+        body_text = "(unable to read page body)"
+    raise RuntimeError(f"로그인 URL 변화 timeout (20s). 페이지 상단: {body_text!r}")
 
 
 def close_popups(page):
