@@ -531,6 +531,7 @@ def dashboard():
             "id": aid,
             "label": a.get("label") or a["cafe24_id"],
             "cafe24_id": a["cafe24_id"],
+            "updated_at": m_today.get("updated_at"),
             "today": {
                 "매출": today_sales,
                 "구매건수": today_orders,

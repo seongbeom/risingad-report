@@ -108,11 +108,11 @@
     <!-- 1. 오늘 누적 (가장 중요한 숫자) -->
     <div class="card">
         <h2>📊 오늘 누적 — {{ today }}</h2>
-        <p class="card-sub">라이브 인터벌마다 자동 갱신됨. % 는 어제 / 지난주 같은요일 / 최근 7일 평균 대비.</p>
+        <p class="card-sub">라이브 인터벌마다 자동 갱신됨. % 는 어제 / 지난주 같은요일 / 최근 7일 평균 대비. 계정 옆 시각 = 마지막 스크랩 시각.</p>
         <table class="num">
             <thead>
                 <tr>
-                    <th>계정</th>
+                    <th>계정 <span class="label-sub">마지막 갱신</span></th>
                     <th>매출 <span class="label-sub">vs 어제</span></th>
                     <th>구매건수 <span class="label-sub">vs 어제</span></th>
                     <th>방문자수 <span class="label-sub">vs 어제</span></th>
@@ -124,7 +124,13 @@
             <tbody>
                 {% for r in rows %}
                 <tr>
-                    <td>{{ r.label }}</td>
+                    <td>{{ r.label }}
+                        {% if r.updated_at %}
+                            <span class="label-sub" style="display:block; font-weight:400; color:#aaa">{{ r.updated_at[11:16] if r.updated_at|length >= 16 else r.updated_at }}</span>
+                        {% else %}
+                            <span class="label-sub" style="display:block; font-weight:400; color:#ccc">아직 없음</span>
+                        {% endif %}
+                    </td>
                     {% for col in ['매출', '구매건수', '방문자수', '객단가'] %}
                     {% set cur = r.today[col] %}
                     {% set ref = r.yesterday[col] %}
