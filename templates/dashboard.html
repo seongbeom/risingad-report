@@ -462,60 +462,109 @@
 
     <!-- 매장별 시간별 누적 매출 (오늘) -->
     <div class="card">
-        <h2>🏬 매장별 시간별 누적 매출 — 오늘 ({{ today }})</h2>
-        <p class="card-sub">
-            행=매장 (오늘 매출 큰 순), 열=시간(0~23). 셀=0시부터 해당 시각까지 누적 매출(원).
-            <strong style="background:#fff9e6;padding:1px 4px">노랑</strong>=현재 시각.
-            셀 위 hover → 어제 동시각 누적 + vs%.
-        </p>
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">
+            <h2 style="margin:0">🏬 매장별 시간별 매출 — 오늘 ({{ today }})</h2>
+            <div style="display:flex; gap:6px; flex-wrap:wrap">
+                <div class="toggle-group">
+                    <button type="button" class="tgl active" data-mode="cum" onclick="setMode('cum')">📊 누적</button>
+                    <button type="button" class="tgl" data-mode="hour" onclick="setMode('hour')">⏱ 시간당</button>
+                    <button type="button" class="tgl" data-mode="vs" onclick="setMode('vs')">vs 어제</button>
+                </div>
+                <div class="toggle-group">
+                    <button type="button" class="tgl active" data-sort="sales" onclick="setSort('sales')">매출순</button>
+                    <button type="button" class="tgl" data-sort="vs" onclick="setSort('vs')">vs어제순</button>
+                    <button type="button" class="tgl" data-sort="label" onclick="setSort('label')">이름순</button>
+                </div>
+            </div>
+        </div>
+        <p class="card-sub" id="acct-hour-sub">📊 <strong>누적 모드</strong>: 0시부터 해당 시각까지 누적 매출 (만원). 색 진하기 = 그 매장 내 시간 매출 크기. <span style="background:#fff9e6;padding:1px 4px">노랑</span>=현재 시각.</p>
+        <style>
+            .toggle-group { display:flex; border:1px solid #ddd; border-radius:6px; overflow:hidden; }
+            .tgl { background:#fff; border:none; padding:5px 10px; font-size:0.78rem; cursor:pointer; color:#666; border-right:1px solid #ddd; }
+            .tgl:last-child { border-right:none; }
+            .tgl.active { background:#4a90d9; color:#fff; font-weight:600; }
+            .tgl:hover:not(.active) { background:#f0f4ff; }
+            .acct-hour td.heat { transition: background 0.2s; }
+            .sparkline { display:inline-block; height:18px; vertical-align:middle; }
+            .sparkline span { display:inline-block; width:3px; background:#4a90d9; margin-right:1px; vertical-align:bottom; opacity:0.85; }
+            .sparkline span.fut { background:#eee; opacity:0.4; }
+            .sparkline span.now { background:#f0ad4e; }
+        </style>
         <div style="overflow-x:auto">
-            <table class="num acct-hour" style="font-size:0.7rem;min-width:100%">
+            <table class="num acct-hour" id="acct-hour-table" style="font-size:0.7rem;min-width:100%">
                 <thead>
                     <tr>
-                        <th style="position:sticky;left:0;background:#fafafa;z-index:2;min-width:90px">매장</th>
+                        <th style="position:sticky;left:0;background:#fafafa;z-index:2;min-width:100px">매장</th>
                         {% for h in range(24) %}
                             <th style="text-align:right;padding:4px 5px;{% if h == cur_hour %}background:#fff9e6;color:#b89c00;font-weight:700{% endif %}">{{ "%02d"|format(h) }}</th>
                         {% endfor %}
+                        <th style="text-align:right;padding:4px 6px;background:#f0f4ff">패턴</th>
                         <th style="text-align:right;padding:4px 6px;background:#f0f4ff">오늘<br>합계</th>
+                        <th style="text-align:right;padding:4px 6px;background:#f0f4ff">예상<br>종일</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for a in acct_hourly_cum %}
-                    <tr>
-                        <td style="position:sticky;left:0;background:#fff;z-index:1;font-weight:600;font-size:0.8rem">{{ a.label }}</td>
-                        {% for c in a.cells %}
-                        <td style="text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;
-                                   {% if c.is_now %}background:#fff9e6;font-weight:700{% endif %}
-                                   {% if c.is_future %}color:#ddd{% endif %}"
-                            title="{% if c.today_cum %}오늘 누적 {{ '{:,.0f}'.format(c.today_cum) }}원
-어제 동시각 {{ '{:,.0f}'.format(c.yest_cum) }}원
-시간당 {{ '{:,.0f}'.format(c.today_hour or 0) }}원{% if c.vs_pct is not none %}
-vs 어제 {{ '%+.1f'|format(c.vs_pct) }}%{% endif %}{% endif %}">
-                            {% if c.today_cum %}
-                                {% if c.today_cum >= 1000000 %}
-                                    {{ "{:,.0f}".format(c.today_cum/10000) }}만
-                                {% elif c.today_cum >= 10000 %}
-                                    {{ "%.1f"|format(c.today_cum/10000) }}만
-                                {% else %}
-                                    {{ "{:,.0f}".format(c.today_cum) }}원
-                                {% endif %}
-                                {% if c.vs_pct is not none %}
-                                    <span style="display:block;font-size:0.62rem;color:{% if c.vs_pct > 5 %}#27ae60{% elif c.vs_pct < -5 %}#e74c3c{% else %}#aaa{% endif %}">{{ "%+.0f"|format(c.vs_pct) }}%</span>
-                                {% endif %}
-                            {% elif c.is_future %}
-                                <span style="color:#eee">·</span>
-                            {% else %}
-                                <span class="dim">—</span>
-                            {% endif %}
+                    <!-- 전체 합계 행 -->
+                    <tr style="background:#f8fafd; border-bottom:2px solid #4a90d9" data-sort-sales="999999999999" data-sort-vs="9999" data-sort-label="000_total">
+                        <td style="position:sticky;left:0;background:#f8fafd;z-index:1;font-weight:700;color:#4a90d9">🧮 합계</td>
+                        {% for c in total_row %}
+                        <td class="heat"
+                            data-heat="{{ c.heat }}"
+                            data-cum="{{ c.today_cum or 0 }}"
+                            data-hour="{{ c.today_hour or 0 }}"
+                            data-vs-cum="{{ c.vs_pct if c.vs_pct is not none else '' }}"
+                            data-vs-hour="{{ c.vs_hour_pct if c.vs_hour_pct is not none else '' }}"
+                            style="text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;font-weight:700;
+                                   {% if c.is_now %}background:#fff9e6{% endif %}
+                                   {% if c.is_future %}color:#ccc{% endif %}"
+                            title="{% if c.today_cum %}누적 {{ '{:,.0f}'.format(c.today_cum) }}원 / 시간당 {{ '{:,.0f}'.format(c.today_hour or 0) }}원 / 어제 동시각 {{ '{:,.0f}'.format(c.yest_cum) }}원 (vs {{ '%+.1f'|format(c.vs_pct) if c.vs_pct is not none else '-' }}%){% endif %}">
+                            <span class="cell-cum">{% if c.today_cum %}{% if c.today_cum >= 10000 %}{{ "%.0f"|format(c.today_cum/10000) }}만{% else %}{{ c.today_cum }}{% endif %}{% elif c.is_future %}·{% else %}—{% endif %}</span>
+                            <span class="cell-hour" style="display:none">{% if c.today_hour %}{% if c.today_hour >= 10000 %}{{ "%.0f"|format(c.today_hour/10000) }}만{% else %}{{ c.today_hour }}{% endif %}{% elif c.is_future %}·{% else %}—{% endif %}</span>
+                            <span class="cell-vs" style="display:none">{% if c.vs_pct is not none %}<span class="{{ 'up' if c.vs_pct>0 else ('down' if c.vs_pct<0 else 'flat') }}">{{ "%+.0f"|format(c.vs_pct) }}%</span>{% elif c.is_future %}·{% else %}—{% endif %}</span>
                         </td>
                         {% endfor %}
-                        <td style="text-align:right;padding:3px 6px;background:#f0f4ff;font-weight:700;font-size:0.78rem">
+                        <td style="background:#f8fafd"><span class="sparkline" data-spark="total"></span></td>
+                        <td style="text-align:right;padding:3px 6px;background:#f0f4ff;font-weight:700">{{ "{:,.0f}".format(mega.today_sales / 10000) }}만</td>
+                        <td style="text-align:right;padding:3px 6px;background:#f0f4ff;font-weight:700">{{ "{:,.0f}".format(mega.expected_eod / 10000) if mega.expected_eod else '—' }}만</td>
+                    </tr>
+                    {% for a in acct_hourly_cum %}
+                    <tr data-sort-sales="{{ a.today_total }}"
+                        data-sort-vs="{{ ((a.today_total - a.yest_total) / a.yest_total * 1000) | int if a.yest_total else 0 }}"
+                        data-sort-label="{{ a.label }}"
+                        data-max-hour="{{ a.max_hour }}">
+                        <td style="position:sticky;left:0;background:#fff;z-index:1;font-weight:600;font-size:0.8rem">{{ a.label }}</td>
+                        {% for c in a.cells %}
+                        <td class="heat"
+                            data-heat="{{ c.heat }}"
+                            data-cum="{{ c.today_cum or 0 }}"
+                            data-hour="{{ c.today_hour or 0 }}"
+                            data-vs-cum="{{ c.vs_pct if c.vs_pct is not none else '' }}"
+                            data-vs-hour="{{ c.vs_hour_pct if c.vs_hour_pct is not none else '' }}"
+                            style="text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;
+                                   {% if c.is_now %}background:#fff9e6;font-weight:700{% endif %}
+                                   {% if c.is_future %}color:#ddd{% endif %}"
+                            title="{% if c.today_cum %}누적 {{ '{:,.0f}'.format(c.today_cum) }}원
+시간당 {{ '{:,.0f}'.format(c.today_hour or 0) }}원
+어제 동시각 누적 {{ '{:,.0f}'.format(c.yest_cum) }}원 ({{ '%+.1f'|format(c.vs_pct) if c.vs_pct is not none else '-' }}%)
+어제 같은 시간 {{ '{:,.0f}'.format(c.yest_hour or 0) }}원 ({{ '%+.1f'|format(c.vs_hour_pct) if c.vs_hour_pct is not none else '-' }}%){% endif %}">
+                            <span class="cell-cum">{% if c.today_cum %}{% if c.today_cum >= 10000 %}{{ "%.0f"|format(c.today_cum/10000) }}만{% else %}{{ c.today_cum }}{% endif %}{% elif c.is_future %}·{% else %}—{% endif %}</span>
+                            <span class="cell-hour" style="display:none">{% if c.today_hour %}{% if c.today_hour >= 10000 %}{{ "%.0f"|format(c.today_hour/10000) }}만{% else %}{{ c.today_hour }}{% endif %}{% elif c.is_future %}·{% else %}—{% endif %}</span>
+                            <span class="cell-vs" style="display:none">{% if c.vs_pct is not none %}<span class="{{ 'up' if c.vs_pct>0 else ('down' if c.vs_pct<0 else 'flat') }}">{{ "%+.0f"|format(c.vs_pct) }}%</span>{% elif c.is_future %}·{% else %}—{% endif %}</span>
+                        </td>
+                        {% endfor %}
+                        <td><span class="sparkline" data-spark="{{ a.id }}"></span></td>
+                        <td style="text-align:right;padding:3px 6px;background:#f0f4ff;font-weight:600">
                             {% if a.today_total %}
-                                {{ "{:,.0f}".format(a.today_total) }}
+                                {{ "{:,.0f}".format(a.today_total/10000) }}만
                                 {% if a.yest_total %}
                                     {% set tdiff = (a.today_total - a.yest_total) / a.yest_total * 100 %}
-                                    <span style="display:block;font-size:0.62rem;font-weight:400;color:{% if tdiff > 0 %}#27ae60{% elif tdiff < 0 %}#e74c3c{% else %}#aaa{% endif %}">vs종일 {{ "%+.0f"|format(tdiff) }}%</span>
+                                    <span style="display:block;font-size:0.62rem;font-weight:400;color:{% if tdiff > 0 %}#27ae60{% elif tdiff < 0 %}#e74c3c{% else %}#aaa{% endif %}">{{ "%+.0f"|format(tdiff) }}% vs종일</span>
                                 {% endif %}
+                            {% else %}<span class="dim">—</span>{% endif %}
+                        </td>
+                        <td style="text-align:right;padding:3px 6px;background:#f0f4ff;font-weight:600;color:#4a90d9">
+                            {% if a.expected_eod %}
+                                {{ "{:,.0f}".format(a.expected_eod/10000) }}만
                             {% else %}<span class="dim">—</span>{% endif %}
                         </td>
                     </tr>
@@ -523,9 +572,111 @@ vs 어제 {{ '%+.1f'|format(c.vs_pct) }}%{% endif %}{% endif %}">
                 </tbody>
             </table>
         </div>
-        <p class="card-sub" style="margin-top:8px">
-            셀 단위: K=천원, M=백만원. 작은 숫자 = 어제 동시각 누적 대비 %. 셀에 마우스 올리면 정확한 값 표시.
+        <p class="card-sub" style="margin-top:8px; font-size:0.75rem">
+            🔍 셀에 마우스 올리면 정확한 원 단위/시간당/어제 동시각/vs% 모두 표시.
+            <strong>패턴</strong> 컬럼은 0~23시 매출 흐름 막대(스파크라인) — 주황색이 현재 시각, 회색이 미래.
         </p>
+        <script>
+        (function() {
+            // 모드 토글: 누적 / 시간당 / vs 어제
+            let curMode = 'cum';
+            window.setMode = function(mode) {
+                curMode = mode;
+                document.querySelectorAll('.toggle-group .tgl[data-mode]').forEach(b => {
+                    b.classList.toggle('active', b.dataset.mode === mode);
+                });
+                const subText = {
+                    'cum': '📊 <strong>누적 모드</strong>: 0시부터 해당 시각까지 누적 매출 (만원).',
+                    'hour': '⏱ <strong>시간당 모드</strong>: 그 시간 한 시간 동안 매출 (만원). 어느 시간에 매출이 집중되는지 확인.',
+                    'vs': 'vs 모드: 어제 동시각 누적 대비 % (▲녹/▼빨).',
+                };
+                document.getElementById('acct-hour-sub').innerHTML = subText[mode] + ' <span style="background:#fff9e6;padding:1px 4px">노랑</span>=현재 시각.';
+                document.querySelectorAll('#acct-hour-table tbody td.heat').forEach(td => {
+                    td.querySelector('.cell-cum').style.display = mode === 'cum' ? '' : 'none';
+                    td.querySelector('.cell-hour').style.display = mode === 'hour' ? '' : 'none';
+                    td.querySelector('.cell-vs').style.display = mode === 'vs' ? '' : 'none';
+                });
+                applyHeatmap();
+            };
+
+            // 정렬 토글
+            let curSort = 'sales';
+            window.setSort = function(sort) {
+                curSort = sort;
+                document.querySelectorAll('.toggle-group .tgl[data-sort]').forEach(b => {
+                    b.classList.toggle('active', b.dataset.sort === sort);
+                });
+                const tbody = document.querySelector('#acct-hour-table tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const totalRow = rows.find(r => r.dataset.sortLabel === '000_total');
+                const others = rows.filter(r => r !== totalRow);
+                others.sort((a, b) => {
+                    if (sort === 'label') {
+                        return a.dataset.sortLabel.localeCompare(b.dataset.sortLabel);
+                    }
+                    const key = sort === 'sales' ? 'sortSales' : 'sortVs';
+                    return parseFloat(b.dataset[key]) - parseFloat(a.dataset[key]);
+                });
+                tbody.innerHTML = '';
+                if (totalRow) tbody.appendChild(totalRow);
+                others.forEach(r => tbody.appendChild(r));
+            };
+
+            // Heatmap 적용 (mode 에 따라 셀 배경)
+            function applyHeatmap() {
+                document.querySelectorAll('#acct-hour-table tbody td.heat').forEach(td => {
+                    let intensity = 0;
+                    if (curMode === 'cum' || curMode === 'hour') {
+                        intensity = parseInt(td.dataset.heat) || 0;
+                    } else if (curMode === 'vs') {
+                        const v = parseFloat(td.dataset.vsCum);
+                        if (!isNaN(v)) {
+                            const a = Math.min(80, Math.abs(v));
+                            td.style.background = v > 5 ? `rgba(39,174,96,${a/300})` : (v < -5 ? `rgba(231,76,60,${a/300})` : '');
+                            return;
+                        }
+                        td.style.background = '';
+                        return;
+                    }
+                    if (intensity > 0) {
+                        td.style.background = `rgba(74,144,217,${intensity/250})`;
+                    } else if (!td.style.background || !td.style.background.includes('255, 249, 230')) {
+                        td.style.background = '';
+                    }
+                    // 현재 시각 노랑은 유지
+                    if (td.closest('tr').querySelector('th')) return;
+                });
+                // 현재 시각 셀 노랑 복원
+                document.querySelectorAll('#acct-hour-table tbody td.heat').forEach(td => {
+                    const cells = Array.from(td.parentElement.querySelectorAll('td.heat'));
+                    const idx = cells.indexOf(td);
+                    if (idx === {{ cur_hour }}) {
+                        td.style.background = '#fff9e6';
+                    }
+                });
+            }
+
+            // Sparkline 생성
+            function buildSparklines() {
+                document.querySelectorAll('.sparkline').forEach(span => {
+                    const row = span.closest('tr');
+                    const cells = row.querySelectorAll('td.heat');
+                    const vals = Array.from(cells).map(c => parseFloat(c.dataset.hour) || 0);
+                    const maxV = Math.max(...vals) || 1;
+                    cells.forEach((c, i) => {
+                        const v = vals[i];
+                        const h = Math.max(2, Math.round(v / maxV * 18));
+                        const cls = i > {{ cur_hour }} ? 'fut' : (i === {{ cur_hour }} ? 'now' : '');
+                        span.insertAdjacentHTML('beforeend', `<span class="${cls}" style="height:${h}px"></span>`);
+                    });
+                });
+            }
+
+            // 초기 실행
+            applyHeatmap();
+            buildSparklines();
+        })();
+        </script>
     </div>
 
     <!-- 매장별 7일 트렌드 -->

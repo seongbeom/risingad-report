@@ -1144,8 +1144,15 @@ def dashboard():
     for d in dow_summary:
         d["pct"] = round(d["avg"] / max_dow_avg * 100) if d["avg"] and max_dow_avg else 0
 
-    # ----- 신규: 매장별 시간별 누적 매출 표 -----
+    # ----- 매장별 시간별 누적 매출 표 (강화) -----
     acct_hourly_cum = []
+    # 전체 합계 행 누적
+    total_cells_hourly = [0] * 24       # 시간당
+    total_cells_cum = [0] * 24          # 누적
+    total_yest_hourly = [0] * 24
+    total_yest_cum = [0] * 24
+    total_orders_hourly = [0] * 24      # 시간당 구매건수
+
     for r in rows:  # 매출 desc 정렬 그대로 사용
         aid = r["id"]
         today_hours_map = by_acct_date_hour.get(aid, {}).get(today, {})
@@ -1153,18 +1160,26 @@ def dashboard():
         cells = []
         cum_t = 0
         cum_y = 0
+        max_hour_val = max(today_hours_map.values()) if today_hours_map else 0
         for h in range(24):
-            cum_t += today_hours_map.get(h, 0)
-            cum_y += yest_hours_map.get(h, 0)
+            t = today_hours_map.get(h, 0)
+            y = yest_hours_map.get(h, 0)
+            cum_t += t
+            cum_y += y
+            total_cells_hourly[h] += t if h <= cur_hour else 0
+            total_yest_hourly[h] += y
             cells.append({
                 "hour": h,
-                "today_hour": today_hours_map.get(h, 0) if h <= cur_hour else None,
+                "today_hour": t if h <= cur_hour else None,
                 "today_cum": cum_t if h <= cur_hour else None,
-                "yest_hour": yest_hours_map.get(h, 0),
+                "yest_hour": y,
                 "yest_cum": cum_y,
                 "vs_pct": _pct(cum_t, cum_y) if (cum_y and h <= cur_hour) else None,
+                "vs_hour_pct": _pct(t, y) if (y and h <= cur_hour) else None,
                 "is_now": h == cur_hour,
                 "is_future": h > cur_hour,
+                # heatmap intensity: 그 매장 안에서 그 시간 매출이 최대 대비 비율 (0~100)
+                "heat": round(t / max_hour_val * 100) if (max_hour_val and h <= cur_hour) else 0,
             })
         acct_hourly_cum.append({
             "id": aid,
@@ -1172,6 +1187,28 @@ def dashboard():
             "cells": cells,
             "today_total": r["today"]["매출"] or 0,
             "yest_total": r["yesterday"]["매출"] or 0,
+            "expected_eod": r.get("expected_eod"),
+            "max_hour": max_hour_val,  # sparkline 정규화용
+        })
+
+    # 합계 행 cumulative
+    ct = 0; cy = 0
+    total_row = []
+    max_total_hour = max(total_cells_hourly[:cur_hour+1]) if cur_hour >= 0 else 0
+    for h in range(24):
+        ct += total_cells_hourly[h] if h <= cur_hour else 0
+        cy += total_yest_hourly[h]
+        total_row.append({
+            "hour": h,
+            "today_hour": total_cells_hourly[h] if h <= cur_hour else None,
+            "today_cum": ct if h <= cur_hour else None,
+            "yest_hour": total_yest_hourly[h],
+            "yest_cum": cy,
+            "vs_pct": _pct(ct, cy) if (cy and h <= cur_hour) else None,
+            "vs_hour_pct": _pct(total_cells_hourly[h], total_yest_hourly[h]) if (total_yest_hourly[h] and h <= cur_hour) else None,
+            "is_now": h == cur_hour,
+            "is_future": h > cur_hour,
+            "heat": round(total_cells_hourly[h] / max_total_hour * 100) if (max_total_hour and h <= cur_hour) else 0,
         })
 
     # ----- 신규: 알람 (주의 필요) -----
@@ -1384,6 +1421,7 @@ def dashboard():
         hour_grid=hour_grid,
         hourly_trend=hourly_trend,
         acct_hourly_cum=acct_hourly_cum,
+        total_row=total_row,
         cur_hour=cur_hour,
         dow_summary=dow_summary,
         alerts=alerts,
