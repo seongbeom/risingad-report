@@ -1114,7 +1114,7 @@ def dashboard():
                 "label": "🚨 오늘 라이브 0회",
                 "msg": f"활성 시간({cur_hour}시)인데 오늘 매출 있는 계정 0개. 라이브 사이클이 못 돌고 있음 — 서비스/스케줄러 확인 필요",
             })
-        elif active_now and today_with_data < (mega.get("total_accounts", 0) if 'mega' in dir() else 0) // 2:
+        elif active_now and today_with_data < mega.get("total_accounts", 0) // 2:
             # 절반 미만이면 부분 미수집
             alerts.insert(0, {
                 "type": "partial",
