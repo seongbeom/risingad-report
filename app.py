@@ -841,9 +841,14 @@ def dashboard():
     last_week_same = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     range_start = (now - timedelta(days=8)).strftime("%Y-%m-%d")
 
-    accounts = db.list_accounts()
+    all_accounts = db.list_accounts()
+    all_ids = [a["id"] for a in all_accounts]
+    selected_ids = request.args.getlist("account_id")
+    if not selected_ids:
+        selected_ids = all_ids
+    accounts = [a for a in all_accounts if a["id"] in selected_ids]
     all_metrics = db.list_metrics(start_date=range_start, end_date=today)
-    by_key = {(m["account_id"], m["date"]): m for m in all_metrics}
+    by_key = {(m["account_id"], m["date"]): m for m in all_metrics if m["account_id"] in selected_ids}
 
     # 최근 8일 hourly (시간대 평균 + 어제 동시각 누적 + 오늘 시간별)
     hourly_start = (now - timedelta(days=8)).strftime("%Y-%m-%d")
@@ -1556,6 +1561,8 @@ def dashboard():
         anomalies=anomalies,
         buyer_mix=buyer_mix,
         cur_hour=cur_hour,
+        all_accounts=all_accounts,
+        selected_ids=selected_ids,
         dow_summary=dow_summary,
         alerts=alerts,
         ops_status=ops_status,

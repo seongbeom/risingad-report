@@ -106,6 +106,40 @@
         <a href="/dashboard/range">기간 분석 →</a>
     </div>
 
+    <!-- 매장 필터 -->
+    <div class="card" style="padding:12px 16px">
+        <form method="GET" id="filter-form">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px">
+                <strong style="font-size:0.92rem">🏬 매장 필터
+                    <span style="font-size:0.78rem; color:#888; font-weight:400">
+                        ({{ selected_ids|length }}/{{ all_accounts|length }} 선택됨)
+                    </span>
+                </strong>
+                <div style="display:flex; gap:6px">
+                    <button type="button" class="btn btn-sm" style="background:#eee" onclick="filterAll(true)">전체 선택</button>
+                    <button type="button" class="btn btn-sm" style="background:#eee" onclick="filterAll(false)">전체 해제</button>
+                    <button type="submit" class="btn btn-primary btn-sm">적용</button>
+                </div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px 10px">
+                {% for a in all_accounts %}
+                <label style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid {% if a.id in selected_ids %}#4a90d9{% else %}#ddd{% endif %}; background:{% if a.id in selected_ids %}#eaf3fc{% else %}#fff{% endif %}; border-radius:14px; font-size:0.82rem; cursor:pointer; user-select:none">
+                    <input type="checkbox" name="account_id" value="{{ a.id }}" {% if a.id in selected_ids %}checked{% endif %} style="margin:0" onchange="this.closest('label').style.borderColor=this.checked?'#4a90d9':'#ddd'; this.closest('label').style.background=this.checked?'#eaf3fc':'#fff'">
+                    {{ a.label or a.cafe24_id }}
+                </label>
+                {% endfor %}
+            </div>
+        </form>
+        <script>
+            function filterAll(checked) {
+                document.querySelectorAll('#filter-form input[type=checkbox]').forEach(c => {
+                    c.checked = checked;
+                    c.dispatchEvent(new Event('change'));
+                });
+            }
+        </script>
+    </div>
+
     <!-- CapSolver 사용 현황 -->
     {% if capsolver %}
     <div class="card" style="background:#fffaf3">
