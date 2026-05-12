@@ -130,6 +130,33 @@ def _wait_for_memory(label=""):
     print(f"[mem] {label} 회복 안 됨 (free={free}MB) - 그래도 진행")
 
 
+SCRAPE_PER_ATTEMPT_TIMEOUT_SEC = 480  # 8분 - 캡챠 풀이 포함 정상 실행 ~2~3분, 그 이상 hang 으로 간주
+
+
+def _run_scrape_with_timeout(account, target_date, timeout_sec):
+    """별도 thread 로 run_scrape 호출, timeout 내 끝나지 않으면 chromium kill 하고 raise."""
+    result_holder = {"result": None, "exc": None}
+
+    def _target():
+        try:
+            result_holder["result"] = scraper.run_scrape(account, target_date=target_date)
+        except Exception as e:
+            result_holder["exc"] = e
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    t.join(timeout=timeout_sec)
+    if t.is_alive():
+        # hang 으로 간주 → chromium 강제 kill (thread 는 못 죽이지만 chromium 죽으면 playwright 가 raise 하며 종료됨)
+        print(f"[{account['id']}] scrape timeout {timeout_sec}s - chromium 강제 종료")
+        _kill_leftover_chromium()
+        t.join(timeout=30)  # chromium 죽으면 thread 도 곧 정리됨
+        raise TimeoutError(f"scrape timeout {timeout_sec}s - chromium 강제 종료")
+    if result_holder["exc"]:
+        raise result_holder["exc"]
+    return result_holder["result"]
+
+
 def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
     """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지).
     실패 시 N회 재시도. is_sample(Premium 만료)는 재시도 의미 없으니 즉시 종료.
@@ -150,7 +177,7 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
             for attempt in range(1, SCRAPE_MAX_ATTEMPTS + 1):
                 attempts_used = attempt
                 try:
-                    results = scraper.run_scrape(account, target_date=target_date)
+                    results = _run_scrape_with_timeout(account, target_date, SCRAPE_PER_ATTEMPT_TIMEOUT_SEC)
                     break
                 except Exception:
                     last_err = traceback.format_exc()
@@ -301,6 +328,27 @@ def reload_schedules():
         id="daily_finalize", replace_existing=True,
     )
     print(f"[scheduler] daily_finalize: 매일 {df['hour']:02d}:{df['minute']:02d}")
+
+
+# 서버 시작 시 stuck running 정리 (이전 프로세스가 죽었으면 그 run 은 이미 끝났다고 봐야)
+def _cleanup_stuck_runs():
+    try:
+        with db.db_conn() as conn:
+            cur = conn.execute("SELECT id, account_id, started_at FROM runs WHERE status='running'")
+            stuck = cur.fetchall()
+            if stuck:
+                from datetime import datetime as _dt
+                now_s = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute(
+                    "UPDATE runs SET status='error', finished_at=?, error='startup cleanup - 이전 프로세스 종료로 unfinished 처리' WHERE status='running'",
+                    (now_s,),
+                )
+                print(f"[startup] stuck running {len(stuck)}건 정리: " + ", ".join(f"{r['account_id']}#{r['id']}" for r in stuck))
+    except Exception:
+        traceback.print_exc()
+
+
+_cleanup_stuck_runs()
 
 
 # 서버 시작 시 스케줄 로드
