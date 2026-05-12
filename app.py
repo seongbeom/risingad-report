@@ -870,8 +870,10 @@ def dashboard():
         m_today = by_key.get((aid, today), {}) or {}
         m_yest = by_key.get((aid, yesterday), {}) or {}
         m_lw = by_key.get((aid, last_week_same), {}) or {}
+        # 7일 평균 — 매출 0/None 인 일자(미수집)는 제외해야 정확.
         last7_vals_sales = [by_key.get((aid, d), {}).get("매출") for d in last7_dates if by_key.get((aid, d))]
-        last7_avg_sales = round(sum(v for v in last7_vals_sales if v is not None) / len(last7_vals_sales)) if last7_vals_sales else None
+        valid_vals = [v for v in last7_vals_sales if v and v > 0]
+        last7_avg_sales = round(sum(valid_vals) / len(valid_vals)) if valid_vals else None
 
         today_sales = m_today.get("매출")
         today_orders = m_today.get("구매건수")
@@ -1103,14 +1105,22 @@ def dashboard():
         # 위 구조는 계정별 매출이라 일별 합으로 변환 필요
         pass
 
-    # 일별 합계로 재계산 (date -> sum_sales)
+    # 일별 합계 — 단, "활성 계정이 충분한 일자"만 포함해야 부분 데이터로 평균이 왜곡되지 않음.
+    # 기준: 매출 > 0 인 계정이 전체 계정의 절반 이상 → 정상 일자로 간주.
+    total_accts = len(accounts)
+    min_active = max(1, total_accts // 2)
     date_total = {}
+    date_active_count = {}
     for (aid, d), m in by_key.items():
         if d == today:
             continue
         date_total[d] = date_total.get(d, 0) + (m.get("매출") or 0)
+        if (m.get("매출") or 0) > 0:
+            date_active_count[d] = date_active_count.get(d, 0) + 1
     dow_day_buckets = [[] for _ in range(7)]
     for d, total in date_total.items():
+        if date_active_count.get(d, 0) < min_active:
+            continue  # 부분 데이터/빈 일자 제외
         wd = datetime.strptime(d, "%Y-%m-%d").weekday()
         dow_day_buckets[wd].append(total)
     max_dow_avg = 0
@@ -1302,13 +1312,15 @@ def dashboard():
     }
 
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
+    # 매출 0인 일자는 미수집(백필 안 한 일자)일 가능성이 커서 트렌드 왜곡됨 → 제외.
+    # 진짜 영업 안 한 0원 일자가 있다면 분석에서 빠지지만 가짜 0 포함보다 안전.
     trend_rows = []
     for a in accounts:
         aid = a["id"]
         vals = []
         for d in last7_dates:
             m = by_key.get((aid, d))
-            if m and m.get("매출") is not None:
+            if m and (m.get("매출") or 0) > 0:
                 vals.append((d, m["매출"]))
         if not vals:
             trend_rows.append({"label": a.get("label") or a["cafe24_id"], "id": aid, "avg": None, "best": None, "worst": None, "trend": None, "n": 0})
