@@ -259,8 +259,12 @@ def _daily_finalize_job():
     라이브가 어제 23:30 직전까지 채워뒀어도 보정용 + 시트 기록을 위해 한 번 더 정리."""
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     accounts = db.list_accounts()
+    cycle_deadline = time.monotonic() + max(60 * 60, len(accounts) * 10 * 60)
     print(f"[daily-finalize] {yesterday} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
     for i, a in enumerate(accounts):
+        if time.monotonic() > cycle_deadline:
+            print(f"[daily-finalize] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
+            break
         _wait_for_memory(f"before {a['id']}")
         try:
             _run_scrape_task(a["id"], target_date=yesterday, skip_sheet=False)
@@ -290,8 +294,14 @@ def _live_global_job():
 
     today = datetime.now().strftime("%Y-%m-%d")
     accounts = db.list_accounts()
-    print(f"[live] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
+    # 사이클 전체 deadline: 계정당 watchdog 8분 + cooldown + 여유 → max(40분, 계정수*9분).
+    # interval_min 보다 짧아야 다음 사이클이 중첩 안 됨 (인터벌이 60분이면 cycle 은 그 안에 끝나야).
+    cycle_deadline = time.monotonic() + max(40 * 60, len(accounts) * 9 * 60)
+    print(f"[live] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB deadline={int((cycle_deadline-time.monotonic())/60)}분")
     for i, a in enumerate(accounts):
+        if time.monotonic() > cycle_deadline:
+            print(f"[live] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
+            break
         _wait_for_memory(f"before {a['id']}")
         try:
             _run_scrape_task(a["id"], target_date=today, skip_sheet=True)
@@ -331,6 +341,9 @@ def reload_schedules():
 
 
 # 서버 시작 시 stuck running 정리 (이전 프로세스가 죽었으면 그 run 은 이미 끝났다고 봐야)
+_startup_cleanup_info = {"count": 0, "accounts": [], "at": None}
+
+
 def _cleanup_stuck_runs():
     try:
         with db.db_conn() as conn:
@@ -343,6 +356,9 @@ def _cleanup_stuck_runs():
                     "UPDATE runs SET status='error', finished_at=?, error='startup cleanup - 이전 프로세스 종료로 unfinished 처리' WHERE status='running'",
                     (now_s,),
                 )
+                _startup_cleanup_info["count"] = len(stuck)
+                _startup_cleanup_info["accounts"] = list({r["account_id"] for r in stuck})
+                _startup_cleanup_info["at"] = now_s
                 print(f"[startup] stuck running {len(stuck)}건 정리: " + ", ".join(f"{r['account_id']}#{r['id']}" for r in stuck))
     except Exception:
         traceback.print_exc()
@@ -907,6 +923,32 @@ def dashboard():
 
     # ----- 신규: 알람 (주의 필요) -----
     alerts = []
+    # 0) 서버 startup cleanup (직전 stuck run 들 자동 정리됨)
+    if _startup_cleanup_info["count"] > 0:
+        alerts.append({
+            "type": "stuck",
+            "label": "스크래퍼 hang 복구",
+            "msg": f"{_startup_cleanup_info['count']}건 stuck running 정리됨 ({', '.join(_startup_cleanup_info['accounts'])}) · {_startup_cleanup_info['at']}",
+        })
+    # 0-2) DB 에 status='error' 이면서 최근 1시간 내 timeout 으로 종료된 run
+    try:
+        with db.db_conn() as conn:
+            recent_timeouts = conn.execute("""
+                SELECT account_id, started_at, error
+                FROM runs
+                WHERE status='error'
+                  AND finished_at >= datetime('now','localtime','-1 hour')
+                  AND (error LIKE '%timeout%' OR error LIKE '%hang%' OR error LIKE '%강제 종료%')
+                ORDER BY id DESC LIMIT 5
+            """).fetchall()
+        for r in recent_timeouts:
+            alerts.append({
+                "type": "timeout",
+                "label": f"{r['account_id']} 타임아웃",
+                "msg": "8분 watchdog 발동 — chromium 강제 종료됨",
+            })
+    except Exception:
+        pass
     # 1) 예상 종일이 어제 종일보다 -20% 이상 하락 예상
     for r in rows:
         if r["expected_eod"] and r["yesterday"]["매출"]:

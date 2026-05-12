@@ -405,9 +405,9 @@
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
                 {% for a in alerts %}
                 <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;
-                            background:{% if a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% else %}#f0f4ff{% endif %};
-                            border-left:3px solid {% if a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% else %}#4a90d9{% endif %}">
-                    <span style="font-size:0.95rem">{% if a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% else %}🤖{% endif %}</span>
+                            background:{% if a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% elif a.type == 'stuck' or a.type == 'timeout' %}#fef0f0{% else %}#f0f4ff{% endif %};
+                            border-left:3px solid {% if a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% elif a.type == 'stuck' %}#8e44ad{% elif a.type == 'timeout' %}#c0392b{% else %}#4a90d9{% endif %}">
+                    <span style="font-size:0.95rem">{% if a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% elif a.type == 'stuck' %}🔧{% elif a.type == 'timeout' %}⏰{% else %}🤖{% endif %}</span>
                     <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
                 </div>
                 {% endfor %}

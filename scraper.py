@@ -768,7 +768,12 @@ def run_scrape(account, target_date=None):
     def period_fn(frame, page):
         set_period_range(frame, page, target_date, target_date)
 
+    aid = account.get("id", cafe24_id)
+    def _phase(name):
+        print(f"[{aid}] phase: {name}", flush=True)
+
     with sync_playwright() as p:
+        _phase("chromium launch")
         browser = p.chromium.launch(headless=False, slow_mo=100)
 
         session_file = _session_path(account["id"])
@@ -777,47 +782,61 @@ def run_scrape(account, target_date=None):
         else:
             context = browser.new_context()
 
+        # 모든 page/context 호출의 default timeout 강제 60s.
+        # 누락된 wait_for_*, click, fill 등이 무한 대기로 chromium hang 시키는 케이스 방지.
+        context.set_default_timeout(60000)
+        context.set_default_navigation_timeout(60000)
         page = context.new_page()
         sample_detector = _attach_sample_detector(page)
+        _phase("ensure_login")
         ensure_login(page, context, account)
 
         results = {"account": cafe24_id, "date": target_date}
 
         # 1. 매출분석
+        _phase("매출종합분석 진입")
         page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
+            _phase("매출종합분석 추출")
             results["매출종합분석"] = scrape_sales(frame, page, period_fn)
 
         # 2. 방문자분석
+        _phase("방문자분석 진입")
         page.goto(urls["visitors"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
+            _phase("방문자분석 추출")
             results["방문자분석"] = scrape_visitors(frame, page, period_fn)
 
         # 3. 처음방문vs재방문
+        _phase("처음방문vs재방문 진입")
         page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
+            _phase("처음방문vs재방문 추출")
             results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page, period_fn)
 
         # 4. 신규회원
+        _phase("신규회원 진입")
         page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(5000)
         frame = page.frame("adminFrameContent")
         if frame:
+            _phase("신규회원 추출")
             results["신규회원"] = scrape_new_members(frame, page, period_fn)
 
         # 5/6. 매출종합/구매패턴 전체보기 팝업 (구매개수, 처음·재구매 건수)
+        _phase("매출종합 팝업")
         results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
+        _phase("구매패턴 팝업")
         results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
 
         # 7. 시간 단위 매출
-        # - main admin: ca-web URL 직접 navigate (query string으로 정확한 date 전달, 캘린더 클릭 불필요)
-        # - sub admin: 직접 navigate는 401이라 어드민 매출분석 → '전체보기' 클릭 흐름 사용
+        _phase("시간별 매출")
         try:
             if _is_main_admin(account):
                 results["매출종합_시간별"] = scrape_popup_hourly(context, SALES_POPUP_URL, target_date)
@@ -837,7 +856,9 @@ def run_scrape(account, target_date=None):
         results["_is_sample"] = sample_detector["is_sample"]
 
         # 세션 저장
+        _phase("세션 저장")
         context.storage_state(path=str(session_file))
+        _phase("browser close")
         browser.close()
 
     # 결과 파일 저장
@@ -873,6 +894,10 @@ def run_scrape_range(account, start_date, end_date):
         else:
             context = browser.new_context()
 
+        # 모든 page/context 호출의 default timeout 강제 60s.
+        # 누락된 wait_for_*, click, fill 등이 무한 대기로 chromium hang 시키는 케이스 방지.
+        context.set_default_timeout(60000)
+        context.set_default_navigation_timeout(60000)
         page = context.new_page()
         sample_detector = _attach_sample_detector(page)
         ensure_login(page, context, account)
