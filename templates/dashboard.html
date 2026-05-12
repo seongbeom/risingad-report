@@ -385,8 +385,14 @@
                         {% if ops_status.live_active %}<span class="badge badge-on" style="margin-left:6px">활성</span>
                         {% else %}<span class="badge badge-off" style="margin-left:6px">비활성</span>{% endif %}
                     </td></tr>
-                <tr><td style="padding:4px 8px;color:#666">다음 라이브 (추정)</td>
+                <tr><td style="padding:4px 8px;color:#666">다음 라이브</td>
                     <td><strong>{{ ops_status.next_live }}</strong></td></tr>
+                <tr><td style="padding:4px 8px;color:#666">오늘 실행</td>
+                    <td><strong style="color:#27ae60">{{ ops_status.today_success_runs }}건 성공</strong>
+                        {% if ops_status.today_failed_runs %}
+                            · <strong style="color:#e74c3c">{{ ops_status.today_failed_runs }}건 실패</strong>
+                        {% endif %}
+                    </td></tr>
                 <tr><td style="padding:4px 8px;color:#666">다음 시트 기록</td>
                     <td><strong>{{ ops_status.next_daily }}</strong></td></tr>
                 {% if ops_status.last_run %}
@@ -405,9 +411,9 @@
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
                 {% for a in alerts %}
                 <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;
-                            background:{% if a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% elif a.type == 'stuck' or a.type == 'timeout' %}#fef0f0{% else %}#f0f4ff{% endif %};
-                            border-left:3px solid {% if a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% elif a.type == 'stuck' %}#8e44ad{% elif a.type == 'timeout' %}#c0392b{% else %}#4a90d9{% endif %}">
-                    <span style="font-size:0.95rem">{% if a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% elif a.type == 'stuck' %}🔧{% elif a.type == 'timeout' %}⏰{% else %}🤖{% endif %}</span>
+                            background:{% if a.type == 'critical' %}#fee{% elif a.type == 'partial' %}#fff5e6{% elif a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% elif a.type == 'stuck' or a.type == 'timeout' %}#fef0f0{% else %}#f0f4ff{% endif %};
+                            border-left:3px solid {% if a.type == 'critical' %}#c0392b{% elif a.type == 'partial' %}#f39c12{% elif a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% elif a.type == 'stuck' %}#8e44ad{% elif a.type == 'timeout' %}#c0392b{% else %}#4a90d9{% endif %}">
+                    <span style="font-size:0.95rem">{% if a.type == 'critical' %}🚨{% elif a.type == 'partial' %}⚠️{% elif a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% elif a.type == 'stuck' %}🔧{% elif a.type == 'timeout' %}⏰{% else %}🤖{% endif %}</span>
                     <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
                 </div>
                 {% endfor %}

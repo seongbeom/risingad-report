@@ -411,12 +411,26 @@ def reload_schedules():
 
     live = db.get_live_settings()
     if live["interval_min"] > 0:
-        scheduler.add_job(
-            _live_global_job, "interval",
-            minutes=live["interval_min"],
-            id="live_global", replace_existing=True,
-        )
-        print(f"[scheduler] live_global: {live['interval_min']}분, {live['start_hour']}~{live['end_hour']}시")
+        interval = live["interval_min"]
+        # 60 의 약수면 cron 으로 매시 N분 고정 → service restart 영향 없음.
+        # 아니면 fallback 으로 interval (restart 직후 +interval 분 후 다음 실행).
+        end_hour_cron = live["end_hour"] - 1 if live["end_hour"] < 24 else 23
+        hour_range = f"{live['start_hour']}-{end_hour_cron}"
+        if 60 % interval == 0:
+            minutes_expr = ",".join(str(m) for m in range(0, 60, interval))
+            scheduler.add_job(
+                _live_global_job, "cron",
+                hour=hour_range, minute=minutes_expr,
+                id="live_global", replace_existing=True,
+            )
+            print(f"[scheduler] live_global: cron hour={hour_range} minute={minutes_expr} (매시 {interval}분, restart 무관)")
+        else:
+            scheduler.add_job(
+                _live_global_job, "interval",
+                minutes=interval,
+                id="live_global", replace_existing=True,
+            )
+            print(f"[scheduler] live_global: interval {interval}분 (60의 약수 아님 → restart 시 타이밍 밀림)")
 
     df = db.get_daily_finalize_settings()
     scheduler.add_job(
@@ -433,6 +447,28 @@ def reload_schedules():
         id="db_backup", replace_existing=True,
     )
     print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
+
+    # 서버 시작 시점이 활성 시간이고 오늘 라이브가 한 번도 안 돌았으면
+    # 30초 뒤 1회 강제 트리거. service restart 가 라이브 누락으로 이어지지 않게.
+    if live["interval_min"] > 0:
+        now_h = datetime.now().hour
+        active = (live["start_hour"] <= now_h < live["end_hour"]) if live["start_hour"] <= live["end_hour"] else (now_h >= live["start_hour"] or now_h < live["end_hour"])
+        if active:
+            today_s = datetime.now().strftime("%Y-%m-%d")
+            try:
+                ran_today = False
+                with db.db_conn() as conn:
+                    n = conn.execute("SELECT COUNT(*) FROM metrics WHERE date=? AND 매출 > 0", (today_s,)).fetchone()[0]
+                    ran_today = n > 0
+                if not ran_today:
+                    scheduler.add_job(
+                        _live_global_job, "date",
+                        run_date=datetime.now() + timedelta(seconds=30),
+                        id="live_startup_catchup", replace_existing=True,
+                    )
+                    print(f"[scheduler] 활성 시간 + 오늘 데이터 없음 → 30초 뒤 라이브 catch-up 1회 트리거")
+            except Exception:
+                traceback.print_exc()
 
 
 # 서버 시작 시 stuck running 정리 (이전 프로세스가 죽었으면 그 run 은 이미 끝났다고 봐야)
@@ -535,6 +571,35 @@ def update_spreadsheet(account_id):
     sid = request.form.get("spreadsheet_id", "").strip()
     db.update_spreadsheet_id(account_id, sid)
     return redirect(url_for("index"))
+
+
+@app.route("/healthz")
+def healthz():
+    """외부 헬스체크용 endpoint. 인증 없음.
+    - scheduler 잡 등록 상태
+    - 오늘 라이브 사이클 진행 정도
+    - 현재 실행 중인 스크래핑 수
+    UptimeRobot 등 외부 모니터링에서 /healthz 5분마다 ping → 200 안 오면 alert."""
+    try:
+        today_s = datetime.now().strftime("%Y-%m-%d")
+        with db.db_conn() as conn:
+            ran_today = conn.execute("SELECT COUNT(*) FROM metrics WHERE date=? AND 매출>0", (today_s,)).fetchone()[0]
+            total_accounts = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        cur_h = datetime.now().hour
+        live = db.get_live_settings()
+        active_now = live["interval_min"] > 0 and live["start_hour"] <= cur_h < live["end_hour"]
+        return jsonify({
+            "ok": True,
+            "now": datetime.now().isoformat(),
+            "scheduler_jobs": [j.id for j in scheduler.get_jobs()],
+            "today_accounts_with_data": ran_today,
+            "total_accounts": total_accounts,
+            "live_active_now": active_now,
+            "running_now": list(_running.keys()),
+            "free_mb": _free_memory_mb(),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/admin/backfill_dates", methods=["POST"])
@@ -1032,6 +1097,32 @@ def dashboard():
 
     # ----- 신규: 알람 (주의 필요) -----
     alerts = []
+    # -1) 오늘 라이브 0회 (활성 시간인데 데이터 없음) — 가장 critical
+    try:
+        live_set = db.get_live_settings()
+        active_now = live_set["interval_min"] > 0 and live_set["start_hour"] <= cur_hour < live_set["end_hour"]
+        with db.db_conn() as conn:
+            today_with_data = conn.execute(
+                "SELECT COUNT(*) FROM metrics WHERE date=? AND 매출>0", (today,)
+            ).fetchone()[0]
+            today_runs = conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE started_at >= ? AND status='success'", (today + " 00:00:00",)
+            ).fetchone()[0]
+        if active_now and today_with_data == 0:
+            alerts.insert(0, {
+                "type": "critical",
+                "label": "🚨 오늘 라이브 0회",
+                "msg": f"활성 시간({cur_hour}시)인데 오늘 매출 있는 계정 0개. 라이브 사이클이 못 돌고 있음 — 서비스/스케줄러 확인 필요",
+            })
+        elif active_now and today_with_data < (mega.get("total_accounts", 0) if 'mega' in dir() else 0) // 2:
+            # 절반 미만이면 부분 미수집
+            alerts.insert(0, {
+                "type": "partial",
+                "label": "오늘 라이브 부분 미수집",
+                "msg": f"활성 시간이지만 {today_with_data}계정만 수집됨. 곧 자동 catch-up 또는 다음 라이브 사이클에서 채워질 예정",
+            })
+    except Exception:
+        traceback.print_exc()
     # 0) 서버 startup cleanup (직전 stuck run 들 자동 정리됨)
     if _startup_cleanup_info["count"] > 0:
         alerts.append({
@@ -1102,12 +1193,49 @@ def dashboard():
     next_daily_dt = now.replace(hour=daily_settings["hour"], minute=daily_settings["minute"], second=0, microsecond=0)
     if next_daily_dt <= now:
         next_daily_dt = next_daily_dt + timedelta(days=1)
+    # 오늘 success run 카운트 (전체 진단 강화)
+    try:
+        with db.db_conn() as conn:
+            today_success_runs = conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE started_at >= ? AND status='success'", (today + " 00:00:00",)
+            ).fetchone()[0]
+            today_failed_runs = conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE started_at >= ? AND status='error'", (today + " 00:00:00",)
+            ).fetchone()[0]
+    except Exception:
+        today_success_runs = 0
+        today_failed_runs = 0
+
+    # cron 모드면 다음 라이브를 정확히 계산 (다음 정각 또는 분기)
+    next_live_label = None
+    if live_settings["interval_min"] > 0:
+        if live_settings["start_hour"] <= cur_hour < live_settings["end_hour"]:
+            interval = live_settings["interval_min"]
+            if 60 % interval == 0:
+                cur_m = datetime.now().minute
+                next_min_slot = ((cur_m // interval) + 1) * interval
+                if next_min_slot >= 60:
+                    next_h = cur_hour + 1
+                    next_min_slot = 0
+                else:
+                    next_h = cur_hour
+                if next_h >= live_settings["end_hour"]:
+                    next_live_label = f"내일 {live_settings['start_hour']:02d}:00"
+                else:
+                    next_live_label = f"{next_h:02d}:{next_min_slot:02d}"
+            else:
+                next_live_label = (now + timedelta(minutes=interval)).strftime("%H:%M") + " (대략)"
+        else:
+            next_live_label = f"활성시간({live_settings['start_hour']}시 부터)"
+
     ops_status = {
         "last_run": last_live_run,
-        "next_live": next_live if (live_settings["start_hour"] <= cur_hour < live_settings["end_hour"]) else f"활성시간({live_settings['start_hour']}시)",
+        "next_live": next_live_label,
         "next_daily": next_daily_dt.strftime("%m/%d %H:%M"),
         "live_interval": live_settings["interval_min"],
         "live_active": live_settings["start_hour"] <= cur_hour < live_settings["end_hour"],
+        "today_success_runs": today_success_runs,
+        "today_failed_runs": today_failed_runs,
     }
 
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
