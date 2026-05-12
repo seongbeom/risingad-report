@@ -17,6 +17,37 @@ import db
 import scraper
 import sheets
 
+
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+
+
+def slack_notify(text, severity="info"):
+    """Slack webhook 알림 발송. webhook URL 없으면 silent skip.
+    severity: critical / warn / info / ok / hang / cleanup / report
+    실패해도 main flow 안 막음."""
+    if not SLACK_WEBHOOK_URL:
+        return
+    icons = {
+        "critical": "🚨", "warn": "⚠️", "info": "ℹ️", "ok": "✅",
+        "hang": "⏰", "cleanup": "🔧", "report": "📊",
+    }
+    icon = icons.get(severity, "ℹ️")
+    payload = {"text": f"{icon} *[cafe24-scraper]* {text}"}
+
+    def _send():
+        try:
+            import urllib.request, json as _json
+            req = urllib.request.Request(
+                SLACK_WEBHOOK_URL,
+                data=_json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            traceback.print_exc()
+
+    threading.Thread(target=_send, daemon=True).start()
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cafe24-scraper-secret-key-change-me")
 
@@ -151,6 +182,10 @@ def _run_scrape_with_timeout(account, target_date, timeout_sec):
         print(f"[{account['id']}] scrape timeout {timeout_sec}s - chromium 강제 종료")
         _kill_leftover_chromium()
         t.join(timeout=30)  # chromium 죽으면 thread 도 곧 정리됨
+        slack_notify(
+            f"`{account['id']}` 스크래핑 {timeout_sec}s 초과 → chromium 강제 종료. 다음 attempt 또는 자동 백필이 재시도합니다.",
+            severity="hang",
+        )
         raise TimeoutError(f"scrape timeout {timeout_sec}s - chromium 강제 종료")
     if result_holder["exc"]:
         raise result_holder["exc"]
@@ -261,9 +296,12 @@ def _daily_finalize_job():
     accounts = db.list_accounts()
     cycle_deadline = time.monotonic() + max(60 * 60, len(accounts) * 10 * 60)
     print(f"[daily-finalize] {yesterday} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
+    started_at = time.time()
+    skipped = 0
     for i, a in enumerate(accounts):
         if time.monotonic() > cycle_deadline:
-            print(f"[daily-finalize] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
+            skipped = len(accounts) - i
+            print(f"[daily-finalize] cycle deadline 초과 - 남은 {skipped}계정 스킵")
             break
         _wait_for_memory(f"before {a['id']}")
         try:
@@ -273,7 +311,27 @@ def _daily_finalize_job():
         if i < len(accounts) - 1:
             time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
     _kill_leftover_chromium()
+    elapsed = int(time.time() - started_at)
     print(f"[daily-finalize] {yesterday} done free={_free_memory_mb()}MB")
+    # 결과 요약을 slack 으로
+    try:
+        with db.db_conn() as conn:
+            since_ts = datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+            ok = conn.execute("SELECT COUNT(*) FROM runs WHERE started_at >= ? AND status='success'", (since_ts,)).fetchone()[0]
+            err = conn.execute("SELECT COUNT(*) FROM runs WHERE started_at >= ? AND status='error'", (since_ts,)).fetchone()[0]
+            zero_sales = conn.execute(
+                "SELECT account_id FROM metrics WHERE date=? AND (매출 IS NULL OR 매출=0)", (yesterday,)
+            ).fetchall()
+        zero_list = ", ".join(f"`{r['account_id']}`" for r in zero_sales) or "없음"
+        sev = "ok" if err == 0 and skipped == 0 else "warn"
+        slack_notify(
+            f"daily_finalize 완료 ({yesterday})\n"
+            f"성공 {ok} · 실패 {err} · 스킵 {skipped} · 소요 {elapsed//60}분\n"
+            f"매출 0원 계정: {zero_list}",
+            severity="report" if sev == "ok" else "warn",
+        )
+    except Exception:
+        traceback.print_exc()
 
 
 def _live_global_job():
@@ -491,6 +549,11 @@ def _cleanup_stuck_runs():
                 _startup_cleanup_info["accounts"] = list({r["account_id"] for r in stuck})
                 _startup_cleanup_info["at"] = now_s
                 print(f"[startup] stuck running {len(stuck)}건 정리: " + ", ".join(f"{r['account_id']}#{r['id']}" for r in stuck))
+                slack_notify(
+                    f"서비스 startup — stuck running {len(stuck)}건 자동 정리\n계정: " +
+                    ", ".join(f"`{r['account_id']}`" for r in stuck),
+                    severity="cleanup",
+                )
     except Exception:
         traceback.print_exc()
 
