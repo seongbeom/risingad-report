@@ -19,17 +19,20 @@ import sheets
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+SLACK_FEEDBACK_WEBHOOK_URL = os.environ.get("SLACK_FEEDBACK_WEBHOOK_URL", "").strip()
 
 
-def slack_notify(text, severity="info"):
+def slack_notify(text, severity="info", webhook_url=None):
     """Slack webhook 알림 발송. webhook URL 없으면 silent skip.
-    severity: critical / warn / info / ok / hang / cleanup / report
+    severity: critical / warn / info / ok / hang / cleanup / report / feedback
+    webhook_url 미지정 시 기본 SLACK_WEBHOOK_URL 사용.
     실패해도 main flow 안 막음."""
-    if not SLACK_WEBHOOK_URL:
+    target_url = webhook_url or SLACK_WEBHOOK_URL
+    if not target_url:
         return
     icons = {
         "critical": "🚨", "warn": "⚠️", "info": "ℹ️", "ok": "✅",
-        "hang": "⏰", "cleanup": "🔧", "report": "📊",
+        "hang": "⏰", "cleanup": "🔧", "report": "📊", "feedback": "💬",
     }
     icon = icons.get(severity, "ℹ️")
     payload = {"text": f"{icon} *[cafe24-scraper]* {text}"}
@@ -38,7 +41,7 @@ def slack_notify(text, severity="info"):
         try:
             import urllib.request, json as _json
             req = urllib.request.Request(
-                SLACK_WEBHOOK_URL,
+                target_url,
                 data=_json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
@@ -1804,6 +1807,13 @@ def api_feedback_create():
     if not body:
         return jsonify({"error": "body 비어있음"}), 400
     thread = db.add_feedback_thread(user, body, time.time())
+    # Slack 피드백 채널로 알림
+    preview = body if len(body) <= 500 else body[:500] + "…"
+    slack_notify(
+        f"새 피드백 등록 *#{thread.get('id', '?')}* by `{user}`\n>>> {preview}",
+        severity="feedback",
+        webhook_url=SLACK_FEEDBACK_WEBHOOK_URL,
+    )
     return jsonify({"thread": thread})
 
 
@@ -1820,6 +1830,12 @@ def api_feedback_reply(fid):
     reply = db.add_feedback_reply(fid, user, body, time.time())
     if reply is None:
         return jsonify({"error": "스레드 루트가 아님"}), 404
+    preview = body if len(body) <= 300 else body[:300] + "…"
+    slack_notify(
+        f"피드백 *#{fid}* 답글 by `{user}`\n>>> {preview}",
+        severity="feedback",
+        webhook_url=SLACK_FEEDBACK_WEBHOOK_URL,
+    )
     return jsonify({"reply": reply})
 
 
