@@ -540,12 +540,17 @@ def update_spreadsheet(account_id):
 @app.route("/admin/backfill_dates", methods=["POST"])
 def admin_backfill_dates():
     """localhost 전용 백필 트리거. _run_lock 으로 라이브 잡과 자동 직렬화.
-    body: account_id=..&dates=2026-05-08,2026-05-09 (콤마 구분)"""
+    body:
+      account_id=<id> | all   (all 이면 전체 계정)
+      dates=2026-05-08,2026-05-09 (콤마 구분)
+      skip_sheet=true | false (기본 false → 시트 write 진행)
+    """
     remote = request.remote_addr or ""
     if remote not in ("127.0.0.1", "::1", "localhost"):
         return jsonify({"error": "forbidden"}), 403
     account_id = request.form.get("account_id", "").strip()
     dates_raw = request.form.get("dates", "").strip()
+    skip_sheet = request.form.get("skip_sheet", "false").lower() == "true"
     if not account_id or not dates_raw:
         return jsonify({"error": "account_id, dates required"}), 400
     dates = [d.strip() for d in dates_raw.split(",") if d.strip()]
@@ -555,18 +560,27 @@ def admin_backfill_dates():
         except ValueError:
             return jsonify({"error": f"invalid date {d}"}), 400
 
+    if account_id == "all":
+        target_aids = [a["id"] for a in db.list_accounts()]
+    else:
+        target_aids = [account_id]
+
     def _run_all():
-        for d in dates:
-            print(f"[backfill] {account_id} {d} 시작", flush=True)
-            try:
-                _run_scrape_task(account_id, target_date=d, skip_sheet=False)
-            except Exception:
-                traceback.print_exc()
-            print(f"[backfill] {account_id} {d} 끝", flush=True)
-        print(f"[backfill] {account_id} 전체 완료 ({len(dates)}건)", flush=True)
+        total = len(target_aids) * len(dates)
+        cnt = 0
+        for aid in target_aids:
+            for d in dates:
+                cnt += 1
+                print(f"[backfill] ({cnt}/{total}) {aid} {d} 시작 skip_sheet={skip_sheet}", flush=True)
+                try:
+                    _run_scrape_task(aid, target_date=d, skip_sheet=skip_sheet)
+                except Exception:
+                    traceback.print_exc()
+                print(f"[backfill] ({cnt}/{total}) {aid} {d} 끝", flush=True)
+        print(f"[backfill] 전체 완료 ({total}건)", flush=True)
 
     threading.Thread(target=_run_all, daemon=True).start()
-    return jsonify({"ok": True, "account_id": account_id, "queued_dates": dates})
+    return jsonify({"ok": True, "accounts": target_aids, "queued_dates": dates, "skip_sheet": skip_sheet, "total": len(target_aids) * len(dates)})
 
 
 @app.route("/accounts/<account_id>/update", methods=["POST"])
