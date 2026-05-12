@@ -9,3 +9,4 @@ analytics_*.json
 screenshot_*.png
 data/
 *.pyc
+*.db
