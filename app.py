@@ -294,8 +294,6 @@ def _live_global_job():
 
     today = datetime.now().strftime("%Y-%m-%d")
     accounts = db.list_accounts()
-    # 사이클 전체 deadline: 계정당 watchdog 8분 + cooldown + 여유 → max(40분, 계정수*9분).
-    # interval_min 보다 짧아야 다음 사이클이 중첩 안 됨 (인터벌이 60분이면 cycle 은 그 안에 끝나야).
     cycle_deadline = time.monotonic() + max(40 * 60, len(accounts) * 9 * 60)
     print(f"[live] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB deadline={int((cycle_deadline-time.monotonic())/60)}분")
     for i, a in enumerate(accounts):
@@ -310,7 +308,96 @@ def _live_global_job():
         if i < len(accounts) - 1:
             time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
     _kill_leftover_chromium()
+    # 사이클 끝나면 누락된 계정 자동 백필 (현재 사이클 1회만 추가 시도)
+    if time.monotonic() < cycle_deadline:
+        _auto_backfill_missing(today, deadline=cycle_deadline)
     print(f"[live] {today} cycle done free={_free_memory_mb()}MB")
+
+
+# (account_id, date) → 자동 백필 시도 시각. 같은 날 같은 계정에 무한 재시도 방지.
+_auto_backfill_attempted = {}
+
+
+def _auto_backfill_missing(today, deadline=None):
+    """라이브 사이클 끝에 누락 계정 자동 백필 1회.
+    기준:
+    - metrics row 자체 없음 (오늘 단 한 번도 못 받음) → 백필
+    - metrics 있지만 매출=0 AND 시간별 0건 (현재 8시 이상일 때만) → 백필
+    하루 계정당 최대 1회 자동 시도 (계속 실패하는 계정으로 무한 루프 방지).
+    """
+    cur_h = datetime.now().hour
+    accounts = db.list_accounts()
+    targets = []
+    for a in accounts:
+        aid = a["id"]
+        key = (aid, today)
+        if _auto_backfill_attempted.get(key, 0) >= 1:
+            continue
+        m = db.get_metric(aid, today)
+        try:
+            h_count = db.count_metrics_hourly(aid, today)
+        except Exception:
+            h_count = 0
+        missing = (
+            not m
+            or ((m.get("매출") or 0) == 0 and h_count == 0 and cur_h >= 8)
+        )
+        if missing:
+            targets.append(aid)
+    if not targets:
+        return
+    print(f"[auto-backfill] {today} 누락 계정 자동 재시도: {targets}")
+    for aid in targets:
+        if deadline and time.monotonic() > deadline:
+            print(f"[auto-backfill] cycle deadline 도달 - 남은 자동 백필 다음 사이클로")
+            break
+        _auto_backfill_attempted[(aid, today)] = _auto_backfill_attempted.get((aid, today), 0) + 1
+        _wait_for_memory(f"auto-backfill {aid}")
+        try:
+            _run_scrape_task(aid, target_date=today, skip_sheet=True)
+        except Exception:
+            traceback.print_exc()
+        time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
+    _kill_leftover_chromium()
+
+
+def _db_backup_job():
+    """매일 04:00 sqlite DB backup. 7일 이상 된 백업 자동 정리.
+    sqlite backup API 를 써서 트랜잭션 중에도 일관성 보장."""
+    import sqlite3 as _sq3, shutil
+    db_path = Path("data/cafe24.db")
+    if not db_path.exists():
+        print(f"[db-backup] DB 파일 없음: {db_path}")
+        return
+    backup_dir = Path("data/backups")
+    backup_dir.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    dst = backup_dir / f"cafe24_{ts}.db"
+    try:
+        src_conn = _sq3.connect(str(db_path))
+        dst_conn = _sq3.connect(str(dst))
+        with dst_conn:
+            src_conn.backup(dst_conn)
+        src_conn.close()
+        dst_conn.close()
+        size_kb = dst.stat().st_size // 1024
+        print(f"[db-backup] {dst.name} ({size_kb}KB) 저장 완료")
+    except Exception:
+        traceback.print_exc()
+        return
+    # 7일 이상 백업 정리
+    cutoff = datetime.now() - timedelta(days=7)
+    removed = 0
+    for f in backup_dir.glob("cafe24_*.db"):
+        try:
+            file_ts = datetime.strptime(f.stem[len("cafe24_"):], "%Y%m%d_%H%M")
+            if file_ts < cutoff:
+                f.unlink()
+                removed += 1
+        except Exception:
+            pass
+    if removed:
+        print(f"[db-backup] 오래된 백업 {removed}개 정리")
 
 
 def reload_schedules():
@@ -319,7 +406,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -338,6 +425,14 @@ def reload_schedules():
         id="daily_finalize", replace_existing=True,
     )
     print(f"[scheduler] daily_finalize: 매일 {df['hour']:02d}:{df['minute']:02d}")
+
+    # DB 백업 - 매일 04:00 (daily_finalize 03:00 끝나고 1시간 뒤)
+    scheduler.add_job(
+        _db_backup_job, "cron",
+        hour=4, minute=0,
+        id="db_backup", replace_existing=True,
+    )
+    print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
 
 
 # 서버 시작 시 stuck running 정리 (이전 프로세스가 죽었으면 그 run 은 이미 끝났다고 봐야)
