@@ -552,9 +552,10 @@ vs 어제 {{ '%+.1f'|format(c.vs_pct) }}%{% endif %}{% endif %}">
                     <td>
                         {% if t.today_sales %}
                             {{ "{:,.0f}".format(t.today_sales) }}
-                            {% if t.avg %}
-                                {% set diff = (t.today_sales - t.avg) / t.avg * 100 %}
-                                <span class="label-sub" style="display:block; color:{{ '#27ae60' if diff>0 else '#e74c3c' }}">{{ "%+.0f"|format(diff) }}% vs 평균</span>
+                            <span class="label-sub" style="display:block; color:#aaa">진행중</span>
+                            {% if t.expected_eod and t.avg %}
+                                {% set diff = (t.expected_eod - t.avg) / t.avg * 100 %}
+                                <span class="label-sub" style="display:block; color:{{ '#27ae60' if diff>0 else '#e74c3c' }}">예상 종일 {{ "%+.0f"|format(diff) }}% vs 평균</span>
                             {% endif %}
                         {% else %}<span class="dim">—</span>{% endif %}
                     </td>

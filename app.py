@@ -1021,9 +1021,15 @@ def dashboard():
     }
 
     # 하이라이트: 매출 1위, 가장 큰 ▲ / ▼
+    # 분모 (어제 동시각 매출) 가 너무 작으면 % 가 극단적으로 튀어서 misleading.
+    # 최소 100,000원 이상인 계정만 top_gainer/loser 후보로.
+    MIN_YEST_FOR_HIGHLIGHT = 100_000
     rows_with_sales = [r for r in rows if (r["today"]["매출"] or 0) > 0]
     best = rows_with_sales[0] if rows_with_sales else None
-    rows_with_delta = [r for r in rows_with_sales if r["vs_yest_at_hour_pct"] is not None]
+    rows_with_delta = [
+        r for r in rows_with_sales
+        if r["vs_yest_at_hour_pct"] is not None and (r["yest_at_hour"] or 0) >= MIN_YEST_FOR_HIGHLIGHT
+    ]
     top_gainer = max(rows_with_delta, key=lambda r: r["vs_yest_at_hour_pct"]) if rows_with_delta else None
     top_loser = min(rows_with_delta, key=lambda r: r["vs_yest_at_hour_pct"]) if rows_with_delta else None
 
@@ -1337,6 +1343,15 @@ def dashboard():
             trend_pct = _pct(last_avg, first_avg)
         else:
             trend_pct = None
+        # 오늘은 진행중이라 종일 평균과 직접 비교하면 misleading.
+        # 페이스 보정해서 예상 종일을 평균과 비교 (그 계정의 expected_eod 사용).
+        today_sales_now = by_key.get((aid, today), {}).get("매출")
+        # 현재 row 의 expected_eod 가져오기 (rows 에 있는 동일 aid 찾기)
+        expected_for_aid = None
+        for rr in rows:
+            if rr["id"] == aid:
+                expected_for_aid = rr.get("expected_eod")
+                break
         trend_rows.append({
             "label": a.get("label") or a["cafe24_id"],
             "id": aid,
@@ -1347,7 +1362,8 @@ def dashboard():
             "worst_v": t_worst[1],
             "trend": trend_pct,
             "n": len(vals),
-            "today_sales": by_key.get((aid, today), {}).get("매출"),
+            "today_sales": today_sales_now,
+            "expected_eod": expected_for_aid,
         })
     trend_rows.sort(key=lambda r: r["avg"] or 0, reverse=True)
 
