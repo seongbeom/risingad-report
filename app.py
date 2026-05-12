@@ -1211,6 +1211,134 @@ def dashboard():
             "heat": round(total_cells_hourly[h] / max_total_hour * 100) if (max_total_hour and h <= cur_hour) else 0,
         })
 
+    # ----- 신규: 전환 깔때기 (방문 → 회원가입 → 구매) -----
+    funnel_total = {
+        "visitors": mega["today_visitors"],
+        "signups": mega["today_signup"],
+        "orders": mega["today_orders"],
+        "v2s_pct": round(mega["today_signup"] / mega["today_visitors"] * 100, 2) if mega["today_visitors"] else None,
+        "s2o_pct": round(mega["today_orders"] / mega["today_signup"] * 100, 1) if mega["today_signup"] else None,
+        "v2o_pct": round(mega["today_orders"] / mega["today_visitors"] * 100, 2) if mega["today_visitors"] else None,
+    }
+    # 매장별 깔때기 — top 5 매출 매장만
+    funnel_top = []
+    for r in rows[:6]:  # 매출 desc 정렬에서 top 6 (gogofpahs 같은 0 매장 제외 위해 6)
+        v = r["today"]["방문자수"] or 0
+        s = r["today"]["회원가입"] or 0
+        o = r["today"]["구매건수"] or 0
+        if v == 0:
+            continue
+        funnel_top.append({
+            "label": r["label"],
+            "v": v, "s": s, "o": o,
+            "v2s": round(s / v * 100, 2) if v else None,
+            "s2o": round(o / s * 100, 1) if s else None,
+            "v2o": round(o / v * 100, 2) if v else None,
+        })
+
+    # ----- 신규: 매장 효율 랭킹 -----
+    # RPV (방문당 매출), 전환율, 객단가 → 정규화 후 종합 점수 (0~100)
+    eff_rows = []
+    for r in rows:
+        v = r["today"]["방문자수"] or 0
+        s = r["today"]["매출"] or 0
+        o = r["today"]["구매건수"] or 0
+        aov = r["today"]["객단가"] or 0
+        conv = r["today"]["전환율"] or 0
+        rpv = round(s / v) if v else 0  # 방문당 매출
+        if s == 0:
+            continue
+        eff_rows.append({
+            "label": r["label"],
+            "id": r["id"],
+            "sales": s,
+            "visitors": v,
+            "orders": o,
+            "rpv": rpv,
+            "conv": conv,
+            "aov": aov,
+        })
+    # 정규화 점수 (각 지표 최대값 100, 가중 평균)
+    max_rpv = max((e["rpv"] for e in eff_rows), default=1) or 1
+    max_conv = max((e["conv"] for e in eff_rows), default=1) or 1
+    max_aov = max((e["aov"] for e in eff_rows), default=1) or 1
+    for e in eff_rows:
+        norm_rpv = e["rpv"] / max_rpv * 100
+        norm_conv = e["conv"] / max_conv * 100
+        norm_aov = e["aov"] / max_aov * 100
+        # RPV 가장 중요 (40%), 전환율 30%, 객단가 30%
+        e["score"] = round(norm_rpv * 0.4 + norm_conv * 0.3 + norm_aov * 0.3, 1)
+    eff_rows.sort(key=lambda x: x["score"], reverse=True)
+    for i, e in enumerate(eff_rows):
+        e["rank"] = i + 1
+
+    # ----- 신규: 이상 매장 감지 (7일 평균 동시각 대비) -----
+    anomalies = []
+    # 7일간 같은 시각까지 평균 매출 vs 오늘 매출
+    for r in rows:
+        aid = r["id"]
+        today_at_h = sum(by_acct_date_hour.get(aid, {}).get(today, {}).get(h, 0) for h in range(cur_hour + 1))
+        # 7일 평균 0~cur_hour 누적 (해당 일자만)
+        vals = []
+        for d in last7_dates:
+            day_map = by_acct_date_hour.get(aid, {}).get(d)
+            if not day_map:
+                continue
+            day_at_h = sum(day_map.get(h, 0) for h in range(cur_hour + 1))
+            if day_at_h > 0:
+                vals.append(day_at_h)
+        if len(vals) < 3:
+            continue
+        avg7 = sum(vals) / len(vals)
+        if avg7 < 100_000:  # 너무 작은 매장은 제외 (분모 작아서 % 폭주)
+            continue
+        diff_pct = (today_at_h - avg7) / avg7 * 100
+        if diff_pct <= -30:
+            anomalies.append({
+                "type": "down",
+                "label": r["label"],
+                "today_at_h": today_at_h,
+                "avg7": round(avg7),
+                "diff_pct": round(diff_pct, 1),
+            })
+        elif diff_pct >= 50:
+            anomalies.append({
+                "type": "up",
+                "label": r["label"],
+                "today_at_h": today_at_h,
+                "avg7": round(avg7),
+                "diff_pct": round(diff_pct, 1),
+            })
+    anomalies.sort(key=lambda x: abs(x["diff_pct"]), reverse=True)
+
+    # ----- 신규: 신규 vs 재구매 매출 비중 (매장별) -----
+    # 매출 = 처음구매건수 × 객단가 + 재구매건수 × 객단가 (객단가 동일 가정)
+    # 정확하진 않지만 추정 (카페24가 처음/재구매 매출 분리 안 줌)
+    buyer_mix = []
+    for r in rows:
+        first = r["today"]["처음구매"] or 0
+        repeat = r["today"]["재구매"] or 0
+        total_buyers = first + repeat
+        sales = r["today"]["매출"] or 0
+        if total_buyers == 0 or sales == 0:
+            continue
+        first_pct = first / total_buyers * 100
+        repeat_pct = repeat / total_buyers * 100
+        # 추정 매출 (단순 비율 배분)
+        est_first_sales = round(sales * first / total_buyers)
+        est_repeat_sales = round(sales * repeat / total_buyers)
+        buyer_mix.append({
+            "label": r["label"],
+            "first": first,
+            "repeat": repeat,
+            "first_pct": round(first_pct, 1),
+            "repeat_pct": round(repeat_pct, 1),
+            "est_first_sales": est_first_sales,
+            "est_repeat_sales": est_repeat_sales,
+            "total_sales": sales,
+        })
+    buyer_mix.sort(key=lambda x: x["total_sales"], reverse=True)
+
     # ----- 신규: 알람 (주의 필요) -----
     alerts = []
     # -1) 오늘 라이브 0회 (활성 시간인데 데이터 없음) — 가장 critical
@@ -1422,6 +1550,11 @@ def dashboard():
         hourly_trend=hourly_trend,
         acct_hourly_cum=acct_hourly_cum,
         total_row=total_row,
+        funnel_total=funnel_total,
+        funnel_top=funnel_top,
+        eff_rows=eff_rows,
+        anomalies=anomalies,
+        buyer_mix=buyer_mix,
         cur_hour=cur_hour,
         dow_summary=dow_summary,
         alerts=alerts,

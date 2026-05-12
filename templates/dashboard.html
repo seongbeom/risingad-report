@@ -460,6 +460,198 @@
         </table>
     </div>
 
+    <!-- 전환 깔때기 -->
+    <div class="card">
+        <h2>🪜 전환 깔때기 — 방문 → 회원가입 → 구매</h2>
+        <p class="card-sub">전체 합계 + 매장 top 5. 단계별 전환율로 깔때기 누수 구간 파악.</p>
+        <div style="display:grid; grid-template-columns: 1.2fr 2fr; gap:16px;">
+            <!-- 전체 합계 깔때기 -->
+            <div style="background:#f8fafd; padding:14px; border-radius:8px">
+                <div style="font-size:0.78rem; color:#888; font-weight:600; margin-bottom:8px">전 매장 합계</div>
+                <div style="display:flex; flex-direction:column; gap:8px">
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem">
+                            <span>👥 방문자</span>
+                            <strong>{{ "{:,.0f}".format(funnel_total.visitors) }}명</strong>
+                        </div>
+                        <div style="height:18px; background:#4a90d9; border-radius:3px; width:100%"></div>
+                    </div>
+                    <div style="text-align:center; font-size:0.72rem; color:#888">
+                        ↓ {{ "%.2f"|format(funnel_total.v2s_pct) if funnel_total.v2s_pct is not none else '—' }}% 가입 전환
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem">
+                            <span>📝 회원가입</span>
+                            <strong>{{ "{:,.0f}".format(funnel_total.signups) }}명</strong>
+                        </div>
+                        <div style="height:18px; background:#27ae60; border-radius:3px; width:{{ funnel_total.v2s_pct * 5 if funnel_total.v2s_pct and funnel_total.v2s_pct * 5 < 100 else 100 }}%; min-width:8%"></div>
+                    </div>
+                    <div style="text-align:center; font-size:0.72rem; color:#888">
+                        ↓ {{ "%.1f"|format(funnel_total.s2o_pct) if funnel_total.s2o_pct is not none else '—' }}% 구매 전환
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem">
+                            <span>🛒 구매</span>
+                            <strong>{{ "{:,.0f}".format(funnel_total.orders) }}건</strong>
+                        </div>
+                        <div style="height:18px; background:#e67e22; border-radius:3px; width:{{ funnel_total.v2o_pct * 30 if funnel_total.v2o_pct and funnel_total.v2o_pct * 30 < 100 else 100 }}%; min-width:4%"></div>
+                    </div>
+                </div>
+                <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #ddd; font-size:0.78rem; color:#555">
+                    🎯 종합 전환율 (방문→구매): <strong>{{ "%.2f"|format(funnel_total.v2o_pct) if funnel_total.v2o_pct is not none else '—' }}%</strong>
+                </div>
+            </div>
+            <!-- 매장별 top 5 -->
+            <div>
+                <table class="num" style="font-size:0.86rem">
+                    <thead>
+                        <tr>
+                            <th>매장</th>
+                            <th>방문</th>
+                            <th>가입</th>
+                            <th>구매</th>
+                            <th>방문→가입</th>
+                            <th>가입→구매</th>
+                            <th>방문→구매</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in funnel_top[:6] %}
+                        <tr>
+                            <td><strong>{{ f.label }}</strong></td>
+                            <td>{{ "{:,.0f}".format(f.v) }}</td>
+                            <td>{{ "{:,.0f}".format(f.s) }}</td>
+                            <td>{{ "{:,.0f}".format(f.o) }}</td>
+                            <td>{{ "%.2f"|format(f.v2s) if f.v2s is not none else '—' }}%</td>
+                            <td>{{ "%.1f"|format(f.s2o) if f.s2o is not none else '—' }}%</td>
+                            <td>{{ "%.2f"|format(f.v2o) if f.v2o is not none else '—' }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 매장 효율 랭킹 -->
+    <div class="card">
+        <h2>🏆 매장 효율 랭킹 (오늘)</h2>
+        <p class="card-sub">매장별 효율 종합 점수. RPV(방문당매출) 40% + 전환율 30% + 객단가 30% 가중 평균. 100점 = 모든 지표에서 1위.</p>
+        <table class="num" style="font-size:0.88rem">
+            <thead>
+                <tr>
+                    <th>순위</th>
+                    <th>매장</th>
+                    <th>오늘 매출</th>
+                    <th>방문당 매출 (RPV)</th>
+                    <th>전환율</th>
+                    <th>객단가</th>
+                    <th>종합 점수</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in eff_rows %}
+                <tr {% if loop.index == 1 %}style="background:#fff9e6; font-weight:600"{% endif %}>
+                    <td style="font-size:1.05rem">
+                        {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ e.rank }}{% endif %}
+                    </td>
+                    <td><strong>{{ e.label }}</strong></td>
+                    <td class="num-big">{{ "{:,.0f}".format(e.sales) }}</td>
+                    <td>{{ "{:,.0f}".format(e.rpv) }}원/명</td>
+                    <td>{{ "%.2f"|format(e.conv) if e.conv else '—' }}%</td>
+                    <td>{{ "{:,.0f}".format(e.aov) if e.aov else '—' }}원</td>
+                    <td>
+                        <strong style="color:{{ '#27ae60' if e.score >= 70 else ('#f39c12' if e.score >= 40 else '#e74c3c') }}">{{ e.score }}</strong>
+                        <span class="pace-bar" style="display:inline-block; width:90px; vertical-align:middle; margin-left:6px"><span class="fill" style="width:{{ e.score }}%; background:{{ '#27ae60' if e.score >= 70 else ('#f39c12' if e.score >= 40 else '#e74c3c') }}"></span></span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 이상 매장 감지 -->
+    {% if anomalies %}
+    <div class="card">
+        <h2>⚠️ 이상 매장 감지 (7일 평균 대비 큰 변동)</h2>
+        <p class="card-sub">현재 시각까지 누적 매출이 최근 7일 같은 시각 평균 대비 -30%↓ 또는 +50%↑ 인 매장. 평소 ±10% 변동을 크게 벗어남.</p>
+        <table class="num" style="font-size:0.88rem">
+            <thead>
+                <tr>
+                    <th>구분</th>
+                    <th>매장</th>
+                    <th>오늘 (현재 시각까지)</th>
+                    <th>7일 평균 같은 시각</th>
+                    <th>변동</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in anomalies %}
+                <tr>
+                    <td>
+                        {% if a.type == 'down' %}<span style="color:#e74c3c; font-weight:700">📉 매출 급감</span>
+                        {% else %}<span style="color:#27ae60; font-weight:700">📈 매출 급증</span>{% endif %}
+                    </td>
+                    <td><strong>{{ a.label }}</strong></td>
+                    <td class="num-big">{{ "{:,.0f}".format(a.today_at_h) }}원</td>
+                    <td>{{ "{:,.0f}".format(a.avg7) }}원</td>
+                    <td><strong style="color:{{ '#27ae60' if a.diff_pct > 0 else '#e74c3c' }}; font-size:1rem">
+                        {% if a.diff_pct > 0 %}▲{% else %}▼{% endif %} {{ "%+.1f"|format(a.diff_pct) }}%
+                    </strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- 신규 vs 재구매 매출 비중 -->
+    <div class="card">
+        <h2>🎯 신규 vs 재구매 매출 비중 (매장별)</h2>
+        <p class="card-sub">처음구매 / 재구매 비중 — 매장이 신규 유입에 의존하는지, 재구매 고객으로 가는지 파악. <em>추정 매출은 객단가 동일 가정 (카페24가 정확한 매출 분리 안 줌)</em>.</p>
+        <table class="num" style="font-size:0.88rem">
+            <thead>
+                <tr>
+                    <th>매장</th>
+                    <th>총 매출</th>
+                    <th>처음구매</th>
+                    <th>재구매</th>
+                    <th>처음구매 비중</th>
+                    <th>구성</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in buyer_mix %}
+                <tr>
+                    <td><strong>{{ b.label }}</strong></td>
+                    <td class="num-big">{{ "{:,.0f}".format(b.total_sales) }}</td>
+                    <td>{{ b.first }}건 <span class="label-sub" style="display:block; color:#aaa">~{{ "{:,.0f}".format(b.est_first_sales) }}원</span></td>
+                    <td>{{ b.repeat }}건 <span class="label-sub" style="display:block; color:#aaa">~{{ "{:,.0f}".format(b.est_repeat_sales) }}원</span></td>
+                    <td>
+                        <strong style="color:{{ '#4a90d9' if b.first_pct >= 70 else ('#9b59b6' if b.first_pct >= 40 else '#27ae60') }}">{{ "%.1f"|format(b.first_pct) }}%</strong>
+                        <span class="label-sub" style="display:block; color:#aaa">재구매 {{ "%.1f"|format(b.repeat_pct) }}%</span>
+                    </td>
+                    <td>
+                        <div style="display:flex; height:14px; width:100%; border-radius:3px; overflow:hidden">
+                            <div style="background:#4a90d9; width:{{ b.first_pct }}%" title="처음구매 {{ b.first_pct }}%"></div>
+                            <div style="background:#27ae60; width:{{ b.repeat_pct }}%" title="재구매 {{ b.repeat_pct }}%"></div>
+                        </div>
+                        <span style="font-size:0.7rem; color:#888">
+                            <span style="color:#4a90d9">▌</span>신규
+                            <span style="color:#27ae60; margin-left:4px">▌</span>재구매
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="card-sub" style="margin-top:8px; font-size:0.78rem">
+            💡 <strong>처음구매 비중 ≥ 70%</strong> (파랑) → 신규 유입 의존, 광고 끄면 매출 급락 위험.
+            <strong>40-70%</strong> (보라) → 균형.
+            <strong>&lt; 40%</strong> (녹색) → 충성 고객 기반, 안정적이지만 성장 한계 가능.
+        </p>
+    </div>
+
     <!-- 매장별 시간별 누적 매출 (오늘) -->
     <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">
