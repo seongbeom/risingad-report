@@ -347,10 +347,20 @@
                     </td>
                     <!-- 구매건수 -->
                     <td>{% if r.today.구매건수 %}{{ "{:,.0f}".format(r.today.구매건수) }}{% else %}<span class="dim">—</span>{% endif %}
+                        {% if r.yest_orders_at_hour %}
+                            <span class="label-sub" style="display:block; color:#aaa">어제 동시각 {{ "{:,.0f}".format(r.yest_orders_at_hour) }}
+                                {% if r.vs_yest_orders_at_hour_pct is not none %}
+                                    · <span class="{{ 'up' if r.vs_yest_orders_at_hour_pct>0 else ('down' if r.vs_yest_orders_at_hour_pct<0 else 'flat') }}">{{ "%+.0f"|format(r.vs_yest_orders_at_hour_pct) }}%</span>
+                                {% endif %}
+                            </span>
+                        {% endif %}
                         {% if r.today.구매개수 %}<span class="label-sub" style="display:block; color:#aaa">{{ r.today.구매개수 }}개</span>{% endif %}
                     </td>
                     <!-- 방문자수 -->
                     <td>{% if r.today.방문자수 %}{{ "{:,.0f}".format(r.today.방문자수) }}{% else %}<span class="dim">—</span>{% endif %}
+                        {% if r.yesterday.방문자수 %}
+                            <span class="label-sub" style="display:block; color:#aaa">어제 종일 {{ "{:,.0f}".format(r.yesterday.방문자수) }}</span>
+                        {% endif %}
                         {% if r.today.신규방문 is not none or r.today.재방문 is not none %}
                             <span class="label-sub" style="display:block; color:#aaa">
                                 신 {{ "{:,.0f}".format(r.today.신규방문 or 0) }} / 재 {{ "{:,.0f}".format(r.today.재방문 or 0) }}
@@ -367,7 +377,16 @@
                         {% else %}<span class="dim">—</span>{% endif %}
                     </td>
                     <!-- 객단가 -->
-                    <td>{% if r.today.객단가 %}{{ "{:,.0f}".format(r.today.객단가) }}{% else %}<span class="dim">—</span>{% endif %}</td>
+                    <td>{% if r.today.객단가 %}{{ "{:,.0f}".format(r.today.객단가) }}{% else %}<span class="dim">—</span>{% endif %}
+                        {% if r.yesterday.객단가 %}
+                            <span class="label-sub" style="display:block; color:#aaa">어제 {{ "{:,.0f}".format(r.yesterday.객단가) }}
+                                {% if r.today.객단가 and r.today.객단가 != r.yesterday.객단가 %}
+                                    {% set aov_diff = (r.today.객단가 - r.yesterday.객단가) / r.yesterday.객단가 * 100 %}
+                                    · <span class="{{ 'up' if aov_diff>0 else ('down' if aov_diff<0 else 'flat') }}">{{ "%+.0f"|format(aov_diff) }}%</span>
+                                {% endif %}
+                            </span>
+                        {% endif %}
+                    </td>
                     <!-- 회원가입 -->
                     <td>{% if r.today.회원가입 %}{{ "{:,.0f}".format(r.today.회원가입) }}{% else %}<span class="dim">—</span>{% endif %}</td>
                     <!-- 재구매 -->
@@ -458,11 +477,20 @@
         </div>
     </div>
 
-    <!-- 시간별 누적 매출 (오늘 vs 어제 동시각) -->
+    <!-- 시간별 누적 매출 (오늘 vs 어제 동시각) — 매장 선택 가능 -->
     <div class="card">
-        <h2>⏱ 시간별 누적 매출 — 오늘 vs 어제 동시각</h2>
-        <p class="card-sub">전 계정 합계. <strong>누적</strong> = 0시부터 해당 시각까지 매출 합. <strong>vs</strong> = 어제 같은 시각 누적 대비.</p>
-        <table class="num" style="font-size:0.86rem">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px">
+            <h2 style="margin:0">⏱ 시간별 누적 매출 — 오늘 vs 어제 동시각</h2>
+            <select id="hourly-trend-select" onchange="updateHourlyTrend()"
+                    style="padding:5px 10px; border:1px solid #ddd; border-radius:5px; font-size:0.85rem">
+                <option value="__total__">전 매장 합계</option>
+                {% for a in acct_hourly_cum %}
+                <option value="{{ a.id }}">{{ a.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <p class="card-sub" id="hourly-trend-sub">전 매장 합계. <strong>누적</strong> = 0시부터 해당 시각까지 매출 합. <strong>vs</strong> = 어제 같은 시각 누적 대비.</p>
+        <table class="num" id="hourly-trend-table" style="font-size:0.86rem">
             <thead>
                 <tr>
                     <th>시간</th>
@@ -473,25 +501,62 @@
                     <th>vs</th>
                 </tr>
             </thead>
-            <tbody>
-                {% for h in hourly_trend %}
-                {% if not h.is_future or h.yest_cum %}
-                <tr {% if h.is_now %}style="background:#fff9e6;font-weight:600"{% endif %} {% if h.is_future %}style="color:#bbb"{% endif %}>
-                    <td><strong>{{ "%02d"|format(h.hour) }}시</strong>{% if h.is_now %} <span style="font-size:0.7rem;color:#b89c00">●NOW</span>{% endif %}</td>
-                    <td>{% if h.today_hour is not none and h.today_hour %}{{ "{:,.0f}".format(h.today_hour) }}{% else %}<span class="dim">—</span>{% endif %}</td>
-                    <td class="num-big">{% if h.today_cum is not none and h.today_cum %}{{ "{:,.0f}".format(h.today_cum) }}{% else %}<span class="dim">—</span>{% endif %}</td>
-                    <td>{% if h.today_orders is not none and h.today_orders %}{{ h.today_orders }}{% else %}<span class="dim">—</span>{% endif %}</td>
-                    <td>{% if h.yest_cum %}{{ "{:,.0f}".format(h.yest_cum) }}{% else %}<span class="dim">—</span>{% endif %}</td>
-                    <td>
-                        {% if h.vs_pct is not none %}
-                            <span class="{{ 'up' if h.vs_pct>0 else ('down' if h.vs_pct<0 else 'flat') }}">{{ "%+.1f"|format(h.vs_pct) }}%</span>
-                        {% else %}<span class="dim">—</span>{% endif %}
-                    </td>
-                </tr>
-                {% endif %}
-                {% endfor %}
+            <tbody id="hourly-trend-tbody">
+                <!-- JS 가 채움 -->
             </tbody>
         </table>
+        <script type="application/json" id="hourly-trend-data">
+        {
+            "__total__": {
+                "label": "전 매장 합계",
+                "cells": [
+                    {% for h in hourly_trend %}
+                    {"hour": {{ h.hour }}, "today_hour": {{ h.today_hour|default(0) or 0 }}, "today_cum": {{ h.today_cum|default(0) or 0 }}, "today_orders": {{ h.today_orders|default(0) or 0 }}, "yest_cum": {{ h.yest_cum|default(0) or 0 }}, "vs_pct": {{ h.vs_pct if h.vs_pct is not none else 'null' }}, "is_now": {{ 'true' if h.is_now else 'false' }}, "is_future": {{ 'true' if h.is_future else 'false' }}}{{ ',' if not loop.last else '' }}
+                    {% endfor %}
+                ]
+            }{% for a in acct_hourly_cum %},
+            "{{ a.id }}": {
+                "label": "{{ a.label|e }}",
+                "cells": [
+                    {% for c in a.cells %}
+                    {"hour": {{ c.hour }}, "today_hour": {{ c.today_hour|default(0) or 0 }}, "today_cum": {{ c.today_cum|default(0) or 0 }}, "today_orders": {{ c.today_orders|default(0) or 0 }}, "yest_cum": {{ c.yest_cum|default(0) or 0 }}, "vs_pct": {{ c.vs_pct if c.vs_pct is not none else 'null' }}, "is_now": {{ 'true' if c.is_now else 'false' }}, "is_future": {{ 'true' if c.is_future else 'false' }}}{{ ',' if not loop.last else '' }}
+                    {% endfor %}
+                ]
+            }{% endfor %}
+        }
+        </script>
+        <script>
+        (function() {
+            const data = JSON.parse(document.getElementById('hourly-trend-data').textContent);
+            function fmt(n) { return n ? n.toLocaleString() : '—'; }
+            function renderRows(key) {
+                const d = data[key];
+                if (!d) return;
+                const tbody = document.getElementById('hourly-trend-tbody');
+                const rows = d.cells.filter(c => !c.is_future || c.yest_cum > 0).map(c => {
+                    const trStyle = c.is_now ? 'background:#fff9e6;font-weight:600' : (c.is_future ? 'color:#bbb' : '');
+                    const vsClass = c.vs_pct !== null ? (c.vs_pct > 0 ? 'up' : (c.vs_pct < 0 ? 'down' : 'flat')) : '';
+                    const vsHtml = c.vs_pct !== null ? `<span class="${vsClass}">${c.vs_pct > 0 ? '+' : ''}${c.vs_pct.toFixed(1)}%</span>` : '<span class="dim">—</span>';
+                    return `<tr style="${trStyle}">
+                        <td><strong>${String(c.hour).padStart(2,'0')}시</strong>${c.is_now ? ' <span style="font-size:0.7rem;color:#b89c00">●NOW</span>' : ''}</td>
+                        <td>${c.today_hour ? fmt(c.today_hour) : '<span class="dim">—</span>'}</td>
+                        <td class="num-big">${c.today_cum ? fmt(c.today_cum) : '<span class="dim">—</span>'}</td>
+                        <td>${c.today_orders ? c.today_orders : '<span class="dim">—</span>'}</td>
+                        <td>${c.yest_cum ? fmt(c.yest_cum) : '<span class="dim">—</span>'}</td>
+                        <td>${vsHtml}</td>
+                    </tr>`;
+                }).join('');
+                tbody.innerHTML = rows;
+                const sub = document.getElementById('hourly-trend-sub');
+                sub.innerHTML = `<strong>${d.label}</strong> · <strong>누적</strong> = 0시부터 해당 시각까지 매출 합. <strong>vs</strong> = 어제 같은 시각 누적 대비.`;
+            }
+            window.updateHourlyTrend = function() {
+                const sel = document.getElementById('hourly-trend-select');
+                renderRows(sel.value);
+            };
+            renderRows('__total__');
+        })();
+        </script>
     </div>
 
     <!-- 전환 깔때기 -->

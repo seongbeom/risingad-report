@@ -860,10 +860,13 @@ def dashboard():
     hour_buckets = {}
     # account_id -> date -> dict[hour] = 매출
     by_acct_date_hour = {}
+    # 구매건수 시간별 (어제 동시각 비교용)
+    by_acct_date_hour_orders = {}
     for r in all_hourly:
         if r["date"] != today:
             hour_buckets.setdefault(r["account_id"], [[] for _ in range(24)])[r["hour"]].append(r.get("매출") or 0)
         by_acct_date_hour.setdefault(r["account_id"], {}).setdefault(r["date"], {})[r["hour"]] = r.get("매출") or 0
+        by_acct_date_hour_orders.setdefault(r["account_id"], {}).setdefault(r["date"], {})[r["hour"]] = r.get("구매건수") or 0
 
     def _pct(cur, ref):
         if cur is None or ref is None or not ref:
@@ -899,6 +902,9 @@ def dashboard():
         # 어제 동시각 누적 매출 (어제 0~cur_hour 합) — 사과대사과 비교 핵심
         ydh = by_acct_date_hour.get(aid, {}).get(yesterday, {})
         yest_at_hour = sum(ydh.get(h, 0) for h in range(cur_hour + 1))
+        # 어제 동시각 누적 구매건수 (방문자는 시간별 데이터 없어서 종일만 비교)
+        ydh_orders = by_acct_date_hour_orders.get(aid, {}).get(yesterday, {})
+        yest_orders_at_hour = sum(ydh_orders.get(h, 0) for h in range(cur_hour + 1))
 
         # 페이스 계산: 최근 7일 평균에서 0~cur_hour 매출 / 전체 매출 = 누적 비중
         # 평균이 의미 있어야 함 (3일 이상 표본). 매출 0 인 계정 제외
@@ -958,7 +964,9 @@ def dashboard():
                 "구매개수": m_yest.get("구매개수"),
             },
             "yest_at_hour": yest_at_hour,  # 어제 같은 시각까지 누적 매출
+            "yest_orders_at_hour": yest_orders_at_hour,  # 어제 같은 시각 누적 구매건수
             "vs_yest_at_hour_pct": _pct(today_sales, yest_at_hour),
+            "vs_yest_orders_at_hour_pct": _pct(today_orders, yest_orders_at_hour),
             "cum_pct_at_hour": cum_pct_at_hour,  # 7일 평균 기준 현재 시각 진행률
             "expected_eod": expected_eod,
             "last7_avg_sales": last7_avg_sales,
@@ -1165,6 +1173,7 @@ def dashboard():
         aid = r["id"]
         today_hours_map = by_acct_date_hour.get(aid, {}).get(today, {})
         yest_hours_map = by_acct_date_hour.get(aid, {}).get(yesterday, {})
+        today_orders_map = by_acct_date_hour_orders.get(aid, {}).get(today, {})
         cells = []
         cum_t = 0
         cum_y = 0
@@ -1180,6 +1189,7 @@ def dashboard():
                 "hour": h,
                 "today_hour": t if h <= cur_hour else None,
                 "today_cum": cum_t if h <= cur_hour else None,
+                "today_orders": today_orders_map.get(h, 0) if h <= cur_hour else None,
                 "yest_hour": y,
                 "yest_cum": cum_y,
                 "vs_pct": _pct(cum_t, cum_y) if (cum_y and h <= cur_hour) else None,
