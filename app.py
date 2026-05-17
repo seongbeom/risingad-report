@@ -801,6 +801,55 @@ def admin_backfill_dates():
     return jsonify({"ok": True, "accounts": target_aids, "queued_dates": dates, "skip_sheet": skip_sheet, "total": len(target_aids) * len(dates)})
 
 
+@app.route("/admin/product_collect", methods=["POST"])
+def admin_product_collect():
+    """localhost 전용 product_collect 트리거. service 컨텍스트(DISPLAY=:99) 에서 실행.
+    body:
+      account_id=<id> | all (선택, 기본 all)
+    """
+    remote = request.remote_addr or ""
+    if remote not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    account_id = request.form.get("account_id", "all").strip()
+    today = datetime.now().strftime("%Y-%m-%d")
+    if account_id == "all":
+        target = db.list_accounts()
+    else:
+        a = db.get_account(account_id)
+        if not a:
+            return jsonify({"error": "account not found"}), 404
+        target = [a]
+
+    def _run_one():
+        ok = 0
+        err = 0
+        for i, a in enumerate(target):
+            _wait_for_memory(f"product before {a['id']}")
+            with _run_lock:
+                try:
+                    rows = scraper.scrape_product_analytics(a)
+                    if rows:
+                        db.upsert_product_metrics(a["id"], today, rows)
+                        print(f"[product-collect-manual] {a['id']} {len(rows)}건 저장", flush=True)
+                        ok += 1
+                    else:
+                        print(f"[product-collect-manual] {a['id']} 0건", flush=True)
+                except Exception:
+                    err += 1
+                    traceback.print_exc()
+            if i < len(target) - 1:
+                time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
+        _kill_leftover_chromium()
+        print(f"[product-collect-manual] done ok={ok} err={err}", flush=True)
+        slack_notify(
+            f"product-collect (manual) 완료 ({today}) · 성공 {ok} / 실패 {err}",
+            severity="report" if err == 0 else "warn",
+        )
+
+    threading.Thread(target=_run_one, daemon=True).start()
+    return jsonify({"ok": True, "accounts": [a["id"] for a in target], "date": today})
+
+
 @app.route("/accounts/<account_id>/update", methods=["POST"])
 @login_required
 def update_account_route(account_id):
