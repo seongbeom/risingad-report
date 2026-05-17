@@ -1001,27 +1001,27 @@ def scrape_product_analytics(account):
         # 추가 wait — table 렌더 완료
         page.wait_for_timeout(3000)
 
-        # 모든 table 추출 — cell 별로 text + title + anchor href/onclick 까지 같이 가져옴.
-        # cafe24 페이지가 긴 상품명을 "..." 로 잘라 보여주는 케이스가 있어서 title/anchor 폴백 필요.
+        # 모든 table 추출.
+        # cafe24 애널리틱스는 Radix 의 tooltip-trigger 버튼으로 긴 상품명을 "(...)" 로 잘라 보여줌.
+        # 풀텍스트는 visually-hidden span (role="tooltip") 에 항상 존재하고 aria-describedby 로 링크됨.
         tables = af.evaluate("""() => {
+            const cellFullText = (td) => {
+                // tooltip-trigger 가 있으면 aria-describedby → role=tooltip span 의 textContent 우선
+                const trigger = td.querySelector('button[data-slot="tooltip-trigger"], [aria-describedby]');
+                if (trigger) {
+                    const id = trigger.getAttribute('aria-describedby');
+                    if (id) {
+                        const tt = document.getElementById(id);
+                        if (tt && tt.textContent) return tt.textContent.trim();
+                    }
+                }
+                return (td.textContent || '').replace(/\s+/g, ' ').trim();
+            };
             const out = [];
             document.querySelectorAll('table').forEach((t, i) => {
-                const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.innerText || '').trim());
+                const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.textContent || '').replace(/\s+/g, ' ').trim());
                 const rows = Array.from(t.querySelectorAll('tbody tr')).map(r =>
-                    Array.from(r.querySelectorAll('td')).map(td => {
-                        // textContent 는 CSS text-overflow:ellipsis 영향 받지 않고 원본 DOM 텍스트 반환.
-                        // innerText 는 "긴이름(123)" 가 "긴이름(..." 로 잘려 나옴.
-                        const text = (td.textContent || '').replace(/\s+/g, ' ').trim();
-                        const title = td.getAttribute('title') || '';
-                        const anchors = Array.from(td.querySelectorAll('a')).map(a => ({
-                            href: a.getAttribute('href') || '',
-                            onclick: a.getAttribute('onclick') || '',
-                            title: a.getAttribute('title') || '',
-                            text: (a.textContent || '').replace(/\s+/g, ' ').trim(),
-                        }));
-                        const spans = Array.from(td.querySelectorAll('span[title]')).map(s => s.getAttribute('title') || '');
-                        return {text, title, anchors, spans};
-                    })
+                    Array.from(r.querySelectorAll('td')).map(td => ({text: cellFullText(td)}))
                 );
                 out.push({idx: i, headers, rows});
             });
@@ -1048,42 +1048,6 @@ def scrape_product_analytics(account):
                 return m.group(1).strip(), m.group(2)
             return s.strip(), None
 
-        def _extract_product(cell):
-            """cell = {text, title, anchors[], spans[]} → (name, no)
-            우선순위:
-            1) title 속성 안에 '상품명(상품번호)' 풀텍스트
-            2) anchor onclick/href 에서 product_no 추출 + 이름은 anchor text or title
-            3) span[title] 안의 풀텍스트
-            4) cell text 그대로 파싱 (잘려도 그대로 저장)
-            """
-            text = cell.get("text", "")
-            # 1) title
-            for src in [cell.get("title", "")] + cell.get("spans", []):
-                if src and "(" in src and ")" in src:
-                    n, no = _parse_product_pair(src)
-                    if no:
-                        return n, no
-            # 2) anchor
-            for a in cell.get("anchors", []):
-                # onclick/href 에서 product_no/productNo/product_seq 패턴 추출
-                m = _re.search(r"product[_-]?no[\"'\s:=]+(\d+)", (a.get("onclick", "") + " " + a.get("href", "")), _re.IGNORECASE)
-                if m:
-                    no = m.group(1)
-                    name_src = a.get("title") or a.get("text") or text
-                    n, _ = _parse_product_pair(name_src)
-                    return n, no
-                # title 폴백
-                if a.get("title") and "(" in a["title"]:
-                    n, no = _parse_product_pair(a["title"])
-                    if no:
-                        return n, no
-            # 3) cell text 폴백
-            n, no = _parse_product_pair(text)
-            # text 가 잘렸다면 (...) 형태 — name 끝의 "(..." 자르기
-            if "(..." in n:
-                n = n.split("(...")[0].strip()
-            return n, no
-
         result_rows = []
         for t in tables:
             cat = _classify(t["headers"])
@@ -1100,8 +1064,8 @@ def scrape_product_analytics(account):
                         break
                 if prod_col is None:
                     prod_col = 1 if len(r) > 1 else 0
-                cell = r[prod_col] if prod_col < len(r) else {"text": "", "title": "", "anchors": [], "spans": []}
-                name, no = _extract_product(cell)
+                cell = r[prod_col] if prod_col < len(r) else {"text": ""}
+                name, no = _parse_product_pair(cell.get("text", "") if isinstance(cell, dict) else cell)
                 # 순위
                 rank = rank_idx
                 if t["headers"] and "순위" in t["headers"][0]:
@@ -1117,7 +1081,7 @@ def scrape_product_analytics(account):
                     "rank": rank,
                     "product_no": no,
                     "product_name": name,
-                    "raw": {"headers": t["headers"], "row": flat_row, "prod_cell": cell},
+                    "raw": {"headers": t["headers"], "row": flat_row},
                 })
 
         _phase(f"추출 완료 — {len(result_rows)}건")
