@@ -166,9 +166,35 @@ def _wait_for_memory(label=""):
 
 SCRAPE_PER_ATTEMPT_TIMEOUT_SEC = 480  # 8분 - 캡챠 풀이 포함 정상 실행 ~2~3분, 그 이상 hang 으로 간주
 
+# 연속 hang 카운터 — playwright/chromium 누적 상태로 모든 launch 가 hang 하는 케이스
+# 3회 연속이면 service self-restart 트리거 (사용자 발견 전 자체 복구)
+_consecutive_hangs = 0
+CONSECUTIVE_HANG_LIMIT = 3
+
+
+def _self_restart_service(reason):
+    """systemctl restart cafe24 - subprocess 로 비동기 호출.
+    Restart=always 이므로 systemd 가 자동 재시작. startup catch-up 으로 누락 회복."""
+    print(f"[self-heal] 서비스 self-restart: {reason}", flush=True)
+    slack_notify(
+        f"🆘 *서비스 self-heal restart* — {reason}\n"
+        f"누적 hang 으로 chromium 모든 launch 가 stuck. systemctl restart 트리거.\n"
+        f"30초 뒤 startup catch-up 으로 자동 회복 예정.",
+        severity="critical",
+    )
+    try:
+        # 약간 지연 후 restart (Slack 알림 전송 시간 확보)
+        subprocess.Popen(
+            ["bash", "-c", "sleep 5; sudo systemctl restart cafe24"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        traceback.print_exc()
+
 
 def _run_scrape_with_timeout(account, target_date, timeout_sec):
     """별도 thread 로 run_scrape 호출, timeout 내 끝나지 않으면 chromium kill 하고 raise."""
+    global _consecutive_hangs
     result_holder = {"result": None, "exc": None}
 
     def _target():
@@ -185,13 +211,21 @@ def _run_scrape_with_timeout(account, target_date, timeout_sec):
         print(f"[{account['id']}] scrape timeout {timeout_sec}s - chromium 강제 종료")
         _kill_leftover_chromium()
         t.join(timeout=30)  # chromium 죽으면 thread 도 곧 정리됨
+        _consecutive_hangs += 1
         slack_notify(
-            f"`{account['id']}` 스크래핑 {timeout_sec}s 초과 → chromium 강제 종료. 다음 attempt 또는 자동 백필이 재시도합니다.",
+            f"`{account['id']}` 스크래핑 {timeout_sec}s 초과 → chromium 강제 종료 "
+            f"(연속 hang {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT})",
             severity="hang",
         )
+        # 연속 hang 임계치 도달 → self-restart
+        if _consecutive_hangs >= CONSECUTIVE_HANG_LIMIT:
+            _self_restart_service(f"{CONSECUTIVE_HANG_LIMIT}회 연속 hang 감지")
+            _consecutive_hangs = 0  # restart 후 서비스 종료될 거지만 안전 차원
         raise TimeoutError(f"scrape timeout {timeout_sec}s - chromium 강제 종료")
     if result_holder["exc"]:
         raise result_holder["exc"]
+    # 정상 완료 → 카운터 리셋
+    _consecutive_hangs = 0
     return result_holder["result"]
 
 
@@ -467,7 +501,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -508,6 +542,15 @@ def reload_schedules():
         id="db_backup", replace_existing=True,
     )
     print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
+
+    # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
+    # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
+    scheduler.add_job(
+        lambda: _self_restart_service("daily 04:30 정기 restart - 누적 상태 리셋"),
+        "cron", hour=4, minute=30,
+        id="daily_restart", replace_existing=True,
+    )
+    print(f"[scheduler] daily_restart: 매일 04:30 (chromium 누적 상태 리셋)")
 
     # 서버 시작 시점이 활성 시간이고 오늘 라이브가 한 번도 안 돌았으면
     # 30초 뒤 1회 강제 트리거. service restart 가 라이브 누락으로 이어지지 않게.
