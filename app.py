@@ -492,6 +492,163 @@ def _product_collect_job():
     )
 
 
+def _disk_free_mb(path="/opt/cafe24"):
+    """지정 경로 마운트의 사용 가능 공간 MB. 실패 시 None."""
+    try:
+        st = os.statvfs(path)
+        return (st.f_bavail * st.f_frsize) // (1024 * 1024)
+    except Exception:
+        return None
+
+
+# heartbeat 중복 알림 방지 — 같은 사유는 6시간에 한 번만.
+_heartbeat_last_alert = {}
+HEARTBEAT_ALERT_COOLDOWN_SEC = 6 * 3600
+
+
+def _heartbeat_alert(key, text, severity="warn"):
+    now = time.time()
+    last = _heartbeat_last_alert.get(key, 0)
+    if now - last < HEARTBEAT_ALERT_COOLDOWN_SEC:
+        print(f"[heartbeat] {key} 알림 쿨다운 중 ({int((now-last)/60)}분 경과) — skip")
+        return
+    _heartbeat_last_alert[key] = now
+    slack_notify(text, severity=severity)
+
+
+def _heartbeat_job():
+    """매시 정각 self-check. 다음 이상치를 잡아서 slack 알림:
+    - 디스크 free < 1GB (warn), < 300MB (critical) — 백업 자동 정리도 시도
+    - 메모리 free < 150MB 가 지속 (warn) — 좀비 chromium 자동 정리
+    - daily_finalize 가 어제 데이터 0건 (warn)
+    - 활성 시간대 + live 잡 등록됐는데 오늘 metrics 0건 (warn)
+    - 06:00 product_collect 가 오늘 0건 (warn) — 단 06:00 이후만 검사
+    - scheduler 잡 누락 (critical)
+
+    각 사유 6시간 쿨다운으로 중복 알림 방지.
+    """
+    try:
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        problems = []
+
+        # 1) scheduler 잡 누락
+        required_jobs = {"daily_finalize", "db_backup", "daily_restart", "product_collect"}
+        live = db.get_live_settings()
+        if live["interval_min"] > 0:
+            required_jobs.add("live_global")
+        registered = {j.id for j in scheduler.get_jobs()}
+        missing = required_jobs - registered
+        if missing:
+            _heartbeat_alert(
+                f"missing_jobs",
+                f"🆘 스케줄러 잡 누락: {', '.join(sorted(missing))}\n현재 등록: {', '.join(sorted(registered))}",
+                severity="critical",
+            )
+            problems.append(f"missing_jobs={missing}")
+
+        # 2) 디스크
+        free_disk = _disk_free_mb()
+        if free_disk is not None:
+            if free_disk < 300:
+                # 즉시 정리 시도
+                try:
+                    backup_dir = Path("data/backups")
+                    if backup_dir.exists():
+                        old = sorted(backup_dir.glob("cafe24_*.db"))[:-3]  # 최근 3개 빼고 다 삭제
+                        for f in old:
+                            f.unlink()
+                        print(f"[heartbeat] 디스크 부족 → 백업 {len(old)}개 emergency 정리")
+                except Exception:
+                    traceback.print_exc()
+                _heartbeat_alert(
+                    "disk_critical",
+                    f"🆘 디스크 위험: free={free_disk}MB (<300MB). 백업 emergency 정리 시도. 수동 점검 필요.",
+                    severity="critical",
+                )
+                problems.append(f"disk={free_disk}MB")
+            elif free_disk < 1024:
+                _heartbeat_alert(
+                    "disk_warn",
+                    f"⚠️ 디스크 여유 적음: free={free_disk}MB (<1GB).",
+                    severity="warn",
+                )
+                problems.append(f"disk={free_disk}MB")
+
+        # 3) 메모리 (좀비 chromium 누적 케이스)
+        free_mem = _free_memory_mb()
+        if free_mem is not None and free_mem < 150 and not _running:
+            # 실행 중 잡 없는데도 메모리 부족 → 좀비
+            _kill_leftover_chromium()
+            new_free = _free_memory_mb()
+            print(f"[heartbeat] 좀비 chromium 정리: {free_mem}MB → {new_free}MB")
+            if new_free is not None and new_free < 150:
+                _heartbeat_alert(
+                    "mem_low",
+                    f"⚠️ 메모리 부족 지속: free={new_free}MB. chromium 정리 후에도 회복 안 됨.",
+                    severity="warn",
+                )
+                problems.append(f"mem={new_free}MB")
+
+        # 4) 어제 daily_finalize 결과 (08시 이후만 — 03시 잡이 끝날 시간 확보)
+        if now.hour >= 8:
+            try:
+                with db.db_conn() as conn:
+                    n_y = conn.execute(
+                        "SELECT COUNT(*) FROM metrics WHERE date=? AND 매출>0", (yesterday,)
+                    ).fetchone()[0]
+                total_acc = len(db.list_accounts())
+                if n_y == 0:
+                    _heartbeat_alert(
+                        f"daily_finalize_empty_{yesterday}",
+                        f"⚠️ daily_finalize ({yesterday}) 결과 0건. 03:00 잡이 실패했을 가능성.",
+                        severity="warn",
+                    )
+                    problems.append(f"daily_finalize_empty")
+                elif n_y < total_acc * 0.5:
+                    _heartbeat_alert(
+                        f"daily_finalize_partial_{yesterday}",
+                        f"⚠️ daily_finalize ({yesterday}) {n_y}/{total_acc} 계정만 매출>0. 절반 이상 누락.",
+                        severity="warn",
+                    )
+                    problems.append(f"daily_finalize_partial={n_y}/{total_acc}")
+            except Exception:
+                traceback.print_exc()
+
+        # 5) 오늘 product_collect (07시 이후만 — 06:00 잡 끝날 시간)
+        if now.hour >= 7:
+            try:
+                with db.db_conn() as conn:
+                    n_p = conn.execute(
+                        "SELECT COUNT(DISTINCT account_id) FROM product_metrics WHERE date=?", (today,)
+                    ).fetchone()[0]
+                total_acc = len(db.list_accounts())
+                if n_p == 0:
+                    _heartbeat_alert(
+                        f"product_collect_empty_{today}",
+                        f"⚠️ product_collect ({today}) 결과 0계정. 06:00 잡이 실패했을 가능성.",
+                        severity="warn",
+                    )
+                    problems.append(f"product_empty")
+                elif n_p < total_acc * 0.5:
+                    _heartbeat_alert(
+                        f"product_collect_partial_{today}",
+                        f"⚠️ product_collect ({today}) {n_p}/{total_acc} 계정만 수집됨.",
+                        severity="warn",
+                    )
+                    problems.append(f"product_partial={n_p}/{total_acc}")
+            except Exception:
+                traceback.print_exc()
+
+        if problems:
+            print(f"[heartbeat] {now.strftime('%H:%M')} 이상 감지: {problems}")
+        else:
+            print(f"[heartbeat] {now.strftime('%H:%M')} OK free_mem={free_mem}MB free_disk={free_disk}MB jobs={len(registered)}")
+    except Exception:
+        traceback.print_exc()
+
+
 def _db_backup_job():
     """매일 04:00 sqlite DB backup. 7일 이상 된 백업 자동 정리.
     sqlite backup API 를 써서 트랜잭션 중에도 일관성 보장."""
@@ -537,7 +694,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "heartbeat"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -595,6 +752,14 @@ def reload_schedules():
         id="daily_restart", replace_existing=True,
     )
     print(f"[scheduler] daily_restart: 매일 04:30 (chromium 누적 상태 리셋)")
+
+    # 매시 정각 self-check (디스크/메모리/잡 누락/잡 결과 누락)
+    scheduler.add_job(
+        _heartbeat_job, "cron",
+        minute=0,
+        id="heartbeat", replace_existing=True,
+    )
+    print(f"[scheduler] heartbeat: 매시 정각 self-check")
 
     # 서버 시작 시점이 활성 시간이고 오늘 라이브가 한 번도 안 돌았으면
     # 30초 뒤 1회 강제 트리거. service restart 가 라이브 누락으로 이어지지 않게.
