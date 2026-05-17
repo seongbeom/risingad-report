@@ -1001,34 +1001,60 @@ def scrape_product_analytics(account):
         # 추가 wait — table 렌더 완료
         page.wait_for_timeout(3000)
 
-        # Radix tooltip-trigger 들을 모두 hover 해서 aria-describedby 의 role=tooltip span 채워둠.
-        # 풀 상품명 + 상품번호 가 이 hidden span 안에만 들어있음 (시각 truncate 우회).
-        _phase("tooltip 풀텍스트 캐시")
-        try:
-            triggers = af.locator('button[data-slot="tooltip-trigger"]')
-            n = triggers.count()
-            for i in range(n):
-                try:
-                    triggers.nth(i).hover(timeout=2000)
-                    page.wait_for_timeout(80)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        page.wait_for_timeout(500)
+        # Radix tooltip: 각 trigger 를 순차 hover 해서 풀텍스트 읽어옴. 한 번에 하나만 가능.
+        # 결과: tooltip 매핑 {trigger-button-index → fulltext}
+        _phase("tooltip 풀텍스트 수집")
+        tooltip_map = af.evaluate(r"""async () => {
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+            const triggers = Array.from(document.querySelectorAll('button[data-slot="tooltip-trigger"]'));
+            const out = [];
+            for (let i = 0; i < triggers.length; i++) {
+                const btn = triggers[i];
+                // Radix 는 pointer 이벤트로 tooltip 띄움
+                const rect = btn.getBoundingClientRect();
+                const eventInit = {bubbles: true, cancelable: true, clientX: rect.left + 4, clientY: rect.top + 4, pointerType: 'mouse'};
+                btn.dispatchEvent(new PointerEvent('pointerover', eventInit));
+                btn.dispatchEvent(new PointerEvent('pointerenter', eventInit));
+                btn.dispatchEvent(new MouseEvent('mouseover', eventInit));
+                btn.dispatchEvent(new MouseEvent('mouseenter', eventInit));
+                btn.focus();
+                await sleep(60);
+                // tooltip 텍스트 읽기 — aria-describedby 우선, fallback role=tooltip
+                let txt = '';
+                const id = btn.getAttribute('aria-describedby');
+                if (id) {
+                    const tt = document.getElementById(id);
+                    if (tt) txt = (tt.textContent || '').replace(/\s+/g, ' ').trim();
+                }
+                if (!txt) {
+                    const tt2 = document.querySelector('[role="tooltip"]');
+                    if (tt2) txt = (tt2.textContent || '').replace(/\s+/g, ' ').trim();
+                }
+                out.push({idx: i, text: txt, visible: (btn.textContent || '').trim()});
+                // hover 해제
+                btn.dispatchEvent(new PointerEvent('pointerleave', eventInit));
+                btn.dispatchEvent(new MouseEvent('mouseleave', eventInit));
+                btn.blur();
+                await sleep(20);
+            }
+            return out;
+        }""")
+        # trigger-button 의 DOM 순서대로 매핑된 풀텍스트.
+        # 같은 trigger 가 fresh evaluate 에서도 같은 순서로 잡히도록 셀별 trigger 인덱스를 evaluate 안에서 부여함.
 
-        # 테이블 추출. tooltip-trigger 가 있으면 aria-describedby → role=tooltip 의 풀텍스트 사용.
-        tables = af.evaluate("""() => {
+        tables = af.evaluate(r"""(tooltipMap) => {
+            const triggers = Array.from(document.querySelectorAll('button[data-slot="tooltip-trigger"]'));
+            const triggerIndex = new Map();
+            triggers.forEach((b, i) => triggerIndex.set(b, i));
+            const lookup = new Map();
+            (tooltipMap || []).forEach(m => lookup.set(m.idx, m.text));
+
             const cellFullText = (td) => {
-                const trigger = td.querySelector('button[data-slot="tooltip-trigger"], [aria-describedby]');
-                if (trigger) {
-                    const id = trigger.getAttribute('aria-describedby');
-                    if (id) {
-                        const tt = document.getElementById(id);
-                        if (tt && tt.textContent && tt.textContent.trim().length > 0) {
-                            return tt.textContent.replace(/\s+/g, ' ').trim();
-                        }
-                    }
+                const tr = td.querySelector('button[data-slot="tooltip-trigger"]');
+                if (tr) {
+                    const idx = triggerIndex.get(tr);
+                    const txt = lookup.get(idx);
+                    if (txt) return txt;
                 }
                 return (td.textContent || '').replace(/\s+/g, ' ').trim();
             };
@@ -1041,7 +1067,7 @@ def scrape_product_analytics(account):
                 out.push({idx: i, headers, rows});
             });
             return out;
-        }""")
+        }""", tooltip_map)
 
         # category 매핑 — 헤더 키워드로 의미 추정
         def _classify(headers):
