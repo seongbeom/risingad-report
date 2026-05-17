@@ -122,6 +122,23 @@ def init_db():
                 value TEXT
             );
 
+            -- 카페24 상품 분석 데이터 (베스트/급상승/전환율 등 top 5)
+            -- category: 베스트_매출 / 전환율_TOP / 급상승_변화량 / 판매액_순위
+            CREATE TABLE IF NOT EXISTS product_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                rank INTEGER NOT NULL,
+                product_no TEXT,
+                product_name TEXT,
+                raw_json TEXT,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                UNIQUE(account_id, date, category, rank),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_product_metrics_lookup ON product_metrics(account_id, date, category);
+
             -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
             CREATE TABLE IF NOT EXISTS capsolver_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -287,6 +304,63 @@ def list_metrics_hourly_range(account_id, start_date, end_date):
     sql += " ORDER BY date ASC, hour ASC"
     with db_conn() as conn:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def upsert_product_metrics(account_id, date, rows):
+    """상품 분석 데이터 일괄 upsert.
+    rows: [{'category': '베스트_매출', 'rank': 1, 'product_no': '5513', 'product_name': '...', 'raw_json': '...'}]"""
+    import json as _json
+    with db_conn() as conn:
+        # 같은 (account, date) 의 기존 데이터 삭제 후 재입력 (간단)
+        conn.execute("DELETE FROM product_metrics WHERE account_id=? AND date=?", (account_id, date))
+        for r in rows:
+            conn.execute(
+                """INSERT INTO product_metrics (account_id, date, category, rank, product_no, product_name, raw_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (account_id, date, r["category"], r["rank"], r.get("product_no"), r.get("product_name"),
+                 _json.dumps(r.get("raw"), ensure_ascii=False) if r.get("raw") is not None else None),
+            )
+
+
+def list_product_metrics(account_id=None, date=None, category=None):
+    """상품 분석 데이터 조회. 최근 데이터 우선."""
+    import json as _json
+    sql = "SELECT * FROM product_metrics WHERE 1=1"
+    params = []
+    if account_id:
+        if isinstance(account_id, (list, tuple)):
+            sql += f" AND account_id IN ({','.join('?' * len(account_id))})"
+            params.extend(account_id)
+        else:
+            sql += " AND account_id=?"
+            params.append(account_id)
+    if date:
+        sql += " AND date=?"
+        params.append(date)
+    if category:
+        sql += " AND category=?"
+        params.append(category)
+    sql += " ORDER BY date DESC, category, rank ASC"
+    with db_conn() as conn:
+        out = []
+        for r in conn.execute(sql, params).fetchall():
+            d = dict(r)
+            try:
+                d["raw"] = _json.loads(d["raw_json"]) if d["raw_json"] else None
+            except Exception:
+                d["raw"] = None
+            out.append(d)
+        return out
+
+
+def latest_product_collect_date(account_id):
+    """가장 최근에 수집한 상품 분석 날짜. 없으면 None."""
+    with db_conn() as conn:
+        r = conn.execute(
+            "SELECT MAX(date) FROM product_metrics WHERE account_id=?",
+            (account_id,),
+        ).fetchone()
+        return r[0] if r else None
 
 
 def count_metrics_hourly(account_id, date):

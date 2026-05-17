@@ -952,6 +952,126 @@ def run_scrape_range(account, start_date, end_date):
     return results
 
 
+def scrape_product_analytics(account):
+    """카페24 애널리틱스 '상품 분석' 페이지 → 베스트/급상승/전환율/판매액 top 5 추출.
+    무료 등급에서 노출되는 데이터만 가져옴 (Premium '전체보기'는 사용 안 함)."""
+    import re as _re
+    cafe24_id = account["cafe24_id"]
+    aid = account.get("id", cafe24_id)
+    base = f"https://{cafe24_id}.cafe24.com"
+
+    def _phase(name):
+        print(f"[{aid}] product phase: {name}", flush=True)
+
+    with sync_playwright() as p:
+        _phase("chromium launch")
+        browser = p.chromium.launch(headless=False, slow_mo=100)
+        session_file = _session_path(account["id"])
+        if session_file.exists():
+            context = browser.new_context(storage_state=str(session_file))
+        else:
+            context = browser.new_context()
+        context.set_default_timeout(60000)
+        context.set_default_navigation_timeout(60000)
+        page = context.new_page()
+        _phase("ensure_login")
+        ensure_login(page, context, account)
+
+        # 카페24 애널리틱스 dashboard 로딩
+        _phase("dashboard 진입")
+        page.goto(f"{base}/disp/admin/shop1/menu/cafe24analytics?type=best",
+                  wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(6000)
+
+        # iframe 안의 '상품 분석' 클릭 → /products/by-product
+        _phase("상품 분석 클릭")
+        af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
+        if not af:
+            browser.close()
+            raise RuntimeError("adminFrameContent iframe 못 찾음")
+        try:
+            af.locator("text=상품 분석").first.click(timeout=10000)
+        except Exception as e:
+            browser.close()
+            raise RuntimeError(f"'상품 분석' 클릭 실패: {e}")
+        page.wait_for_timeout(5000)
+
+        af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
+        _phase(f"by-product 페이지 (url={af.url})")
+        # 추가 wait — table 렌더 완료
+        page.wait_for_timeout(3000)
+
+        # 모든 table 추출
+        tables = af.evaluate("""() => {
+            const out = [];
+            document.querySelectorAll('table').forEach((t, i) => {
+                const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.innerText || '').trim());
+                const rows = Array.from(t.querySelectorAll('tbody tr')).map(r =>
+                    Array.from(r.querySelectorAll('td')).map(td => (td.innerText || '').trim())
+                );
+                out.push({idx: i, headers, rows});
+            });
+            return out;
+        }""")
+
+        # category 매핑 — 헤더 키워드로 의미 추정
+        def _classify(headers):
+            joined = " ".join(headers)
+            if "증감" in joined:
+                return "급상승_변화량"
+            if "노출" in joined and "%" in joined:
+                return "전환율_TOP"
+            if "판매금액" in joined:
+                return "베스트_매출"
+            if "판매액" in joined:
+                return "판매액_순위"
+            return None
+
+        def _parse_product(s):
+            """'상품명(상품번호)' → (name, no)"""
+            m = _re.match(r"^(.+?)\((\d+)\)$", s.strip())
+            if m:
+                return m.group(1).strip(), m.group(2)
+            return s.strip(), None
+
+        result_rows = []
+        for t in tables:
+            cat = _classify(t["headers"])
+            if not cat:
+                continue
+            for rank_idx, r in enumerate(t["rows"], start=1):
+                if not r:
+                    continue
+                # 상품명 추출 — 헤더에 '상품명(상품번호)' 컬럼 위치 찾기
+                prod_col = None
+                for i, h in enumerate(t["headers"]):
+                    if "상품명" in h:
+                        prod_col = i
+                        break
+                product_str = r[prod_col] if prod_col is not None and prod_col < len(r) else (r[1] if len(r) > 1 else "")
+                name, no = _parse_product(product_str)
+                # 순위 — 헤더에 '순위' 있으면 첫 컬럼이 순위
+                rank = rank_idx
+                if t["headers"] and "순위" in t["headers"][0]:
+                    try:
+                        rank = int(r[0])
+                    except (ValueError, IndexError):
+                        pass
+                result_rows.append({
+                    "category": cat,
+                    "rank": rank,
+                    "product_no": no,
+                    "product_name": name,
+                    "raw": {"headers": t["headers"], "row": r},
+                })
+
+        _phase(f"추출 완료 — {len(result_rows)}건")
+        context.storage_state(path=str(session_file))
+        browser.close()
+
+    return result_rows
+
+
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()

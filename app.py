@@ -456,6 +456,42 @@ def _auto_backfill_missing(today, deadline=None):
     _kill_leftover_chromium()
 
 
+def _product_collect_job():
+    """매일 06:00 - 모든 매장의 카페24 애널리틱스 '상품 분석' 페이지 top 5 데이터 수집.
+    무료 등급 노출분만 (베스트/급상승/전환율/판매액 각 5건)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    accounts = db.list_accounts()
+    print(f"[product-collect] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
+    cycle_deadline = time.monotonic() + max(30 * 60, len(accounts) * 4 * 60)
+    ok = 0
+    err = 0
+    for i, a in enumerate(accounts):
+        if time.monotonic() > cycle_deadline:
+            print(f"[product-collect] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
+            break
+        _wait_for_memory(f"product before {a['id']}")
+        with _run_lock:  # 라이브 잡과 직렬화
+            try:
+                rows = scraper.scrape_product_analytics(a)
+                if rows:
+                    db.upsert_product_metrics(a["id"], today, rows)
+                    print(f"[product-collect] {a['id']} {len(rows)}건 저장")
+                    ok += 1
+                else:
+                    print(f"[product-collect] {a['id']} 0건 (페이지 비어있음)")
+            except Exception:
+                err += 1
+                traceback.print_exc()
+        if i < len(accounts) - 1:
+            time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
+    _kill_leftover_chromium()
+    print(f"[product-collect] {today} done — 성공 {ok} / 실패 {err}")
+    slack_notify(
+        f"product-collect 완료 ({today}) · 성공 {ok} / 실패 {err}",
+        severity="report" if err == 0 else "warn",
+    )
+
+
 def _db_backup_job():
     """매일 04:00 sqlite DB backup. 7일 이상 된 백업 자동 정리.
     sqlite backup API 를 써서 트랜잭션 중에도 일관성 보장."""
@@ -501,7 +537,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -542,6 +578,14 @@ def reload_schedules():
         id="db_backup", replace_existing=True,
     )
     print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
+
+    # 매일 06:00 카페24 상품 분석 데이터 수집 (베스트/급상승/전환율/판매액 top 5)
+    scheduler.add_job(
+        _product_collect_job, "cron",
+        hour=6, minute=0,
+        id="product_collect", replace_existing=True,
+    )
+    print(f"[scheduler] product_collect: 매일 06:00")
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
@@ -1596,6 +1640,27 @@ def dashboard():
     capsolver = db.capsolver_stats()
     capsolver["balance"] = scraper.capsolver_balance()
 
+    # ---- 카페24 상품 분석 (최근 수집분) ----
+    # 가장 최근 collect_date 1개만 사용 (오늘 또는 어제)
+    product_data = {}  # category -> account_id -> [rows]
+    product_collect_date = None
+    try:
+        with db.db_conn() as conn:
+            r = conn.execute(
+                "SELECT MAX(date) FROM product_metrics WHERE account_id IN ({})".format(
+                    ",".join(["?"] * len(selected_ids))
+                ),
+                selected_ids,
+            ).fetchone()
+            product_collect_date = r[0] if r else None
+        if product_collect_date:
+            for prow in db.list_product_metrics(account_id=selected_ids, date=product_collect_date):
+                cat = prow["category"]
+                aid_p = prow["account_id"]
+                product_data.setdefault(cat, {}).setdefault(aid_p, []).append(prow)
+    except Exception:
+        traceback.print_exc()
+
     return render_template(
         "dashboard.html",
         accounts=accounts,
@@ -1627,6 +1692,8 @@ def dashboard():
         yesterday=yesterday,
         last_week_same=last_week_same,
         capsolver=capsolver,
+        product_data=product_data,
+        product_collect_date=product_collect_date,
         now=now.strftime("%H:%M"),
     )
 

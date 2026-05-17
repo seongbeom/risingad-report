@@ -559,6 +559,54 @@
         </script>
     </div>
 
+    <!-- 카페24 상품 분석 (top 5) -->
+    {% if product_data %}
+    <div class="card">
+        <h2>🛍 카페24 상품 분석 — 매장별 top 5
+            <span style="font-size:0.78rem; color:#888; font-weight:400">수집일 {{ product_collect_date }} · 카페24 무료 등급 노출 데이터</span>
+        </h2>
+        <p class="card-sub">카페24가 무료로 보여주는 베스트/급상승/전환율/판매액 각 top 5. 매일 06:00 수집.
+            <strong>🚀 급상승</strong>은 노출/담김/판매 모두 증가한 상품 (광고 집중 후보).
+        </p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:14px">
+            {% set categories = [
+                ('🚀 매출 급상승 (변화량)', '급상승_변화량', '#27ae60'),
+                ('💰 베스트 매출 TOP', '베스트_매출', '#4a90d9'),
+                ('🎯 전환율 TOP', '전환율_TOP', '#9b59b6'),
+                ('💎 판매액 순위', '판매액_순위', '#e67e22'),
+            ] %}
+            {% for cat_label, cat_key, cat_color in categories %}
+            {% if product_data.get(cat_key) %}
+            <div style="background:#fff; padding:14px; border-radius:8px; border-top:3px solid {{ cat_color }}; box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+                <h3 style="font-size:0.95rem; margin:0 0 8px 0; color:{{ cat_color }}">{{ cat_label }}</h3>
+                {% for aid, prows in product_data[cat_key].items() %}
+                {% set acct_label = (acct_hourly_cum | selectattr('id', 'eq', aid) | list | first).label if acct_hourly_cum | selectattr('id', 'eq', aid) | list else aid %}
+                <div style="margin-bottom:10px">
+                    <div style="font-size:0.78rem; color:#888; font-weight:600; margin-bottom:4px">🏬 {{ acct_label }}</div>
+                    <table style="font-size:0.78rem; width:100%; border-collapse:collapse">
+                        {% for prow in prows[:5] %}
+                        <tr>
+                            <td style="padding:2px 4px; width:18px; color:{{ cat_color }}; font-weight:700">{{ prow.rank }}</td>
+                            <td style="padding:2px 4px">
+                                {% if prow.product_no %}
+                                <a href="https://{{ aid }}.cafe24.com/product/detail.html?product_no={{ prow.product_no }}" target="_blank" style="color:#333; text-decoration:none">{{ prow.product_name }}</a>
+                                {% else %}{{ prow.product_name }}{% endif %}
+                            </td>
+                            <td style="padding:2px 4px; text-align:right; color:#666; font-variant-numeric:tabular-nums">
+                                {% if prow.raw and prow.raw.row %}{{ prow.raw.row[-1] }}{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- 전환 깔때기 -->
     <div class="card">
         <h2>🪜 전환 깔때기 — 방문 → 회원가입 → 구매</h2>
