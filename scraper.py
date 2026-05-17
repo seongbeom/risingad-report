@@ -1001,18 +1001,33 @@ def scrape_product_analytics(account):
         # 추가 wait — table 렌더 완료
         page.wait_for_timeout(3000)
 
-        # 모든 table 추출.
-        # cafe24 애널리틱스는 Radix 의 tooltip-trigger 버튼으로 긴 상품명을 "(...)" 로 잘라 보여줌.
-        # 풀텍스트는 visually-hidden span (role="tooltip") 에 항상 존재하고 aria-describedby 로 링크됨.
+        # Radix tooltip-trigger 들을 모두 hover 해서 aria-describedby 의 role=tooltip span 채워둠.
+        # 풀 상품명 + 상품번호 가 이 hidden span 안에만 들어있음 (시각 truncate 우회).
+        _phase("tooltip 풀텍스트 캐시")
+        try:
+            triggers = af.locator('button[data-slot="tooltip-trigger"]')
+            n = triggers.count()
+            for i in range(n):
+                try:
+                    triggers.nth(i).hover(timeout=2000)
+                    page.wait_for_timeout(80)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        page.wait_for_timeout(500)
+
+        # 테이블 추출. tooltip-trigger 가 있으면 aria-describedby → role=tooltip 의 풀텍스트 사용.
         tables = af.evaluate("""() => {
             const cellFullText = (td) => {
-                // tooltip-trigger 가 있으면 aria-describedby → role=tooltip span 의 textContent 우선
                 const trigger = td.querySelector('button[data-slot="tooltip-trigger"], [aria-describedby]');
                 if (trigger) {
                     const id = trigger.getAttribute('aria-describedby');
                     if (id) {
                         const tt = document.getElementById(id);
-                        if (tt && tt.textContent) return tt.textContent.trim();
+                        if (tt && tt.textContent && tt.textContent.trim().length > 0) {
+                            return tt.textContent.replace(/\s+/g, ' ').trim();
+                        }
                     }
                 }
                 return (td.textContent || '').replace(/\s+/g, ' ').trim();
