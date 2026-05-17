@@ -1001,13 +1001,25 @@ def scrape_product_analytics(account):
         # 추가 wait — table 렌더 완료
         page.wait_for_timeout(3000)
 
-        # 모든 table 추출
+        # 모든 table 추출 — cell 별로 text + title + anchor href/onclick 까지 같이 가져옴.
+        # cafe24 페이지가 긴 상품명을 "..." 로 잘라 보여주는 케이스가 있어서 title/anchor 폴백 필요.
         tables = af.evaluate("""() => {
             const out = [];
             document.querySelectorAll('table').forEach((t, i) => {
                 const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.innerText || '').trim());
                 const rows = Array.from(t.querySelectorAll('tbody tr')).map(r =>
-                    Array.from(r.querySelectorAll('td')).map(td => (td.innerText || '').trim())
+                    Array.from(r.querySelectorAll('td')).map(td => {
+                        const text = (td.innerText || '').trim();
+                        const title = td.getAttribute('title') || '';
+                        const anchors = Array.from(td.querySelectorAll('a')).map(a => ({
+                            href: a.getAttribute('href') || '',
+                            onclick: a.getAttribute('onclick') || '',
+                            title: a.getAttribute('title') || '',
+                            text: (a.innerText || '').trim(),
+                        }));
+                        const spans = Array.from(td.querySelectorAll('span[title]')).map(s => s.getAttribute('title') || '');
+                        return {text, title, anchors, spans};
+                    })
                 );
                 out.push({idx: i, headers, rows});
             });
@@ -1027,12 +1039,48 @@ def scrape_product_analytics(account):
                 return "판매액_순위"
             return None
 
-        def _parse_product(s):
-            """'상품명(상품번호)' → (name, no)"""
+        def _parse_product_pair(s):
+            """'상품명(상품번호)' → (name, no). 매칭 실패 시 (s, None)."""
             m = _re.match(r"^(.+?)\((\d+)\)$", s.strip())
             if m:
                 return m.group(1).strip(), m.group(2)
             return s.strip(), None
+
+        def _extract_product(cell):
+            """cell = {text, title, anchors[], spans[]} → (name, no)
+            우선순위:
+            1) title 속성 안에 '상품명(상품번호)' 풀텍스트
+            2) anchor onclick/href 에서 product_no 추출 + 이름은 anchor text or title
+            3) span[title] 안의 풀텍스트
+            4) cell text 그대로 파싱 (잘려도 그대로 저장)
+            """
+            text = cell.get("text", "")
+            # 1) title
+            for src in [cell.get("title", "")] + cell.get("spans", []):
+                if src and "(" in src and ")" in src:
+                    n, no = _parse_product_pair(src)
+                    if no:
+                        return n, no
+            # 2) anchor
+            for a in cell.get("anchors", []):
+                # onclick/href 에서 product_no/productNo/product_seq 패턴 추출
+                m = _re.search(r"product[_-]?no[\"'\s:=]+(\d+)", (a.get("onclick", "") + " " + a.get("href", "")), _re.IGNORECASE)
+                if m:
+                    no = m.group(1)
+                    name_src = a.get("title") or a.get("text") or text
+                    n, _ = _parse_product_pair(name_src)
+                    return n, no
+                # title 폴백
+                if a.get("title") and "(" in a["title"]:
+                    n, no = _parse_product_pair(a["title"])
+                    if no:
+                        return n, no
+            # 3) cell text 폴백
+            n, no = _parse_product_pair(text)
+            # text 가 잘렸다면 (...) 형태 — name 끝의 "(..." 자르기
+            if "(..." in n:
+                n = n.split("(...")[0].strip()
+            return n, no
 
         result_rows = []
         for t in tables:
@@ -1042,27 +1090,32 @@ def scrape_product_analytics(account):
             for rank_idx, r in enumerate(t["rows"], start=1):
                 if not r:
                     continue
-                # 상품명 추출 — 헤더에 '상품명(상품번호)' 컬럼 위치 찾기
+                # 상품명 컬럼 위치
                 prod_col = None
                 for i, h in enumerate(t["headers"]):
                     if "상품명" in h:
                         prod_col = i
                         break
-                product_str = r[prod_col] if prod_col is not None and prod_col < len(r) else (r[1] if len(r) > 1 else "")
-                name, no = _parse_product(product_str)
-                # 순위 — 헤더에 '순위' 있으면 첫 컬럼이 순위
+                if prod_col is None:
+                    prod_col = 1 if len(r) > 1 else 0
+                cell = r[prod_col] if prod_col < len(r) else {"text": "", "title": "", "anchors": [], "spans": []}
+                name, no = _extract_product(cell)
+                # 순위
                 rank = rank_idx
                 if t["headers"] and "순위" in t["headers"][0]:
+                    first = r[0]
                     try:
-                        rank = int(r[0])
-                    except (ValueError, IndexError):
+                        rank = int(first.get("text", "") if isinstance(first, dict) else first)
+                    except (ValueError, IndexError, AttributeError):
                         pass
+                # raw 저장 — text 만 평탄화해서 보관 (디버깅용)
+                flat_row = [(c.get("text", "") if isinstance(c, dict) else c) for c in r]
                 result_rows.append({
                     "category": cat,
                     "rank": rank,
                     "product_no": no,
                     "product_name": name,
-                    "raw": {"headers": t["headers"], "row": r},
+                    "raw": {"headers": t["headers"], "row": flat_row, "prod_cell": cell},
                 })
 
         _phase(f"추출 완료 — {len(result_rows)}건")
