@@ -1009,13 +1009,15 @@ def scrape_product_analytics(account):
                 const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.innerText || '').trim());
                 const rows = Array.from(t.querySelectorAll('tbody tr')).map(r =>
                     Array.from(r.querySelectorAll('td')).map(td => {
-                        const text = (td.innerText || '').trim();
+                        // textContent 는 CSS text-overflow:ellipsis 영향 받지 않고 원본 DOM 텍스트 반환.
+                        // innerText 는 "긴이름(123)" 가 "긴이름(..." 로 잘려 나옴.
+                        const text = (td.textContent || '').replace(/\s+/g, ' ').trim();
                         const title = td.getAttribute('title') || '';
                         const anchors = Array.from(td.querySelectorAll('a')).map(a => ({
                             href: a.getAttribute('href') || '',
                             onclick: a.getAttribute('onclick') || '',
                             title: a.getAttribute('title') || '',
-                            text: (a.innerText || '').trim(),
+                            text: (a.textContent || '').replace(/\s+/g, ' ').trim(),
                         }));
                         const spans = Array.from(td.querySelectorAll('span[title]')).map(s => s.getAttribute('title') || '');
                         return {text, title, anchors, spans};
