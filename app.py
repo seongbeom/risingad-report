@@ -229,6 +229,44 @@ def _run_scrape_with_timeout(account, target_date, timeout_sec):
     return result_holder["result"]
 
 
+PRODUCT_PER_ATTEMPT_TIMEOUT_SEC = 240  # 4분 - 정상 ~30초, 그 이상 hang
+
+
+def _run_product_with_timeout(account, timeout_sec=PRODUCT_PER_ATTEMPT_TIMEOUT_SEC):
+    """scrape_product_analytics 를 별도 thread + timeout 으로 감쌈.
+    hang 시 chromium kill → playwright raise → thread 종료. _consecutive_hangs 카운터 공유."""
+    global _consecutive_hangs
+    result_holder = {"result": None, "exc": None}
+
+    def _target():
+        try:
+            result_holder["result"] = scraper.scrape_product_analytics(account)
+        except Exception as e:
+            result_holder["exc"] = e
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    t.join(timeout=timeout_sec)
+    if t.is_alive():
+        print(f"[{account['id']}] product scrape timeout {timeout_sec}s - chromium 강제 종료", flush=True)
+        _kill_leftover_chromium()
+        t.join(timeout=30)
+        _consecutive_hangs += 1
+        slack_notify(
+            f"`{account['id']}` product_collect {timeout_sec}s 초과 → chromium 강제 종료 "
+            f"(연속 hang {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT})",
+            severity="hang",
+        )
+        if _consecutive_hangs >= CONSECUTIVE_HANG_LIMIT:
+            _self_restart_service(f"{CONSECUTIVE_HANG_LIMIT}회 연속 hang 감지 (product_collect)")
+            _consecutive_hangs = 0
+        raise TimeoutError(f"product scrape timeout {timeout_sec}s")
+    if result_holder["exc"]:
+        raise result_holder["exc"]
+    _consecutive_hangs = 0
+    return result_holder["result"]
+
+
 def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
     """스크래핑 실행 - 직렬화 락 안에서 돌림 (동시 Chromium 방지).
     실패 시 N회 재시도. is_sample(Premium 만료)는 재시도 의미 없으니 즉시 종료.
@@ -472,7 +510,7 @@ def _product_collect_job():
         _wait_for_memory(f"product before {a['id']}")
         with _run_lock:  # 라이브 잡과 직렬화
             try:
-                rows = scraper.scrape_product_analytics(a)
+                rows = _run_product_with_timeout(a)
                 if rows:
                     db.upsert_product_metrics(a["id"], today, rows)
                     print(f"[product-collect] {a['id']} {len(rows)}건 저장")
@@ -753,11 +791,13 @@ def reload_schedules():
     )
     print(f"[scheduler] daily_restart: 매일 04:30 (chromium 누적 상태 리셋)")
 
-    # 매시 정각 self-check (디스크/메모리/잡 누락/잡 결과 누락)
+    # 매시 정각 self-check (디스크/메모리/잡 누락/잡 결과 누락).
+    # 한 번 stuck 돼도 다음 fire 가 막히지 않게 max_instances 3 + misfire_grace_time 50분.
     scheduler.add_job(
         _heartbeat_job, "cron",
         minute=0,
         id="heartbeat", replace_existing=True,
+        max_instances=3, misfire_grace_time=3000,
     )
     print(f"[scheduler] heartbeat: 매시 정각 self-check")
 
@@ -992,7 +1032,7 @@ def admin_product_collect():
             _wait_for_memory(f"product before {a['id']}")
             with _run_lock:
                 try:
-                    rows = scraper.scrape_product_analytics(a)
+                    rows = _run_product_with_timeout(a)
                     if rows:
                         db.upsert_product_metrics(a["id"], today, rows)
                         print(f"[product-collect-manual] {a['id']} {len(rows)}건 저장", flush=True)
