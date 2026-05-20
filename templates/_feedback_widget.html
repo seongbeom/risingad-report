@@ -94,7 +94,7 @@
   let isAdmin = false;
   let threads = [];
 
-  const STATUS_LABELS = { open: '확인', in_progress: '진행중', done: '완료' };
+  const STATUS_LABELS = { open: '미확인', in_progress: '진행중', done: '완료' };
 
   function fmtTime(ts) {
     const d = new Date(ts * 1000);

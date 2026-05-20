@@ -44,12 +44,12 @@
     <div class="card">
       <div class="meta">
         <span class="badge badge-{{ t.status }}">
-          {% if t.status == 'open' %}확인{% elif t.status == 'in_progress' %}진행중{% else %}완료{% endif %}
+          {% if t.status == 'open' %}미확인{% elif t.status == 'in_progress' %}진행중{% else %}완료{% endif %}
         </span>
         <span class="author">{{ t.author }}</span>
         <form class="inline" method="POST" action="/feedback/{{ t.id }}/status" onchange="this.submit()">
           <select name="status">
-            <option value="open" {% if t.status == 'open' %}selected{% endif %}>확인</option>
+            <option value="open" {% if t.status == 'open' %}selected{% endif %}>미확인</option>
             <option value="in_progress" {% if t.status == 'in_progress' %}selected{% endif %}>진행중</option>
             <option value="done" {% if t.status == 'done' %}selected{% endif %}>완료</option>
           </select>
