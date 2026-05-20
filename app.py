@@ -326,6 +326,22 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
 
             # DB 저장 (대시보드 쿼리용)
             metrics = sheets.extract_metrics(results)
+
+            # 가드: 빈 스크랩(매출=0 AND 방문자=0)이 기존 정상값을 덮어쓰지 않게.
+            # 일 누적 데이터라 정상이면 매출/방문 중 하나는 0이 아님. 둘 다 0 = 스크랩 실패로 간주.
+            # (진짜 무매출 매장도 방문자는 보통 1 이상 → 0/0 은 사실상 빈 페이지)
+            new_sales = metrics.get("매출") or 0
+            new_visitors = metrics.get("방문자수") or 0
+            if new_sales == 0 and new_visitors == 0:
+                existing = db.get_metric(account_id, scraped_date)
+                if existing and ((existing.get("매출") or 0) > 0 or (existing.get("방문자수") or 0) > 0):
+                    print(f"[{account_id}] {scraped_date} 빈 스크랩(매출0/방문0) - 기존값(매출 {existing.get('매출')}, 방문 {existing.get('방문자수')}) 보존, 덮어쓰기 스킵", flush=True)
+                    slack_notify(
+                        f"`{account_id}` {scraped_date} 빈 스크랩(0/0) 감지 → 기존값 보존 (덮어쓰기 차단)",
+                        severity="warn",
+                    )
+                    db.finish_run(run_id, "error", error="empty scrape (sales=0,visitors=0) - 기존값 보존", attempts=attempts_used)
+                    return
             db.upsert_metrics(account_id, scraped_date, metrics)
 
             # 시간별 metrics
