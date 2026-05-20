@@ -166,10 +166,33 @@ def _wait_for_memory(label=""):
 
 SCRAPE_PER_ATTEMPT_TIMEOUT_SEC = 480  # 8분 - 캡챠 풀이 포함 정상 실행 ~2~3분, 그 이상 hang 으로 간주
 
-# 연속 hang 카운터 — playwright/chromium 누적 상태로 모든 launch 가 hang 하는 케이스
-# 3회 연속이면 service self-restart 트리거 (사용자 발견 전 자체 복구)
+# 연속 hang 카운터 — playwright/chromium 누적 상태로 "여러 계정" launch 가 모두 hang 하는
+# systemic wedge 감지용. account-level 로 셈: 한 계정이 모든 재시도 hang 해도 +1 (그 계정은
+# 스킵하고 다음으로). 서로 다른 계정이 연속 3개 hang 해야 systemic 으로 보고 self-restart.
+# 단일 불량 계정(예: 특정 시간대 cinderella) 이 전체 finalize/재시작을 막지 않게 함.
 _consecutive_hangs = 0
 CONSECUTIVE_HANG_LIMIT = 3
+
+
+def _note_account_hang(account_id, context=""):
+    """한 계정이 모든 재시도에서 hang 으로 실패. systemic 카운터 +1, 임계 도달 시 self-restart."""
+    global _consecutive_hangs
+    _consecutive_hangs += 1
+    print(f"[hang] {account_id} 전 재시도 hang (연속 {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT}) {context}", flush=True)
+    slack_notify(
+        f"`{account_id}` 모든 재시도 hang → 스킵 "
+        f"(서로 다른 계정 연속 hang {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT}){(' · ' + context) if context else ''}",
+        severity="hang",
+    )
+    if _consecutive_hangs >= CONSECUTIVE_HANG_LIMIT:
+        _self_restart_service(f"서로 다른 계정 {CONSECUTIVE_HANG_LIMIT}개 연속 hang → systemic chromium wedge 의심")
+        _consecutive_hangs = 0
+
+
+def _note_account_success():
+    """계정 1개라도 정상 완료 → systemic 카운터 리셋 (연속 아님)."""
+    global _consecutive_hangs
+    _consecutive_hangs = 0
 
 
 def _self_restart_service(reason):
@@ -192,9 +215,13 @@ def _self_restart_service(reason):
         traceback.print_exc()
 
 
+class HangTimeout(TimeoutError):
+    """스크래핑이 timeout 으로 hang 된 경우 (다른 에러와 구분 — systemic 카운터 판단용)."""
+
+
 def _run_scrape_with_timeout(account, target_date, timeout_sec):
-    """별도 thread 로 run_scrape 호출, timeout 내 끝나지 않으면 chromium kill 하고 raise."""
-    global _consecutive_hangs
+    """별도 thread 로 run_scrape 호출, timeout 내 끝나지 않으면 chromium kill 하고 HangTimeout raise.
+    systemic 카운터/restart 판단은 호출부(_run_scrape_task)에서 account-level 로 처리."""
     result_holder = {"result": None, "exc": None}
 
     def _target():
@@ -208,24 +235,12 @@ def _run_scrape_with_timeout(account, target_date, timeout_sec):
     t.join(timeout=timeout_sec)
     if t.is_alive():
         # hang 으로 간주 → chromium 강제 kill (thread 는 못 죽이지만 chromium 죽으면 playwright 가 raise 하며 종료됨)
-        print(f"[{account['id']}] scrape timeout {timeout_sec}s - chromium 강제 종료")
+        print(f"[{account['id']}] scrape timeout {timeout_sec}s - chromium 강제 종료", flush=True)
         _kill_leftover_chromium()
         t.join(timeout=30)  # chromium 죽으면 thread 도 곧 정리됨
-        _consecutive_hangs += 1
-        slack_notify(
-            f"`{account['id']}` 스크래핑 {timeout_sec}s 초과 → chromium 강제 종료 "
-            f"(연속 hang {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT})",
-            severity="hang",
-        )
-        # 연속 hang 임계치 도달 → self-restart
-        if _consecutive_hangs >= CONSECUTIVE_HANG_LIMIT:
-            _self_restart_service(f"{CONSECUTIVE_HANG_LIMIT}회 연속 hang 감지")
-            _consecutive_hangs = 0  # restart 후 서비스 종료될 거지만 안전 차원
-        raise TimeoutError(f"scrape timeout {timeout_sec}s - chromium 강제 종료")
+        raise HangTimeout(f"scrape timeout {timeout_sec}s - chromium 강제 종료")
     if result_holder["exc"]:
         raise result_holder["exc"]
-    # 정상 완료 → 카운터 리셋
-    _consecutive_hangs = 0
     return result_holder["result"]
 
 
@@ -234,8 +249,7 @@ PRODUCT_PER_ATTEMPT_TIMEOUT_SEC = 240  # 4분 - 정상 ~30초, 그 이상 hang
 
 def _run_product_with_timeout(account, timeout_sec=PRODUCT_PER_ATTEMPT_TIMEOUT_SEC):
     """scrape_product_analytics 를 별도 thread + timeout 으로 감쌈.
-    hang 시 chromium kill → playwright raise → thread 종료. _consecutive_hangs 카운터 공유."""
-    global _consecutive_hangs
+    hang 시 chromium kill → HangTimeout raise. systemic 판단은 호출부에서."""
     result_holder = {"result": None, "exc": None}
 
     def _target():
@@ -251,19 +265,9 @@ def _run_product_with_timeout(account, timeout_sec=PRODUCT_PER_ATTEMPT_TIMEOUT_S
         print(f"[{account['id']}] product scrape timeout {timeout_sec}s - chromium 강제 종료", flush=True)
         _kill_leftover_chromium()
         t.join(timeout=30)
-        _consecutive_hangs += 1
-        slack_notify(
-            f"`{account['id']}` product_collect {timeout_sec}s 초과 → chromium 강제 종료 "
-            f"(연속 hang {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT})",
-            severity="hang",
-        )
-        if _consecutive_hangs >= CONSECUTIVE_HANG_LIMIT:
-            _self_restart_service(f"{CONSECUTIVE_HANG_LIMIT}회 연속 hang 감지 (product_collect)")
-            _consecutive_hangs = 0
-        raise TimeoutError(f"product scrape timeout {timeout_sec}s")
+        raise HangTimeout(f"product scrape timeout {timeout_sec}s")
     if result_holder["exc"]:
         raise result_holder["exc"]
-    _consecutive_hangs = 0
     return result_holder["result"]
 
 
@@ -284,19 +288,31 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
         try:
             results = None
             last_err = None
+            all_hung = True  # 모든 attempt 가 hang(HangTimeout) 으로 실패했는지
             for attempt in range(1, SCRAPE_MAX_ATTEMPTS + 1):
                 attempts_used = attempt
                 try:
                     results = _run_scrape_with_timeout(account, target_date, SCRAPE_PER_ATTEMPT_TIMEOUT_SEC)
                     break
+                except HangTimeout:
+                    last_err = traceback.format_exc()
+                    print(f"[{account_id}] attempt {attempt}/{SCRAPE_MAX_ATTEMPTS} hang")
+                    if attempt < SCRAPE_MAX_ATTEMPTS:
+                        time.sleep(SCRAPE_RETRY_DELAY_SEC)
                 except Exception:
+                    all_hung = False  # hang 이 아닌 다른 에러 (로그인/파싱 등)
                     last_err = traceback.format_exc()
                     print(f"[{account_id}] attempt {attempt}/{SCRAPE_MAX_ATTEMPTS} 실패")
                     if attempt < SCRAPE_MAX_ATTEMPTS:
                         time.sleep(SCRAPE_RETRY_DELAY_SEC)
             if results is None:
+                # 모든 attempt 가 hang 이면 account-level hang 으로 기록 (systemic 카운터),
+                # 그 외 에러면 단순 실패 (systemic 아님).
+                if all_hung:
+                    _note_account_hang(account_id, context=f"date={target_date}")
                 db.finish_run(run_id, "error", error=last_err or "scrape failed after retries", attempts=attempts_used)
                 return
+            _note_account_success()  # 1개라도 성공 → systemic 카운터 리셋
 
             scraped_date = results.get("date") or datetime.now().strftime("%Y-%m-%d")
             result_file = f"data/{account_id}/{scraped_date}.json"
@@ -388,6 +404,13 @@ def _daily_finalize_job():
     _kill_leftover_chromium()
     elapsed = int(time.time() - started_at)
     print(f"[daily-finalize] {yesterday} done free={_free_memory_mb()}MB")
+    # deadline 으로 중도 종료한 게 아니면 완료 마커 기록 (재시작 후 catch-up 판단용).
+    # 중간에 self-heal restart 로 끊기면 이 줄까지 도달 못 하므로 마커 안 찍힘 → 재시작 후 catch-up 발동.
+    if skipped == 0:
+        try:
+            db.set_setting("last_finalize_date", yesterday)
+        except Exception:
+            traceback.print_exc()
     # 결과 요약을 slack 으로
     try:
         with db.db_conn() as conn:
@@ -517,6 +540,10 @@ def _product_collect_job():
                     ok += 1
                 else:
                     print(f"[product-collect] {a['id']} 0건 (페이지 비어있음)")
+                _note_account_success()
+            except HangTimeout:
+                err += 1
+                _note_account_hang(a["id"], context="product_collect")
             except Exception:
                 err += 1
                 traceback.print_exc()
@@ -823,6 +850,25 @@ def reload_schedules():
             except Exception:
                 traceback.print_exc()
 
+    # 재시작 후 daily_finalize catch-up.
+    # 오늘 finalize 예정 시각이 이미 지났는데 어제 finalize 완료 마커가 없으면
+    # (self-heal/정기 restart 로 중단됐단 뜻) 90초 뒤 finalize 1회 재실행 → 시트 누락 자동 회복.
+    try:
+        now = datetime.now()
+        yest = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        finalize_time_today = now.replace(hour=df["hour"], minute=df["minute"], second=0, microsecond=0)
+        last_done = db.get_setting("last_finalize_date", "")
+        # 04:30 정기 restart 가 03:00 finalize 직후라, finalize 가 정상 완료했으면 마커 == yest.
+        if now >= finalize_time_today and last_done != yest:
+            scheduler.add_job(
+                _daily_finalize_job, "date",
+                run_date=now + timedelta(seconds=90),
+                id="finalize_startup_catchup", replace_existing=True,
+            )
+            print(f"[scheduler] finalize 미완료 감지 (last={last_done!r} != {yest}) → 90초 뒤 finalize catch-up 트리거")
+    except Exception:
+        traceback.print_exc()
+
 
 # 서버 시작 시 stuck running 정리 (이전 프로세스가 죽었으면 그 run 은 이미 끝났다고 봐야)
 _startup_cleanup_info = {"count": 0, "accounts": [], "at": None}
@@ -1039,6 +1085,10 @@ def admin_product_collect():
                         ok += 1
                     else:
                         print(f"[product-collect-manual] {a['id']} 0건", flush=True)
+                    _note_account_success()
+                except HangTimeout:
+                    err += 1
+                    _note_account_hang(a["id"], context="product_collect-manual")
                 except Exception:
                     err += 1
                     traceback.print_exc()
