@@ -520,7 +520,7 @@ def _auto_backfill_missing(today, deadline=None):
     for a in accounts:
         aid = a["id"]
         key = (aid, today)
-        if _auto_backfill_attempted.get(key, 0) >= 1:
+        if _auto_backfill_attempted.get(key, 0) >= 2:  # 하루 계정당 자동 재시도 최대 2회
             continue
         m = db.get_metric(aid, today)
         try:
@@ -736,6 +736,47 @@ def _heartbeat_job():
                         severity="warn",
                     )
                     problems.append(f"product_partial={n_p}/{total_acc}")
+            except Exception:
+                traceback.print_exc()
+
+        # 6) per-account "오늘 막힘" 감지 (14시 이후).
+        # 어제 매출>0 이던 활성 매장인데 오늘 데이터가 없으면(행없음 or 매출0+시간별0) → 그 계정만 콕 집어 알림.
+        # rosy001 처럼 특정 계정이 하루종일 hang 하는 케이스를 사람이 바로 인지하도록.
+        if now.hour >= 14:
+            try:
+                stuck = []
+                for a in db.list_accounts():
+                    aid = a["id"]
+                    y = db.get_metric(aid, yesterday)
+                    if not y or (y.get("매출") or 0) <= 0:
+                        continue  # 어제도 무매출(휴면) 매장은 제외
+                    t = db.get_metric(aid, today)
+                    try:
+                        h = db.count_metrics_hourly(aid, today)
+                    except Exception:
+                        h = 0
+                    if (not t) or ((t.get("매출") or 0) == 0 and h == 0):
+                        # 마지막 run 에러 요약
+                        last_err = ""
+                        try:
+                            with db.db_conn() as conn:
+                                r = conn.execute(
+                                    "SELECT error FROM runs WHERE account_id=? AND status='error' ORDER BY started_at DESC LIMIT 1",
+                                    (aid,)).fetchone()
+                                if r:
+                                    last_err = _short_error(r["error"])
+                        except Exception:
+                            pass
+                        stuck.append((a.get("label") or aid, aid, last_err))
+                if stuck:
+                    lines = "\n".join(f"• {lbl}(`{aid}`) — {err or '원인불명'}" for lbl, aid, err in stuck)
+                    _heartbeat_alert(
+                        f"accounts_stuck_{today}",
+                        f"🔴 오늘({today}) 데이터 안 들어온 활성 매장 {len(stuck)}곳:\n{lines}\n"
+                        f"→ cafe24 쪽 느림/오류 가능. 백필: `/admin/backfill_dates` (account_id, dates={today}, skip_sheet=true)",
+                        severity="warn",
+                    )
+                    problems.append(f"accounts_stuck={[s[1] for s in stuck]}")
             except Exception:
                 traceback.print_exc()
 
