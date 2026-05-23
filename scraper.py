@@ -958,13 +958,60 @@ def run_scrape_range(account, start_date, end_date):
     return results
 
 
-def scrape_product_analytics(account):
+def _click_calendar_cell(af, page, target_day):
+    """열린 react-day-picker 달력에서 현재 보이는 달의 target_day 셀 클릭.
+    현재 달에 없으면 이전 달 버튼 눌러 한 번 재시도 (월경계 케이스)."""
+    import re as _re3
+    for attempt in range(3):
+        cell = af.locator('[role=gridcell][name=day]:not([disabled])').filter(
+            has_text=_re3.compile(rf"^\s*{target_day}\s*$"))
+        if cell.count() > 0:
+            cell.first.click(timeout=4000)
+            return True
+        # 이전 달로 이동 (lucide chevron-left / name=previous-month / aria-label)
+        prev = af.locator('button[name="previous-month"], button[aria-label*="previous"], button[aria-label*="이전"]').first
+        if prev.count() == 0:
+            break
+        prev.click(timeout=3000)
+        page.wait_for_timeout(800)
+    return False
+
+
+def _set_product_period(af, page, target_date, _phase=lambda n: None):
+    """by-product 페이지 기간을 target_date~target_date (단일일) 로 세팅 후 조회.
+    target_date: 'YYYY-MM-DD'. 날짜 버튼 2개(시작/종료) → 달력 → 일자 클릭 → 조회."""
+    import re as _re3
+    _y, _m, d = [int(x) for x in target_date.split("-")]
+    _phase(f"기간 세팅 {target_date}")
+    date_btns = af.locator("button").filter(has_text=_re3.compile(r"\d{4}-\d{2}-\d{2}"))
+    n = date_btns.count()
+    if n < 1:
+        raise RuntimeError("날짜 버튼 못 찾음 (기간 변경 불가)")
+    for idx in range(min(n, 2)):  # 시작일, 종료일 둘 다 같은 날로
+        date_btns.nth(idx).click(timeout=5000)
+        page.wait_for_timeout(1200)
+        if not _click_calendar_cell(af, page, d):
+            raise RuntimeError(f"달력에서 {d}일 셀 못 찾음")
+        page.wait_for_timeout(700)
+    # 조회
+    btn = af.locator("button:has-text('조회')").first
+    if btn.count() > 0:
+        btn.click(timeout=5000)
+        page.wait_for_timeout(4000)
+
+
+def scrape_product_analytics(account, period="7d", target_date=None):
     """카페24 애널리틱스 '상품 분석' 페이지 → 베스트/급상승/전환율/판매액 top 5 추출.
-    무료 등급에서 노출되는 데이터만 가져옴 (Premium '전체보기'는 사용 안 함)."""
+    period: '7d'(기본=최근7일, 기간변경 안 함) | 'today' | 'yesterday'
+    target_date: today/yesterday 일 때 명시 (미지정 시 자동 계산)."""
     import re as _re
     cafe24_id = account["cafe24_id"]
     aid = account.get("id", cafe24_id)
     base = f"https://{cafe24_id}.cafe24.com"
+
+    if period in ("today", "yesterday") and not target_date:
+        _delta = 0 if period == "today" else 1
+        target_date = (datetime.now() - timedelta(days=_delta)).strftime("%Y-%m-%d")
 
     def _phase(name):
         print(f"[{aid}] product phase: {name}", flush=True)
@@ -1006,6 +1053,16 @@ def scrape_product_analytics(account):
         _phase(f"by-product 페이지 (url={af.url})")
         # 추가 wait — table 렌더 완료
         page.wait_for_timeout(3000)
+
+        # 기간 변경 (today/yesterday) — 7d 는 페이지 기본값이라 변경 안 함
+        if period in ("today", "yesterday") and target_date:
+            try:
+                _set_product_period(af, page, target_date, _phase)
+                af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
+                page.wait_for_timeout(1500)
+            except Exception as e:
+                browser.close()
+                raise RuntimeError(f"기간({period}={target_date}) 세팅 실패: {e}")
 
         # Radix tooltip: 각 trigger 를 순차 hover 해서 풀텍스트 읽어옴. 한 번에 하나만 가능.
         # 결과: tooltip 매핑 {trigger-button-index → fulltext}

@@ -128,16 +128,17 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 account_id TEXT NOT NULL,
                 date TEXT NOT NULL,
+                period TEXT NOT NULL DEFAULT '7d',
                 category TEXT NOT NULL,
                 rank INTEGER NOT NULL,
                 product_no TEXT,
                 product_name TEXT,
                 raw_json TEXT,
                 updated_at TEXT DEFAULT (datetime('now', 'localtime')),
-                UNIQUE(account_id, date, category, rank),
+                UNIQUE(account_id, date, period, category, rank),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_product_metrics_lookup ON product_metrics(account_id, date, category);
+            CREATE INDEX IF NOT EXISTS idx_product_metrics_lookup ON product_metrics(account_id, date, period, category);
 
             -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
             CREATE TABLE IF NOT EXISTS capsolver_calls (
@@ -176,6 +177,32 @@ def init_db():
         fb_cols = [r[1] for r in conn.execute("PRAGMA table_info(feedback)").fetchall()]
         if fb_cols and "status" not in fb_cols:
             conn.execute("ALTER TABLE feedback ADD COLUMN status TEXT NOT NULL DEFAULT 'open'")
+
+        # product_metrics.period 마이그레이션 — UNIQUE 제약 변경 필요해 테이블 재생성.
+        # 기존 행은 모두 '7d'(최근7일) 로 간주.
+        pm_cols = [r[1] for r in conn.execute("PRAGMA table_info(product_metrics)").fetchall()]
+        if pm_cols and "period" not in pm_cols:
+            conn.executescript("""
+                ALTER TABLE product_metrics RENAME TO product_metrics_old;
+                CREATE TABLE product_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    period TEXT NOT NULL DEFAULT '7d',
+                    category TEXT NOT NULL,
+                    rank INTEGER NOT NULL,
+                    product_no TEXT,
+                    product_name TEXT,
+                    raw_json TEXT,
+                    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                    UNIQUE(account_id, date, period, category, rank),
+                    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+                );
+                INSERT INTO product_metrics (id, account_id, date, period, category, rank, product_no, product_name, raw_json, updated_at)
+                    SELECT id, account_id, date, '7d', category, rank, product_no, product_name, raw_json, updated_at FROM product_metrics_old;
+                DROP TABLE product_metrics_old;
+                CREATE INDEX IF NOT EXISTS idx_product_metrics_lookup ON product_metrics(account_id, date, period, category);
+            """)
 
 
 # --- 일별 지표 CRUD ---
@@ -306,24 +333,25 @@ def list_metrics_hourly_range(account_id, start_date, end_date):
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def upsert_product_metrics(account_id, date, rows):
+def upsert_product_metrics(account_id, date, rows, period="7d"):
     """상품 분석 데이터 일괄 upsert.
+    period: '7d'(최근7일) | 'today'(오늘) | 'yesterday'(전일)
     rows: [{'category': '베스트_매출', 'rank': 1, 'product_no': '5513', 'product_name': '...', 'raw_json': '...'}]"""
     import json as _json
     with db_conn() as conn:
-        # 같은 (account, date) 의 기존 데이터 삭제 후 재입력 (간단)
-        conn.execute("DELETE FROM product_metrics WHERE account_id=? AND date=?", (account_id, date))
+        # 같은 (account, date, period) 의 기존 데이터 삭제 후 재입력 (간단)
+        conn.execute("DELETE FROM product_metrics WHERE account_id=? AND date=? AND period=?", (account_id, date, period))
         for r in rows:
             conn.execute(
-                """INSERT INTO product_metrics (account_id, date, category, rank, product_no, product_name, raw_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (account_id, date, r["category"], r["rank"], r.get("product_no"), r.get("product_name"),
+                """INSERT INTO product_metrics (account_id, date, period, category, rank, product_no, product_name, raw_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (account_id, date, period, r["category"], r["rank"], r.get("product_no"), r.get("product_name"),
                  _json.dumps(r.get("raw"), ensure_ascii=False) if r.get("raw") is not None else None),
             )
 
 
-def list_product_metrics(account_id=None, date=None, category=None):
-    """상품 분석 데이터 조회. 최근 데이터 우선."""
+def list_product_metrics(account_id=None, date=None, category=None, period=None):
+    """상품 분석 데이터 조회. 최근 데이터 우선. period 미지정 시 전체."""
     import json as _json
     sql = "SELECT * FROM product_metrics WHERE 1=1"
     params = []
@@ -340,6 +368,9 @@ def list_product_metrics(account_id=None, date=None, category=None):
     if category:
         sql += " AND category=?"
         params.append(category)
+    if period:
+        sql += " AND period=?"
+        params.append(period)
     sql += " ORDER BY date DESC, category, rank ASC"
     with db_conn() as conn:
         out = []
