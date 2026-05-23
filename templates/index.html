@@ -58,6 +58,7 @@
         <div class="card">
             <h2>계정 관리</h2>
             {% if accounts %}
+            <div style="overflow-x:auto;max-width:100%">
             <table>
                 <thead>
                     <tr>
@@ -79,11 +80,11 @@
                             <form method="POST" action="/accounts/{{ a.id }}/spreadsheet"
                                   style="display:flex; gap:4px;">
                                 <input name="spreadsheet_id" value="{{ a.spreadsheet_id or '' }}"
-                                       placeholder="시트 ID" style="width:200px; font-size:0.75rem;">
+                                       placeholder="시트 ID" style="width:120px; font-size:0.75rem;">
                                 <button class="btn btn-sm" type="submit">저장</button>
                             </form>
                         </td>
-                        <td style="font-size:0.72rem;line-height:1.5;min-width:200px">
+                        <td style="font-size:0.7rem;line-height:1.45;white-space:nowrap">
                             {% set st = acct_status.get(a.id) %}
                             {% if st %}
                                 <div title="마지막으로 데이터가 DB에 갱신된 시각">
@@ -148,6 +149,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+            </div>
             {% else %}
             <p class="empty">등록된 계정이 없습니다.</p>
             {% endif %}
