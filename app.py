@@ -403,6 +403,11 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
             elif spreadsheet_id:
                 try:
                     sheets.write_result(results, spreadsheet_id=spreadsheet_id)
+                    # 마지막 시트 갱신 시각 기록 (계정 관리 화면 표시용)
+                    try:
+                        db.set_setting(f"sheet_updated_{account_id}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    except Exception:
+                        pass
                 except Exception:
                     traceback.print_exc()
             else:
@@ -1047,6 +1052,45 @@ def index():
     schedules = {s["account_id"]: s for s in db.list_schedules()}
     live = db.get_live_settings()
     daily = db.get_daily_finalize_settings()
+
+    # 계정별 마지막 상태 요약 (계정 관리 표 표시용)
+    acct_status = {}
+    try:
+        with db.db_conn() as conn:
+            for a in accounts:
+                aid = a["id"]
+                last_metric = conn.execute(
+                    "SELECT MAX(updated_at) FROM metrics WHERE account_id=?", (aid,)).fetchone()[0]
+                last_success = conn.execute(
+                    "SELECT MAX(started_at) FROM runs WHERE account_id=? AND status='success'", (aid,)).fetchone()[0]
+                fail = conn.execute(
+                    "SELECT started_at, error FROM runs WHERE account_id=? AND status='error' "
+                    "ORDER BY started_at DESC LIMIT 1", (aid,)).fetchone()
+                fail_at = fail["started_at"] if fail else None
+                fail_err = _short_error(fail["error"]) if fail else None
+                # 실패 종류 분류
+                fail_kind = ""
+                if fail and fail["error"]:
+                    e = fail["error"]
+                    if "sample" in e:
+                        fail_kind = "premium"
+                    elif "startup cleanup" in e:
+                        fail_kind = "restart"
+                    elif "timeout" in e or "hang" in e or "강제 종료" in e:
+                        fail_kind = "slow"
+                    else:
+                        fail_kind = "error"
+                acct_status[aid] = {
+                    "last_metric": last_metric,
+                    "last_success": last_success,
+                    "last_sheet": db.get_setting(f"sheet_updated_{aid}", None),
+                    "fail_at": fail_at,
+                    "fail_err": fail_err,
+                    "fail_kind": fail_kind,
+                }
+    except Exception:
+        traceback.print_exc()
+
     return render_template(
         "index.html",
         accounts=accounts,
@@ -1055,6 +1099,7 @@ def index():
         running=_running,
         live=live,
         daily=daily,
+        acct_status=acct_status,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
 

@@ -65,6 +65,7 @@
                         <th>쇼핑몰 ID</th>
                         <th>부운영자 ID</th>
                         <th>구글 시트 ID</th>
+                        <th>마지막 상태</th>
                         <th>동작</th>
                     </tr>
                 </thead>
@@ -81,6 +82,28 @@
                                        placeholder="시트 ID" style="width:200px; font-size:0.75rem;">
                                 <button class="btn btn-sm" type="submit">저장</button>
                             </form>
+                        </td>
+                        <td style="font-size:0.72rem;line-height:1.5;min-width:200px">
+                            {% set st = acct_status.get(a.id) %}
+                            {% if st %}
+                                <div title="마지막으로 데이터가 DB에 갱신된 시각">
+                                    <span style="color:#999">갱신</span>
+                                    {% if st.last_metric %}{{ st.last_metric[5:16] }}{% else %}<span style="color:#c0392b">없음</span>{% endif %}
+                                </div>
+                                <div title="마지막으로 구글 시트에 기록된 시각">
+                                    <span style="color:#999">시트</span>
+                                    {% if st.last_sheet %}{{ st.last_sheet[5:16] }}{% elif not a.spreadsheet_id %}<span style="color:#aaa">미설정</span>{% else %}<span style="color:#aaa">-</span>{% endif %}
+                                </div>
+                                {% if st.fail_at %}
+                                <div title="{{ st.fail_err }}" style="margin-top:2px">
+                                    {% if st.fail_kind == 'premium' %}<span style="background:#c0392b;color:#fff;padding:0 4px;border-radius:6px">🔴 Premium</span>
+                                    {% elif st.fail_kind == 'slow' %}<span style="background:#f0ad4e;color:#fff;padding:0 4px;border-radius:6px">⏱ 지연</span>
+                                    {% elif st.fail_kind == 'restart' %}<span style="background:#95a5a6;color:#fff;padding:0 4px;border-radius:6px">↻ 재시작</span>
+                                    {% else %}<span style="background:#e74c3c;color:#fff;padding:0 4px;border-radius:6px">실패</span>{% endif %}
+                                    <span style="color:#999">{{ st.fail_at[5:16] }}</span>
+                                </div>
+                                {% endif %}
+                            {% else %}<span style="color:#aaa">-</span>{% endif %}
                         </td>
                         <td>
                             <div class="actions">
@@ -102,7 +125,7 @@
                         </td>
                     </tr>
                     <tr id="edit-{{ a.id }}" style="display:none;background:#fffbea">
-                        <td colspan="5">
+                        <td colspan="6">
                             <form method="POST" action="/accounts/{{ a.id }}/update" class="form-row" style="margin:0">
                                 <div class="form-group">
                                     <label>라벨</label>
