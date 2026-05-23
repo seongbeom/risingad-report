@@ -201,10 +201,13 @@
         <div class="card">
             <h2>최근 실행 기록</h2>
             <p style="font-size:0.78rem;color:#888;margin:-6px 0 12px">
-                <strong>시간별</strong> 컬럼은 해당 일자에 DB로 저장된 시간 행 개수입니다.
-                카페24가 매출 0원이거나 활동 없는 새벽 시간대는 행 자체를 안 주기도 해서
-                24개가 다 안 모이는 날도 있어요. 20시간 이상이면 정상(녹색), 1~19시간은 경고(주황),
-                0이면 시간별 미수집(회색).
+                <strong>실패 종류</strong>:
+                <span style="background:#c0392b;color:#fff;padding:1px 5px;border-radius:8px;font-size:0.72rem">🔴 Premium 만료</span> 결제 확인 필요(조치 O) ·
+                <span style="background:#f0ad4e;color:#fff;padding:1px 5px;border-radius:8px;font-size:0.72rem">⏱ 응답지연</span> 자동 재시도 ·
+                <span style="background:#95a5a6;color:#fff;padding:1px 5px;border-radius:8px;font-size:0.72rem">↻ 재시작 중단</span> 무해(배포 흔적).
+                <br>
+                <strong>시간별</strong> 컬럼은 해당 일자 DB 저장 시간 행 개수. 20시간↑ 정상(녹색), 1~19 경고(주황), 0 미수집(회색).
+                새벽 무활동 시간대는 카페24가 행을 안 줘서 24개 안 모이는 날도 정상.
             </p>
             {% if runs %}
             <table>
@@ -223,7 +226,16 @@
                             {% elif r.status == 'running' %}
                                 <span class="badge badge-running">실행중</span>
                             {% else %}
-                                <span class="badge badge-error">실패</span>
+                                {% set err = (r.error or '') %}
+                                {% if 'sample' in err %}
+                                    <span class="badge" style="background:#c0392b;color:#fff" title="cafe24 Premium 만료/권한 문제 — 결제·구독 확인 필요. 등록되면 자동 복구">🔴 Premium 만료</span>
+                                {% elif 'startup cleanup' in err %}
+                                    <span class="badge" style="background:#95a5a6;color:#fff" title="배포/서버 재시작으로 중단됨 — 무해. 다음 사이클에 자동 재시도">↻ 재시작 중단</span>
+                                {% elif 'timeout' in err or 'hang' in err or '강제 종료' in err %}
+                                    <span class="badge" style="background:#f0ad4e;color:#fff" title="페이지 응답 지연으로 중단 — 다음 사이클에 자동 재시도">⏱ 응답지연</span>
+                                {% else %}
+                                    <span class="badge badge-error">실패</span>
+                                {% endif %}
                             {% endif %}
                             {% set att = r.attempts or 1 %}
                             {% if att > 1 %}
@@ -257,8 +269,19 @@
                         </td>
                     </tr>
                     {% if r.status not in ['success', 'running'] and r.error_summary %}
+                    {% set err = (r.error or '') %}
+                    {% if 'sample' in err %}
+                        {% set kind = '🔴 cafe24 Premium 만료/권한 — 해당 매장 구독 결제 확인 필요 (등록되면 자동 복구)' %}{% set kc = '#c0392b' %}{% set kbg = '#fff5f5' %}
+                    {% elif 'startup cleanup' in err %}
+                        {% set kind = '↻ 배포/재시작으로 중단된 흔적 — 무해. 조치 불필요 (다음 사이클 자동 재시도)' %}{% set kc = '#566573' %}{% set kbg = '#f4f6f7' %}
+                    {% elif 'timeout' in err or 'hang' in err or '강제 종료' in err %}
+                        {% set kind = '⏱ 페이지 응답 지연으로 중단 — 자동 재시도됨. 반복되면 해당 매장 cafe24 상태 확인' %}{% set kc = '#b9770e' %}{% set kbg = '#fef9e7' %}
+                    {% else %}
+                        {% set kind = '' %}{% set kc = '#c0392b' %}{% set kbg = '#fff5f5' %}
+                    {% endif %}
                     <tr>
-                        <td colspan="7" style="background:#fff5f5;border-top:none;padding:6px 12px">
+                        <td colspan="7" style="background:{{ kbg }};border-top:none;padding:6px 12px">
+                            {% if kind %}<div style="font-size:0.8rem;color:{{ kc }};font-weight:600;margin-bottom:4px">{{ kind }}</div>{% endif %}
                             <details style="font-size:0.8rem;color:#721c24">
                                 <summary style="cursor:pointer;font-weight:500">
                                     <span style="color:#c0392b">실패 사유:</span> {{ r.error_summary }}
