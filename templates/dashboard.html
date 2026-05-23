@@ -185,7 +185,7 @@
     {% if mega %}
     <div class="mega-grid">
         <div class="mega mega-hero">
-            <div class="mega-label">오늘 매출 (지금까지)</div>
+            <div class="mega-label" title="선택한 매장 전체의 오늘 0시~현재 누적 매출 합계. 아래는 어제 같은 시각까지 누적과 비교" style="cursor:help">오늘 매출 (지금까지) ⓘ</div>
             <div class="mega-value">{{ "{:,.0f}".format(mega.today_sales) }}<span class="mega-unit">원</span></div>
             <div class="mega-sub">
                 {% if mega.vs_yest_at_hour_pct is not none %}
@@ -195,7 +195,7 @@
             </div>
         </div>
         <div class="mega">
-            <div class="mega-label">예상 종일 매출</div>
+            <div class="mega-label" title="현재까지의 진행 속도(페이스)로 추정한 오늘 하루 전체 예상 매출. 아래는 어제 종일 실적과 비교" style="cursor:help">예상 종일 매출 ⓘ</div>
             <div class="mega-value">{{ "{:,.0f}".format(mega.expected_eod) }}<span class="mega-unit">원</span></div>
             <div class="mega-sub {{ 'up' if mega.vs_yest_full_pct and mega.vs_yest_full_pct > 0 else ('down' if mega.vs_yest_full_pct and mega.vs_yest_full_pct < 0 else '') }}">
                 {% if mega.vs_yest_full_pct is not none %}
@@ -218,7 +218,7 @@
             </div>
         </div>
         <div class="mega">
-            <div class="mega-label">전환율 (전체)</div>
+            <div class="mega-label" title="전체 구매건수 ÷ 전체 방문자 × 100. 방문자 중 실제 구매로 이어진 비율. 아래는 어제 대비 증감(p=퍼센트포인트)" style="cursor:help">전환율 (전체) ⓘ</div>
             <div class="mega-value">{{ "%.2f"|format(mega.overall_conv) if mega.overall_conv is not none else '—' }}<span class="mega-unit">%</span></div>
             <div class="mega-sub">
                 어제 {{ "%.2f"|format(mega.overall_conv_yest) if mega.overall_conv_yest is not none else '—' }}%
@@ -233,12 +233,12 @@
             <div class="mega-sub">건당 매출 (전체 매출 / 전체 건수){% if mega.items_per_order %} · 건당 {{ mega.items_per_order }}개{% endif %}</div>
         </div>
         <div class="mega">
-            <div class="mega-label">신규방문 비중</div>
+            <div class="mega-label" title="전체 방문자 중 신규(처음 온) 방문 비율. 나머지는 재방문" style="cursor:help">신규방문 비중 ⓘ</div>
             <div class="mega-value">{{ "%.1f"|format(mega.new_visit_pct) if mega.new_visit_pct is not none else '—' }}<span class="mega-unit">%</span></div>
             <div class="mega-sub">신규 {{ "{:,.0f}".format(mega.today_new_visit) }} · 재방문 {{ "{:,.0f}".format(mega.today_rev_visit) }}</div>
         </div>
         <div class="mega">
-            <div class="mega-label">재구매 비중</div>
+            <div class="mega-label" title="구매자 중 재구매 고객 비율. 첫구매(처음 산 사람) vs 재구매(다시 산 사람)" style="cursor:help">재구매 비중 ⓘ</div>
             <div class="mega-value">{{ "%.1f"|format(mega.rebuy_pct) if mega.rebuy_pct is not none else '—' }}<span class="mega-unit">%</span></div>
             <div class="mega-sub">첫구매 {{ "{:,.0f}".format(mega.today_first_buy) }} · 재구매 {{ "{:,.0f}".format(mega.today_rebuy) }}</div>
         </div>
@@ -291,17 +291,17 @@
         <table class="num">
             <thead>
                 <tr>
-                    <th>계정 <span class="label-sub">마지막 갱신</span></th>
-                    <th>매출</th>
-                    <th>vs 어제 동시각</th>
-                    <th>예상 종일</th>
-                    <th>페이스</th>
-                    <th>건수</th>
-                    <th>방문자 <span class="label-sub">(신규/재방문)</span></th>
-                    <th>전환율</th>
-                    <th>객단가</th>
-                    <th>회원가입</th>
-                    <th>재구매 <span class="label-sub">(첫/재)</span></th>
+                    <th title="매장 이름과 마지막으로 데이터가 갱신된 시각">계정 <span class="label-sub">마지막 갱신</span></th>
+                    <th title="오늘 0시부터 현재까지 누적 매출 (실시간 진행 중)" style="border-bottom:1px dotted #bbb;cursor:help">매출 ⓘ</th>
+                    <th title="어제 '같은 시각'까지의 누적 매출과 비교. 종일 vs 진행중을 비교하면 불공평하니, 어제도 같은 시간까지만 잘라서 비교 (사과↔사과)" style="border-bottom:1px dotted #bbb;cursor:help">vs 어제 동시각 ⓘ</th>
+                    <th title="현재 페이스(진행 속도)로 추정한 오늘 하루 전체 예상 매출" style="border-bottom:1px dotted #bbb;cursor:help">예상 종일 ⓘ</th>
+                    <th title="최근 7일 평균과 비교해 지금 시각 기준 누적이 어느 정도 진행됐는지 (%). 100%면 평소 페이스, 높으면 평소보다 빠름" style="border-bottom:1px dotted #bbb;cursor:help">페이스 ⓘ</th>
+                    <th title="오늘 누적 구매 건수 (아래는 어제 동시각 대비)" style="border-bottom:1px dotted #bbb;cursor:help">건수 ⓘ</th>
+                    <th title="오늘 누적 방문자 수 (신규 방문 / 재방문 분리)" style="border-bottom:1px dotted #bbb;cursor:help">방문자 <span class="label-sub">(신규/재방문)</span> ⓘ</th>
+                    <th title="구매건수 ÷ 방문자 × 100. 방문자 중 실제 구매 비율" style="border-bottom:1px dotted #bbb;cursor:help">전환율 ⓘ</th>
+                    <th title="매출 ÷ 구매건수. 1건당 평균 구매 금액" style="border-bottom:1px dotted #bbb;cursor:help">객단가 ⓘ</th>
+                    <th title="오늘 신규 회원가입 수">회원가입</th>
+                    <th title="구매자 중 첫 구매 / 재구매 비중" style="border-bottom:1px dotted #bbb;cursor:help">재구매 <span class="label-sub">(첫/재)</span> ⓘ</th>
                 </tr>
             </thead>
             <tbody>
@@ -565,8 +565,12 @@
         <h2>🛍 카페24 상품 분석 — 매장별 top 5
             <span style="font-size:0.78rem; color:#888; font-weight:400">수집일 {{ product_collect_date }} · 카페24 무료 등급 노출 데이터</span>
         </h2>
-        <p class="card-sub">카페24가 무료로 보여주는 베스트/급상승/전환율/판매액 각 top 5. 매일 06:00 수집.
-            <strong>🚀 급상승</strong>은 노출/담김/판매 모두 증가한 상품 (광고 집중 후보).
+        <p class="card-sub">카페24가 무료로 보여주는 베스트/급상승/전환율/판매액 각 top 5. <strong>매일 새벽 6시 수집 → 사실상 전일(어제) 기준</strong>입니다.
+            아래 4개 분류는 각각 다른 관점의 상위 5개 상품:
+            <span title="최근 기간 대비 노출수·장바구니 담김·판매가 모두 늘어난 상품. 지금 뜨고 있어 광고 집중하기 좋은 후보" style="cursor:help;border-bottom:1px dotted #bbb">🚀 급상승 ⓘ</span> ·
+            <span title="판매금액(매출) 기준 상위 5개" style="cursor:help;border-bottom:1px dotted #bbb">💰 베스트 매출 ⓘ</span> ·
+            <span title="노출 대비 구매 전환율 높은 상위 5개. 적게 노출돼도 잘 팔리는 효율 좋은 상품" style="cursor:help;border-bottom:1px dotted #bbb">🎯 전환율 ⓘ</span> ·
+            <span title="판매액(수량×가격) 순위 상위 5개" style="cursor:help;border-bottom:1px dotted #bbb">💎 판매액 ⓘ</span>
         </p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:14px">
             {% set categories = [
