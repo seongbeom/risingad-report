@@ -327,9 +327,13 @@
     </div>
 
     <script>
-        // 실행 중인 작업이 있으면 5초마다 새로고침
+        // 실행 중인 작업이 있으면 주기적으로 새로고침 (단, 피드백 패널 열려있으면 건너뜀)
         {% if running %}
-        setTimeout(() => location.reload(), 5000);
+        setInterval(() => {
+            // 피드백 다이얼로그/패널이 열려있으면 새로고침 안 함 (작성 중 닫힘 방지)
+            if (document.querySelector('.fb-panel.open, .fb-overlay.open')) return;
+            location.reload();
+        }, 20000);
         {% endif %}
     </script>
     {% include '_feedback_widget.html' %}
