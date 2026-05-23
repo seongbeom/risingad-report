@@ -559,31 +559,51 @@
         </script>
     </div>
 
-    <!-- 카페24 상품 분석 (top 5) -->
-    {% if product_data %}
+    <!-- 카페24 상품 분석 (top 5) — 기간 탭(오늘/전일/7일) -->
+    {% if product_periods %}
+    {% set period_labels = {'today':'오늘', 'yesterday':'전일', '7d':'최근 7일'} %}
+    {% set period_descs = {
+        'today':'오늘 0시~현재 누적 기준 (활성시간 짝수시마다 갱신, 진행 중)',
+        'yesterday':'어제 하루 확정 데이터 (매일 새벽 6시 수집)',
+        '7d':'카페24 기본 집계 기간. 수집일 포함 직전 7일 누적 (매일 새벽 6시)'} %}
     <div class="card">
         <h2>🛍 카페24 상품 분석 — 매장별 top 5
-            <span style="font-size:0.78rem; color:#888; font-weight:400">수집일 {{ product_collect_date }} · 카페24 무료 등급 노출 데이터</span>
+            <span style="font-size:0.78rem; color:#888; font-weight:400">수집일 {{ product_collect_date }}</span>
         </h2>
-        <p class="card-sub">카페24가 무료로 보여주는 베스트/급상승/전환율/판매액 각 top 5. <strong>카페24 기본 집계 기간인 '최근 7일' 기준</strong>입니다 (매일 새벽 6시 수집, 수집일 포함 직전 7일간 누적).
-            아래 4개 분류는 각각 다른 관점의 상위 5개 상품:
-            <span title="최근 기간 대비 노출수·장바구니 담김·판매가 모두 늘어난 상품. 지금 뜨고 있어 광고 집중하기 좋은 후보" style="cursor:help;border-bottom:1px dotted #bbb">🚀 급상승 ⓘ</span> ·
+        <p class="card-sub">베스트/급상승/전환율/판매액 각 top 5.
+            <span title="최근 기간 대비 노출수·장바구니 담김·판매가 모두 늘어난 상품. 광고 집중 후보" style="cursor:help;border-bottom:1px dotted #bbb">🚀 급상승 ⓘ</span> ·
             <span title="판매금액(매출) 기준 상위 5개" style="cursor:help;border-bottom:1px dotted #bbb">💰 베스트 매출 ⓘ</span> ·
-            <span title="노출 대비 구매 전환율 높은 상위 5개. 적게 노출돼도 잘 팔리는 효율 좋은 상품" style="cursor:help;border-bottom:1px dotted #bbb">🎯 전환율 ⓘ</span> ·
+            <span title="노출 대비 구매 전환율 높은 상위 5개" style="cursor:help;border-bottom:1px dotted #bbb">🎯 전환율 ⓘ</span> ·
             <span title="판매액(수량×가격) 순위 상위 5개" style="cursor:help;border-bottom:1px dotted #bbb">💎 판매액 ⓘ</span>
         </p>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:14px">
-            {% set categories = [
-                ('🚀 매출 급상승 (변화량)', '급상승_변화량', '#27ae60'),
-                ('💰 베스트 매출 TOP', '베스트_매출', '#4a90d9'),
-                ('🎯 전환율 TOP', '전환율_TOP', '#9b59b6'),
-                ('💎 판매액 순위', '판매액_순위', '#e67e22'),
-            ] %}
+        <!-- 기간 탭 -->
+        <div style="display:flex; gap:6px; margin-bottom:6px">
+            {% for per in product_periods %}
+            <button type="button" class="pp-tab" data-period="{{ per }}"
+                title="{{ period_descs.get(per,'') }}"
+                onclick="switchProductPeriod('{{ per }}')"
+                style="font-size:0.8rem; padding:4px 12px; border-radius:14px; border:1px solid #ddd; cursor:pointer; background:{{ '#4a90d9' if loop.first else '#fff' }}; color:{{ '#fff' if loop.first else '#555' }}">
+                {{ period_labels.get(per, per) }}
+            </button>
+            {% endfor %}
+        </div>
+        <p id="pp-desc" class="card-sub" style="margin-top:0">{{ period_descs.get(product_periods[0], '') }}</p>
+
+        {% set categories = [
+            ('🚀 매출 급상승 (변화량)', '급상승_변화량', '#27ae60'),
+            ('💰 베스트 매출 TOP', '베스트_매출', '#4a90d9'),
+            ('🎯 전환율 TOP', '전환율_TOP', '#9b59b6'),
+            ('💎 판매액 순위', '판매액_순위', '#e67e22'),
+        ] %}
+        {% for per in product_periods %}
+        <div class="pp-grid" data-period="{{ per }}" style="{{ '' if loop.first else 'display:none;' }} display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:14px"
+             {% if not loop.first %}hidden{% endif %}>
+            {% set pdata = product_by_period[per] %}
             {% for cat_label, cat_key, cat_color in categories %}
-            {% if product_data.get(cat_key) %}
+            {% if pdata.get(cat_key) %}
             <div style="background:#fff; padding:14px; border-radius:8px; border-top:3px solid {{ cat_color }}; box-shadow:0 1px 3px rgba(0,0,0,0.05)">
                 <h3 style="font-size:0.95rem; margin:0 0 8px 0; color:{{ cat_color }}">{{ cat_label }}</h3>
-                {% for aid, prows in product_data[cat_key].items() %}
+                {% for aid, prows in pdata[cat_key].items() %}
                 {% set acct_label = (acct_hourly_cum | selectattr('id', 'eq', aid) | list | first).label if acct_hourly_cum | selectattr('id', 'eq', aid) | list else aid %}
                 <div style="margin-bottom:10px">
                     <div style="font-size:0.78rem; color:#888; font-weight:600; margin-bottom:4px">🏬 {{ acct_label }}</div>
@@ -608,6 +628,23 @@
             {% endif %}
             {% endfor %}
         </div>
+        {% endfor %}
+        <script>
+            var PP_DESCS = {{ period_descs|tojson }};
+            var PP_LABELS = {{ period_labels|tojson }};
+            function switchProductPeriod(per) {
+                document.querySelectorAll('.pp-grid').forEach(function(g){
+                    var on = g.getAttribute('data-period') === per;
+                    g.hidden = !on; g.style.display = on ? 'grid' : 'none';
+                });
+                document.querySelectorAll('.pp-tab').forEach(function(b){
+                    var on = b.getAttribute('data-period') === per;
+                    b.style.background = on ? '#4a90d9' : '#fff';
+                    b.style.color = on ? '#fff' : '#555';
+                });
+                var d = document.getElementById('pp-desc'); if (d) d.textContent = PP_DESCS[per] || '';
+            }
+        </script>
     </div>
     {% endif %}
 

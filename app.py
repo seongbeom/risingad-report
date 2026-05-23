@@ -283,17 +283,17 @@ def _run_scrape_with_timeout(account, target_date, timeout_sec=None):
     return result_holder["result"]
 
 
-PRODUCT_PER_ATTEMPT_TIMEOUT_SEC = 240  # 4분 - 정상 ~30초, 그 이상 hang
+PRODUCT_PER_ATTEMPT_TIMEOUT_SEC = 300  # 5분 - 기간변경(달력) 포함 정상 ~1분, 그 이상 hang
 
 
-def _run_product_with_timeout(account, timeout_sec=PRODUCT_PER_ATTEMPT_TIMEOUT_SEC):
-    """scrape_product_analytics 를 별도 thread + timeout 으로 감쌈.
+def _run_product_with_timeout(account, period="7d", timeout_sec=PRODUCT_PER_ATTEMPT_TIMEOUT_SEC):
+    """scrape_product_analytics(period) 를 별도 thread + timeout 으로 감쌈.
     hang 시 chromium kill → HangTimeout raise. systemic 판단은 호출부에서."""
     result_holder = {"result": None, "exc": None}
 
     def _target():
         try:
-            result_holder["result"] = scraper.scrape_product_analytics(account)
+            result_holder["result"] = scraper.scrape_product_analytics(account, period=period)
         except Exception as e:
             result_holder["exc"] = e
 
@@ -585,44 +585,51 @@ def _auto_backfill_missing(today, deadline=None):
     _kill_leftover_chromium()
 
 
-def _product_collect_job():
-    """매일 06:00 - 모든 매장의 카페24 애널리틱스 '상품 분석' 페이지 top 5 데이터 수집.
-    무료 등급 노출분만 (베스트/급상승/전환율/판매액 각 5건)."""
+def _product_collect_job(periods=("7d", "yesterday")):
+    """카페24 '상품 분석' top 5 수집. periods 각 기간을 계정별로 수집.
+    '7d'=최근7일(페이지 기본), 'yesterday'=전일, 'today'=오늘.
+    수집일(date)은 항상 오늘 날짜로 저장하고 period 로 구분."""
     today = datetime.now().strftime("%Y-%m-%d")
     accounts = db.list_accounts()
-    print(f"[product-collect] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
-    cycle_deadline = time.monotonic() + max(30 * 60, len(accounts) * 4 * 60)
+    plabel = ",".join(periods)
+    print(f"[product-collect] {today} periods=[{plabel}] {len(accounts)}계정 시작 free={_free_memory_mb()}MB")
+    cycle_deadline = time.monotonic() + max(30 * 60, len(accounts) * len(periods) * 4 * 60)
     ok = 0
     err = 0
     for i, a in enumerate(accounts):
         if time.monotonic() > cycle_deadline:
             print(f"[product-collect] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
             break
-        _wait_for_memory(f"product before {a['id']}")
-        with _run_lock:  # 라이브 잡과 직렬화
-            try:
-                rows = _run_product_with_timeout(a)
-                if rows:
-                    db.upsert_product_metrics(a["id"], today, rows)
-                    print(f"[product-collect] {a['id']} {len(rows)}건 저장")
-                    ok += 1
-                else:
-                    print(f"[product-collect] {a['id']} 0건 (페이지 비어있음)")
-                _note_account_success()
-            except HangTimeout:
-                err += 1
-                _note_account_hang(a["id"], context="product_collect")
-            except Exception:
-                err += 1
-                traceback.print_exc()
-        if i < len(accounts) - 1:
+        for period in periods:
+            _wait_for_memory(f"product {period} before {a['id']}")
+            with _run_lock:  # 라이브 잡과 직렬화
+                try:
+                    rows = _run_product_with_timeout(a, period=period)
+                    if rows:
+                        db.upsert_product_metrics(a["id"], today, rows, period=period)
+                        print(f"[product-collect] {a['id']} [{period}] {len(rows)}건 저장")
+                        ok += 1
+                    else:
+                        print(f"[product-collect] {a['id']} [{period}] 0건")
+                    _note_account_success()
+                except HangTimeout:
+                    err += 1
+                    _note_account_hang(a["id"], context=f"product_collect {period}")
+                except Exception:
+                    err += 1
+                    traceback.print_exc()
             time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
     _kill_leftover_chromium()
-    print(f"[product-collect] {today} done — 성공 {ok} / 실패 {err}")
+    print(f"[product-collect] {today} [{plabel}] done — 성공 {ok} / 실패 {err}")
     slack_notify(
-        f"product-collect 완료 ({today}) · 성공 {ok} / 실패 {err}",
+        f"product-collect 완료 ({today}) [{plabel}] · 성공 {ok} / 실패 {err}",
         severity="report" if err == 0 else "warn",
     )
+
+
+def _product_today_job():
+    """활성 시간대 주기 실행 — '오늘' 기준 상품 top5 (라이브성)."""
+    _product_collect_job(periods=("today",))
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -868,7 +875,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "heartbeat"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "product_today", "heartbeat"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -910,13 +917,21 @@ def reload_schedules():
     )
     print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
 
-    # 매일 06:00 카페24 상품 분석 데이터 수집 (베스트/급상승/전환율/판매액 top 5)
+    # 매일 06:00 카페24 상품 분석 (최근7일 + 전일) top 5
     scheduler.add_job(
         _product_collect_job, "cron",
         hour=6, minute=0,
         id="product_collect", replace_existing=True,
     )
-    print(f"[scheduler] product_collect: 매일 06:00")
+    print(f"[scheduler] product_collect: 매일 06:00 (7d+전일)")
+
+    # 활성 시간대 '오늘' 상품 top5 (라이브성) — 짝수시 30분마다 (메트릭 라이브와 시간 분리)
+    scheduler.add_job(
+        _product_today_job, "cron",
+        hour="8-22/2", minute=30,
+        id="product_today", replace_existing=True,
+    )
+    print(f"[scheduler] product_today: 8~22시 짝수시 30분 (오늘 기준)")
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
@@ -1211,6 +1226,9 @@ def admin_product_collect():
     if remote not in ("127.0.0.1", "::1", "localhost"):
         return jsonify({"error": "forbidden"}), 403
     account_id = request.form.get("account_id", "all").strip()
+    period = request.form.get("period", "7d").strip()  # 7d | yesterday | today
+    if period not in ("7d", "yesterday", "today"):
+        return jsonify({"error": "period must be 7d|yesterday|today"}), 400
     today = datetime.now().strftime("%Y-%m-%d")
     if account_id == "all":
         target = db.list_accounts()
@@ -1227,31 +1245,31 @@ def admin_product_collect():
             _wait_for_memory(f"product before {a['id']}")
             with _run_lock:
                 try:
-                    rows = _run_product_with_timeout(a)
+                    rows = _run_product_with_timeout(a, period=period)
                     if rows:
-                        db.upsert_product_metrics(a["id"], today, rows)
-                        print(f"[product-collect-manual] {a['id']} {len(rows)}건 저장", flush=True)
+                        db.upsert_product_metrics(a["id"], today, rows, period=period)
+                        print(f"[product-collect-manual] {a['id']} [{period}] {len(rows)}건 저장", flush=True)
                         ok += 1
                     else:
-                        print(f"[product-collect-manual] {a['id']} 0건", flush=True)
+                        print(f"[product-collect-manual] {a['id']} [{period}] 0건", flush=True)
                     _note_account_success()
                 except HangTimeout:
                     err += 1
-                    _note_account_hang(a["id"], context="product_collect-manual")
+                    _note_account_hang(a["id"], context=f"product_collect-manual {period}")
                 except Exception:
                     err += 1
                     traceback.print_exc()
             if i < len(target) - 1:
                 time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
         _kill_leftover_chromium()
-        print(f"[product-collect-manual] done ok={ok} err={err}", flush=True)
+        print(f"[product-collect-manual] [{period}] done ok={ok} err={err}", flush=True)
         slack_notify(
-            f"product-collect (manual) 완료 ({today}) · 성공 {ok} / 실패 {err}",
+            f"product-collect (manual) 완료 ({today}) [{period}] · 성공 {ok} / 실패 {err}",
             severity="report" if err == 0 else "warn",
         )
 
     threading.Thread(target=_run_one, daemon=True).start()
-    return jsonify({"ok": True, "accounts": [a["id"] for a in target], "date": today})
+    return jsonify({"ok": True, "accounts": [a["id"] for a in target], "date": today, "period": period})
 
 
 @app.route("/accounts/<account_id>/update", methods=["POST"])
@@ -2116,8 +2134,10 @@ def dashboard():
 
     # ---- 카페24 상품 분석 (최근 수집분) ----
     # 가장 최근 collect_date 1개만 사용 (오늘 또는 어제)
-    product_data = {}  # category -> account_id -> [rows]
+    # 상품 분석 — 기간별(period)로 분리. {period: {category: {account_id: [rows]}}}
+    product_by_period = {}
     product_collect_date = None
+    product_periods = []  # 데이터 있는 기간 (오늘/전일/7일 순)
     try:
         with db.db_conn() as conn:
             r = conn.execute(
@@ -2129,11 +2149,18 @@ def dashboard():
             product_collect_date = r[0] if r else None
         if product_collect_date:
             for prow in db.list_product_metrics(account_id=selected_ids, date=product_collect_date):
+                per = prow.get("period") or "7d"
                 cat = prow["category"]
                 aid_p = prow["account_id"]
-                product_data.setdefault(cat, {}).setdefault(aid_p, []).append(prow)
+                product_by_period.setdefault(per, {}).setdefault(cat, {}).setdefault(aid_p, []).append(prow)
+        # 표시 순서: 오늘 → 전일 → 7일 (있는 것만)
+        for per in ("today", "yesterday", "7d"):
+            if per in product_by_period:
+                product_periods.append(per)
     except Exception:
         traceback.print_exc()
+    # 하위호환: 기본 기간(있으면 첫번째)의 데이터를 product_data 로
+    product_data = product_by_period.get(product_periods[0], {}) if product_periods else {}
 
     return render_template(
         "dashboard.html",
@@ -2167,6 +2194,8 @@ def dashboard():
         last_week_same=last_week_same,
         capsolver=capsolver,
         product_data=product_data,
+        product_by_period=product_by_period,
+        product_periods=product_periods,
         product_collect_date=product_collect_date,
         now=now.strftime("%H:%M"),
     )
