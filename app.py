@@ -236,9 +236,17 @@ class HangTimeout(TimeoutError):
     """스크래핑이 timeout 으로 hang 된 경우 (다른 에러와 구분 — systemic 카운터 판단용)."""
 
 
-def _run_scrape_with_timeout(account, target_date, timeout_sec):
-    """별도 thread 로 run_scrape 호출, timeout 내 끝나지 않으면 chromium kill 하고 HangTimeout raise.
-    systemic 카운터/restart 판단은 호출부(_run_scrape_task)에서 account-level 로 처리."""
+STALL_LIMIT_SEC = 240   # 한 phase 에서 4분 넘게 진전 없으면 hang (느린 계정 보호 + 진짜 멈춤 감지)
+HARD_CAP_SEC = 1200     # 전체 20분 하드 캡 (느려도 이건 넘으면 강제 종료)
+
+
+def _run_scrape_with_timeout(account, target_date, timeout_sec=None):
+    """별도 thread 로 run_scrape 호출. 진행기반 watchdog:
+    - phase(scraper.LAST_PHASE)가 STALL_LIMIT_SEC 동안 안 바뀌면 = 멈춤 → HangTimeout
+    - 전체 HARD_CAP_SEC 넘으면 → HangTimeout
+    느리지만 계속 진전하는 계정(rosy001 처럼 phase 가 1~2분마다 넘어감)은 완주시키고,
+    진짜 stuck(한 단계서 4분+ 정지)은 빠르게 잡음. timeout_sec 인자는 하위호환용(미사용)."""
+    aid = account.get("id", "")
     result_holder = {"result": None, "exc": None}
 
     def _target():
@@ -247,15 +255,29 @@ def _run_scrape_with_timeout(account, target_date, timeout_sec):
         except Exception as e:
             result_holder["exc"] = e
 
+    scraper.LAST_PHASE.pop(aid, None)
     t = threading.Thread(target=_target, daemon=True)
     t.start()
-    t.join(timeout=timeout_sec)
-    if t.is_alive():
-        # hang 으로 간주 → chromium 강제 kill (thread 는 못 죽이지만 chromium 죽으면 playwright 가 raise 하며 종료됨)
-        print(f"[{account['id']}] scrape timeout {timeout_sec}s - chromium 강제 종료", flush=True)
-        _kill_leftover_chromium()
-        t.join(timeout=30)  # chromium 죽으면 thread 도 곧 정리됨
-        raise HangTimeout(f"scrape timeout {timeout_sec}s - chromium 강제 종료")
+    start = time.monotonic()
+    last_phase = None
+    last_change = time.monotonic()
+    while t.is_alive():
+        t.join(timeout=10)
+        if not t.is_alive():
+            break
+        now = time.monotonic()
+        cur_phase = scraper.LAST_PHASE.get(aid)
+        if cur_phase != last_phase:
+            last_phase = cur_phase
+            last_change = now
+        stalled = now - last_change
+        elapsed = now - start
+        if stalled >= STALL_LIMIT_SEC or elapsed >= HARD_CAP_SEC:
+            reason = f"{int(stalled)}s 진전없음(phase={last_phase})" if stalled >= STALL_LIMIT_SEC else f"전체 {int(elapsed)}s 초과"
+            print(f"[{aid}] scrape hang - {reason} - chromium 강제 종료", flush=True)
+            _kill_leftover_chromium()
+            t.join(timeout=30)
+            raise HangTimeout(f"scrape hang - {reason}")
     if result_holder["exc"]:
         raise result_holder["exc"]
     return result_holder["result"]
