@@ -174,18 +174,35 @@ _consecutive_hangs = 0
 CONSECUTIVE_HANG_LIMIT = 3
 
 
+EARLY_PHASES = ("chromium launch", "ensure_login")
+
+
 def _note_account_hang(account_id, context=""):
-    """한 계정이 모든 재시도에서 hang 으로 실패. systemic 카운터 +1, 임계 도달 시 self-restart."""
+    """한 계정이 모든 재시도에서 hang 으로 실패.
+    단, hang 시점이 'chromium launch'/'ensure_login' 같은 초기 단계일 때만 systemic 카운터에 반영.
+    데이터 페이지(매출/방문자 등)까지 진입한 뒤 느려서 hang 한 건 = 계정/사이트 느림이지
+    chromium wedge 가 아니므로 self-restart 대상이 아님 (재시작해도 그 계정은 또 느림)."""
     global _consecutive_hangs
+    last_phase = scraper.LAST_PHASE.get(account_id, "")
+    is_early = (not last_phase) or any(last_phase.startswith(p) for p in EARLY_PHASES)
+    if not is_early:
+        # 데이터 단계 도달 후 hang → 그 계정만 스킵, systemic 아님. 카운터 건드리지 않음.
+        print(f"[hang] {account_id} 데이터 단계({last_phase})에서 hang → 계정 느림으로 스킵 (systemic 제외) {context}", flush=True)
+        slack_notify(
+            f"`{account_id}` 느려서 모든 재시도 hang → 스킵 (마지막 단계: {last_phase}). "
+            f"브라우저는 정상이라 systemic 아님{(' · ' + context) if context else ''}",
+            severity="hang",
+        )
+        return
     _consecutive_hangs += 1
-    print(f"[hang] {account_id} 전 재시도 hang (연속 {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT}) {context}", flush=True)
+    print(f"[hang] {account_id} 초기단계({last_phase}) hang (연속 {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT}) {context}", flush=True)
     slack_notify(
-        f"`{account_id}` 모든 재시도 hang → 스킵 "
-        f"(서로 다른 계정 연속 hang {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT}){(' · ' + context) if context else ''}",
+        f"`{account_id}` 초기단계 hang → 스킵 "
+        f"(서로 다른 계정 연속 {_consecutive_hangs}/{CONSECUTIVE_HANG_LIMIT}, chromium wedge 의심){(' · ' + context) if context else ''}",
         severity="hang",
     )
     if _consecutive_hangs >= CONSECUTIVE_HANG_LIMIT:
-        _self_restart_service(f"서로 다른 계정 {CONSECUTIVE_HANG_LIMIT}개 연속 hang → systemic chromium wedge 의심")
+        _self_restart_service(f"서로 다른 계정 {CONSECUTIVE_HANG_LIMIT}개 초기단계 연속 hang → systemic chromium wedge")
         _consecutive_hangs = 0
 
 

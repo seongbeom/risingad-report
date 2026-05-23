@@ -26,6 +26,11 @@ DATA_DIR = Path(__file__).parent / "data"
 CAPSOLVER_API_KEY = os.environ.get("CAPSOLVER_API_KEY", "")
 CAPSOLVER_BASE = "https://api.capsolver.com"
 
+# 계정별 마지막 진입 phase 기록 (app.py 가 hang 시 systemic 여부 판단에 사용).
+# 'chromium launch' / 'ensure_login' 단계 hang = 진짜 wedge 후보,
+# 그 이후(데이터 페이지) hang = 계정/사이트 느림 → systemic 아님.
+LAST_PHASE = {}
+
 
 def capsolver_solve_recaptcha_v2(sitekey, page_url, timeout=120, account_id=None):
     """CapSolver API 로 reCAPTCHA v2 풀기. g-recaptcha-response 토큰 문자열 반환.
@@ -770,6 +775,7 @@ def run_scrape(account, target_date=None):
 
     aid = account.get("id", cafe24_id)
     def _phase(name):
+        LAST_PHASE[aid] = name
         print(f"[{aid}] phase: {name}", flush=True)
 
     with sync_playwright() as p:
