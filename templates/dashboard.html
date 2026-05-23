@@ -1214,5 +1214,29 @@
     </div>
 </div>
 {% include '_feedback_widget.html' %}
+<script>
+// 모든 title 속성 → 커서 따라다니는 즉시 툴팁 (네이티브 title 지연/클리핑 해소)
+(function(){
+  var box = document.createElement('div');
+  box.style.cssText = 'position:fixed;display:none;background:#2c3e50;color:#fff;padding:7px 10px;border-radius:6px;font-size:0.74rem;line-height:1.5;max-width:320px;z-index:99999;box-shadow:0 3px 12px rgba(0,0,0,0.3);pointer-events:none;white-space:normal';
+  document.body.appendChild(box);
+  function move(e){
+    var x = e.clientX + 14, y = e.clientY + 16;
+    var w = box.offsetWidth, h = box.offsetHeight;
+    if (x + w > window.innerWidth) x = window.innerWidth - w - 8;
+    if (y + h > window.innerHeight) y = e.clientY - h - 12;
+    box.style.left = x + 'px'; box.style.top = y + 'px';
+  }
+  function show(e){ var t = e.currentTarget.getAttribute('data-tip'); if(!t) return; box.textContent = t; box.style.display = 'block'; move(e); }
+  function hide(){ box.style.display = 'none'; }
+  document.querySelectorAll('[title]').forEach(function(el){
+    var t = el.getAttribute('title'); if(!t) return;
+    el.setAttribute('data-tip', t); el.removeAttribute('title');  // 네이티브 title 제거(중복 방지)
+    el.addEventListener('mouseenter', show);
+    el.addEventListener('mousemove', move);
+    el.addEventListener('mouseleave', hide);
+  });
+})();
+</script>
 </body>
 </html>
