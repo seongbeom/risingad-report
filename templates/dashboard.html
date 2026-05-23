@@ -559,16 +559,16 @@
         </script>
     </div>
 
-    <!-- 카페24 상품 분석 (top 5) — 기간 탭(오늘/전일/7일) -->
+    <!-- 카페24 상품 분석 (top 5) — 기간 탭 -->
     {% if product_periods %}
-    {% set period_labels = {'today':'오늘', 'yesterday':'전일', '7d':'최근 7일'} %}
+    {% set period_labels = {'today':'오늘 (진행중)', 'yesterday':'전일 (확정)', '7d':'최근 7일 (추세)'} %}
     {% set period_descs = {
-        'today':'오늘 0시~현재 누적 기준 (활성시간 짝수시마다 갱신, 진행 중)',
-        'yesterday':'어제 하루 확정 데이터 (매일 새벽 6시 수집)',
-        '7d':'카페24 기본 집계 기간. 수집일 포함 직전 7일 누적 (매일 새벽 6시)'} %}
+        'today':'오늘 0시~현재 누적. 라이브 스크랩(매시간)이 갱신 — 진행 중이라 계속 바뀜',
+        'yesterday':'어제 하루 확정 데이터. 매일 새벽 finalize 가 어제치 완성본 수집',
+        '7d':'카페24 기본 집계 기간(최근 7일 누적 추세). 매일 새벽 finalize 가 수집. 급상승은 7일 윈도우 기준이라 광고 후보 판단에 가장 유용'} %}
     <div class="card">
         <h2>🛍 카페24 상품 분석 — 매장별 top 5
-            <span style="font-size:0.78rem; color:#888; font-weight:400">수집일 {{ product_collect_date }}</span>
+            {% if product_running %}<span style="font-size:0.74rem; background:#27ae60; color:#fff; padding:1px 8px; border-radius:10px; font-weight:600">🔄 수집 중 ({{ product_running|join(', ') }})</span>{% endif %}
         </h2>
         <p class="card-sub">베스트/급상승/전환율/판매액 각 top 5.
             <span title="최근 기간 대비 노출수·장바구니 담김·판매가 모두 늘어난 상품. 광고 집중 후보" style="cursor:help;border-bottom:1px dotted #bbb">🚀 급상승 ⓘ</span> ·
@@ -577,13 +577,13 @@
             <span title="판매액(수량×가격) 순위 상위 5개" style="cursor:help;border-bottom:1px dotted #bbb">💎 판매액 ⓘ</span>
         </p>
         <!-- 기간 탭 -->
-        <div style="display:flex; gap:6px; margin-bottom:6px">
+        <div style="display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap">
             {% for per in product_periods %}
             <button type="button" class="pp-tab" data-period="{{ per }}"
                 title="{{ period_descs.get(per,'') }}"
                 onclick="switchProductPeriod('{{ per }}')"
                 style="font-size:0.8rem; padding:4px 12px; border-radius:14px; border:1px solid #ddd; cursor:pointer; background:{{ '#4a90d9' if loop.first else '#fff' }}; color:{{ '#fff' if loop.first else '#555' }}">
-                {{ period_labels.get(per, per) }}
+                {{ period_labels.get(per, per) }}<span style="opacity:0.7; font-size:0.72rem"> · {{ product_dates.get(per,'') }}</span>
             </button>
             {% endfor %}
         </div>

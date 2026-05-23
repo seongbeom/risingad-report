@@ -861,19 +861,32 @@ def run_scrape(account, target_date=None):
 
         results["_is_sample"] = sample_detector["is_sample"]
 
-        # 상품 분석 — 같은 세션 재사용 (별도 브라우저/로그인 없이).
-        # target_date 가 오늘/어제면 그 기간 상품 top5 도 함께 수집. 실패해도 메트릭엔 영향 없음.
-        # is_sample(Premium 만료)면 상품도 의미없으니 스킵.
+        # 상품 분석 — 같은 세션 재사용 (별도 브라우저/로그인/잡 없이). 메트릭과 동일 패턴.
+        # 데이터 모델: date=실제 데이터 날짜.
+        #   - 오늘 run(라이브) → 'daily' date=오늘 (진행중)
+        #   - 어제 run(finalize) → 'daily' date=어제 (확정) + '7d' date=오늘(수집일, 주간추세)
+        # 각 product_list 항목은 {period, date, rows}. 실패해도 메트릭엔 영향 없음.
         if not sample_detector["is_sample"]:
             today_s = datetime.now().strftime("%Y-%m-%d")
             yest_s = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-            prod_period = "today" if target_date == today_s else ("yesterday" if target_date == yest_s else None)
-            if prod_period:
+            # (period, 단일일 target_date or None, 저장할 date)
+            to_collect = []
+            if target_date == today_s:
+                to_collect = [("today", today_s, today_s, "daily")]  # 오늘 일별
+            elif target_date == yest_s:
+                to_collect = [
+                    ("yesterday", yest_s, yest_s, "daily"),  # 전일 일별(확정)
+                    ("7d", None, today_s, "7d"),             # 최근7일 추세
+                ]
+            product_list = []
+            for scrape_period, _td, store_date, store_period in to_collect:
                 try:
-                    prows = _navigate_and_extract_products(page, account, prod_period, target_date, _phase)
-                    results["product"] = {"period": prod_period, "rows": prows}
+                    prows = _navigate_and_extract_products(page, account, scrape_period, _td, _phase)
+                    product_list.append({"period": store_period, "date": store_date, "rows": prows})
                 except Exception as e:
-                    print(f"[{aid}] product 수집 실패(메트릭엔 영향 없음): {repr(e)[:150]}", flush=True)
+                    print(f"[{aid}] product[{scrape_period}] 수집 실패(메트릭엔 영향 없음): {repr(e)[:150]}", flush=True)
+            if product_list:
+                results["product_list"] = product_list
 
         # 세션 저장
         _phase("세션 저장")

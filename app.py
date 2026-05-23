@@ -397,15 +397,16 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                 n = db.upsert_metrics_hourly(account_id, scraped_date, hourly_rows)
                 print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
 
-            # 상품 분석 (라이브 세션에서 같이 수집된 경우) — period 별 저장. date 는 오늘 수집일.
-            prod = results.get("product")
-            if prod and prod.get("rows"):
-                try:
-                    today_s = datetime.now().strftime("%Y-%m-%d")
-                    db.upsert_product_metrics(account_id, today_s, prod["rows"], period=prod["period"])
-                    print(f"[{account_id}] 상품 [{prod['period']}] {len(prod['rows'])}건 저장")
-                except Exception:
-                    traceback.print_exc()
+            # 상품 분석 (라이브/finalize 세션에서 같이 수집됨) — 항목별 date+period 로 저장.
+            # daily: date=실제 데이터 날짜 / 7d: date=수집일.
+            for prod in (results.get("product_list") or []):
+                if prod.get("rows"):
+                    try:
+                        pdate = prod.get("date") or datetime.now().strftime("%Y-%m-%d")
+                        db.upsert_product_metrics(account_id, pdate, prod["rows"], period=prod["period"])
+                        print(f"[{account_id}] 상품 [{prod['period']}] {pdate} {len(prod['rows'])}건 저장")
+                    except Exception:
+                        traceback.print_exc()
 
             spreadsheet_id = account.get("spreadsheet_id") or ""
             if skip_sheet:
@@ -681,7 +682,7 @@ def _heartbeat_job():
         problems = []
 
         # 1) scheduler 잡 누락
-        required_jobs = {"daily_finalize", "db_backup", "daily_restart", "product_collect"}
+        required_jobs = {"daily_finalize", "db_backup", "daily_restart"}
         live = db.get_live_settings()
         if live["interval_min"] > 0:
             required_jobs.add("live_global")
@@ -763,28 +764,28 @@ def _heartbeat_job():
             except Exception:
                 traceback.print_exc()
 
-        # 5) 오늘 product_collect (07시 이후만 — 06:00 잡 끝날 시간)
-        if now.hour >= 7:
+        # 5) 오늘 상품(daily) 수집 — 라이브 세션에 piggyback 되므로 라이브 몇 사이클 돈 11시 이후 검사
+        if now.hour >= 11:
             try:
                 with db.db_conn() as conn:
                     n_p = conn.execute(
-                        "SELECT COUNT(DISTINCT account_id) FROM product_metrics WHERE date=?", (today,)
+                        "SELECT COUNT(DISTINCT account_id) FROM product_metrics WHERE date=? AND period='daily'", (today,)
                     ).fetchone()[0]
                 total_acc = len(db.list_accounts())
                 if n_p == 0:
                     _heartbeat_alert(
-                        f"product_collect_empty_{today}",
-                        f"⚠️ product_collect ({today}) 결과 0계정. 06:00 잡이 실패했을 가능성.",
+                        f"product_today_empty_{today}",
+                        f"⚠️ 오늘({today}) 상품 수집 0계정. 라이브 세션의 상품 수집이 안 되고 있을 가능성.",
                         severity="warn",
                     )
-                    problems.append(f"product_empty")
+                    problems.append(f"product_today_empty")
                 elif n_p < total_acc * 0.5:
                     _heartbeat_alert(
-                        f"product_collect_partial_{today}",
-                        f"⚠️ product_collect ({today}) {n_p}/{total_acc} 계정만 수집됨.",
+                        f"product_today_partial_{today}",
+                        f"⚠️ 오늘({today}) 상품 {n_p}/{total_acc} 계정만 수집됨.",
                         severity="warn",
                     )
-                    problems.append(f"product_partial={n_p}/{total_acc}")
+                    problems.append(f"product_today_partial={n_p}/{total_acc}")
             except Exception:
                 traceback.print_exc()
 
@@ -924,14 +925,8 @@ def reload_schedules():
     )
     print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
 
-    # 매일 06:00 카페24 상품 분석 (최근7일 + 전일) top 5
-    scheduler.add_job(
-        _product_collect_job, "cron",
-        hour=6, minute=0,
-        id="product_collect", replace_existing=True,
-    )
-    print(f"[scheduler] product_collect: 매일 06:00 (7d+전일)")
-    # '오늘' 상품 top5 는 라이브 스크랩(run_scrape) 세션에 끼워서 매시간 자동 수집됨 (별도 잡 없음)
+    # 상품 분석은 별도 잡 없음 — 메트릭 세션에 piggyback:
+    #   라이브(오늘 메트릭) → 오늘 일별 랭킹 / finalize(어제 메트릭) → 전일 일별 + 최근7일 추세
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
@@ -2132,34 +2127,45 @@ def dashboard():
     capsolver = db.capsolver_stats()
     capsolver["balance"] = scraper.capsolver_balance()
 
-    # ---- 카페24 상품 분석 (최근 수집분) ----
-    # 가장 최근 collect_date 1개만 사용 (오늘 또는 어제)
-    # 상품 분석 — 기간별(period)로 분리. {period: {category: {account_id: [rows]}}}
+    # ---- 카페24 상품 분석 ----
+    # 데이터 모델: daily(date=실제날짜) → 오늘=date=today, 전일=date=yesterday / 7d(date=수집일).
+    # 탭 키: 'today'|'yesterday'|'7d'.  product_by_period = {탭: {category: {account_id: [rows]}}}
     product_by_period = {}
+    product_periods = []
+    product_dates = {}     # 탭 → 표시 날짜
     product_collect_date = None
-    product_periods = []  # 데이터 있는 기간 (오늘/전일/7일 순)
+
+    def _group_product(prows):
+        d = {}
+        for prow in prows:
+            d.setdefault(prow["category"], {}).setdefault(prow["account_id"], []).append(prow)
+        return d
+
     try:
+        # 오늘 / 전일 = daily 시계열에서 해당 날짜
+        for tab, d in (("today", today), ("yesterday", yesterday)):
+            grouped = _group_product(db.list_product_metrics(account_id=selected_ids, date=d, period="daily"))
+            if grouped:
+                product_by_period[tab] = grouped
+                product_periods.append(tab)
+                product_dates[tab] = d
+        # 최근7일 추세 = period='7d' 의 가장 최근 수집일
         with db.db_conn() as conn:
             r = conn.execute(
-                "SELECT MAX(date) FROM product_metrics WHERE account_id IN ({})".format(
-                    ",".join(["?"] * len(selected_ids))
-                ),
+                "SELECT MAX(date) FROM product_metrics WHERE period='7d' AND account_id IN ({})".format(
+                    ",".join(["?"] * len(selected_ids))),
                 selected_ids,
             ).fetchone()
-            product_collect_date = r[0] if r else None
-        if product_collect_date:
-            for prow in db.list_product_metrics(account_id=selected_ids, date=product_collect_date):
-                per = prow.get("period") or "7d"
-                cat = prow["category"]
-                aid_p = prow["account_id"]
-                product_by_period.setdefault(per, {}).setdefault(cat, {}).setdefault(aid_p, []).append(prow)
-        # 표시 순서: 오늘 → 전일 → 7일 (있는 것만)
-        for per in ("today", "yesterday", "7d"):
-            if per in product_by_period:
-                product_periods.append(per)
+            d7 = r[0] if r else None
+        if d7:
+            grouped = _group_product(db.list_product_metrics(account_id=selected_ids, date=d7, period="7d"))
+            if grouped:
+                product_by_period["7d"] = grouped
+                product_periods.append("7d")
+                product_dates["7d"] = d7
+        product_collect_date = product_dates.get(product_periods[0]) if product_periods else None
     except Exception:
         traceback.print_exc()
-    # 하위호환: 기본 기간(있으면 첫번째)의 데이터를 product_data 로
     product_data = product_by_period.get(product_periods[0], {}) if product_periods else {}
 
     return render_template(
@@ -2196,7 +2202,9 @@ def dashboard():
         product_data=product_data,
         product_by_period=product_by_period,
         product_periods=product_periods,
+        product_dates=product_dates,
         product_collect_date=product_collect_date,
+        product_running=list(_running.keys()),
         now=now.strftime("%H:%M"),
     )
 
