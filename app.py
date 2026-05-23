@@ -397,6 +397,16 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                 n = db.upsert_metrics_hourly(account_id, scraped_date, hourly_rows)
                 print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
 
+            # 상품 분석 (라이브 세션에서 같이 수집된 경우) — period 별 저장. date 는 오늘 수집일.
+            prod = results.get("product")
+            if prod and prod.get("rows"):
+                try:
+                    today_s = datetime.now().strftime("%Y-%m-%d")
+                    db.upsert_product_metrics(account_id, today_s, prod["rows"], period=prod["period"])
+                    print(f"[{account_id}] 상품 [{prod['period']}] {len(prod['rows'])}건 저장")
+                except Exception:
+                    traceback.print_exc()
+
             spreadsheet_id = account.get("spreadsheet_id") or ""
             if skip_sheet:
                 print(f"[{account_id}] live 모드 - 시트 write 스킵")
@@ -627,9 +637,6 @@ def _product_collect_job(periods=("7d", "yesterday")):
     )
 
 
-def _product_today_job():
-    """활성 시간대 주기 실행 — '오늘' 기준 상품 top5 (라이브성)."""
-    _product_collect_job(periods=("today",))
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -924,14 +931,7 @@ def reload_schedules():
         id="product_collect", replace_existing=True,
     )
     print(f"[scheduler] product_collect: 매일 06:00 (7d+전일)")
-
-    # 활성 시간대 '오늘' 상품 top5 (라이브성) — 짝수시 30분마다 (메트릭 라이브와 시간 분리)
-    scheduler.add_job(
-        _product_today_job, "cron",
-        hour="8-22/2", minute=30,
-        id="product_today", replace_existing=True,
-    )
-    print(f"[scheduler] product_today: 8~22시 짝수시 30분 (오늘 기준)")
+    # '오늘' 상품 top5 는 라이브 스크랩(run_scrape) 세션에 끼워서 매시간 자동 수집됨 (별도 잡 없음)
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.

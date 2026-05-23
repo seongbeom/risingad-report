@@ -861,6 +861,20 @@ def run_scrape(account, target_date=None):
 
         results["_is_sample"] = sample_detector["is_sample"]
 
+        # 상품 분석 — 같은 세션 재사용 (별도 브라우저/로그인 없이).
+        # target_date 가 오늘/어제면 그 기간 상품 top5 도 함께 수집. 실패해도 메트릭엔 영향 없음.
+        # is_sample(Premium 만료)면 상품도 의미없으니 스킵.
+        if not sample_detector["is_sample"]:
+            today_s = datetime.now().strftime("%Y-%m-%d")
+            yest_s = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            prod_period = "today" if target_date == today_s else ("yesterday" if target_date == yest_s else None)
+            if prod_period:
+                try:
+                    prows = _navigate_and_extract_products(page, account, prod_period, target_date, _phase)
+                    results["product"] = {"period": prod_period, "rows": prows}
+                except Exception as e:
+                    print(f"[{aid}] product 수집 실패(메트릭엔 영향 없음): {repr(e)[:150]}", flush=True)
+
         # 세션 저장
         _phase("세션 저장")
         context.storage_state(path=str(session_file))
@@ -1000,18 +1014,166 @@ def _set_product_period(af, page, target_date, _phase=lambda n: None):
         page.wait_for_timeout(4000)
 
 
-def scrape_product_analytics(account, period="7d", target_date=None):
-    """카페24 애널리틱스 '상품 분석' 페이지 → 베스트/급상승/전환율/판매액 top 5 추출.
-    period: '7d'(기본=최근7일, 기간변경 안 함) | 'today' | 'yesterday'
-    target_date: today/yesterday 일 때 명시 (미지정 시 자동 계산)."""
+def _navigate_and_extract_products(page, account, period="7d", target_date=None, _phase=None):
+    """이미 로그인된 page 로 상품분석 by-product 진입 → (기간세팅) → top5 추출.
+    브라우저 생성/종료는 호출부 책임. 라이브 세션 재사용 + standalone 양쪽에서 사용.
+    반환: result_rows (list)."""
     import re as _re
     cafe24_id = account["cafe24_id"]
     aid = account.get("id", cafe24_id)
     base = f"https://{cafe24_id}.cafe24.com"
+    if _phase is None:
+        def _phase(name):
+            print(f"[{aid}] product phase: {name}", flush=True)
 
     if period in ("today", "yesterday") and not target_date:
         _delta = 0 if period == "today" else 1
         target_date = (datetime.now() - timedelta(days=_delta)).strftime("%Y-%m-%d")
+
+    _phase("상품분석 진입")
+    page.goto(f"{base}/disp/admin/shop1/menu/cafe24analytics?type=best",
+              wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(6000)
+
+    af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
+    if not af:
+        raise RuntimeError("adminFrameContent iframe 못 찾음")
+    af.locator("text=상품 분석").first.click(timeout=10000)
+    page.wait_for_timeout(5000)
+    af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
+    _phase(f"by-product (url={af.url})")
+    page.wait_for_timeout(3000)
+
+    # 기간 변경 (today/yesterday) — 7d 는 페이지 기본값이라 변경 안 함
+    if period in ("today", "yesterday") and target_date:
+        _set_product_period(af, page, target_date, _phase)
+        af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
+        page.wait_for_timeout(1500)
+
+    return _extract_product_rows(af, page, _phase, _re)
+
+
+def _extract_product_rows(af, page, _phase, _re):
+    """by-product 페이지(af)에서 tooltip 풀텍스트 + 테이블 파싱 → top5 rows."""
+    # Radix tooltip: 각 trigger 를 순차 hover 해서 풀텍스트 읽어옴. 한 번에 하나만 가능.
+    _phase("tooltip 풀텍스트 수집")
+    tooltip_map = af.evaluate(r"""async () => {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const triggers = Array.from(document.querySelectorAll('button[data-slot="tooltip-trigger"]'));
+        const out = [];
+        for (let i = 0; i < triggers.length; i++) {
+            const btn = triggers[i];
+            const rect = btn.getBoundingClientRect();
+            const eventInit = {bubbles: true, cancelable: true, clientX: rect.left + 4, clientY: rect.top + 4, pointerType: 'mouse'};
+            btn.dispatchEvent(new PointerEvent('pointerover', eventInit));
+            btn.dispatchEvent(new PointerEvent('pointerenter', eventInit));
+            btn.dispatchEvent(new MouseEvent('mouseover', eventInit));
+            btn.dispatchEvent(new MouseEvent('mouseenter', eventInit));
+            btn.focus();
+            await sleep(60);
+            let txt = '';
+            const id = btn.getAttribute('aria-describedby');
+            if (id) {
+                const tt = document.getElementById(id);
+                if (tt) txt = (tt.textContent || '').replace(/\s+/g, ' ').trim();
+            }
+            if (!txt) {
+                const tt2 = document.querySelector('[role="tooltip"]');
+                if (tt2) txt = (tt2.textContent || '').replace(/\s+/g, ' ').trim();
+            }
+            out.push({idx: i, text: txt, visible: (btn.textContent || '').trim()});
+            btn.dispatchEvent(new PointerEvent('pointerleave', eventInit));
+            btn.dispatchEvent(new MouseEvent('mouseleave', eventInit));
+            btn.blur();
+            await sleep(20);
+        }
+        return out;
+    }""")
+
+    tables = af.evaluate(r"""(tooltipMap) => {
+        const triggers = Array.from(document.querySelectorAll('button[data-slot="tooltip-trigger"]'));
+        const triggerIndex = new Map();
+        triggers.forEach((b, i) => triggerIndex.set(b, i));
+        const lookup = new Map();
+        (tooltipMap || []).forEach(m => lookup.set(m.idx, m.text));
+        const cellFullText = (td) => {
+            const tr = td.querySelector('button[data-slot="tooltip-trigger"]');
+            if (tr) {
+                const idx = triggerIndex.get(tr);
+                const txt = lookup.get(idx);
+                if (txt) return txt;
+            }
+            return (td.textContent || '').replace(/\s+/g, ' ').trim();
+        };
+        const out = [];
+        document.querySelectorAll('table').forEach((t, i) => {
+            const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.textContent || '').replace(/\s+/g, ' ').trim());
+            const rows = Array.from(t.querySelectorAll('tbody tr')).map(r =>
+                Array.from(r.querySelectorAll('td')).map(td => ({text: cellFullText(td)}))
+            );
+            out.push({idx: i, headers, rows});
+        });
+        return out;
+    }""", tooltip_map)
+
+    def _classify(headers):
+        joined = " ".join(headers)
+        if "증감" in joined:
+            return "급상승_변화량"
+        if "노출" in joined and "%" in joined:
+            return "전환율_TOP"
+        if "판매금액" in joined:
+            return "베스트_매출"
+        if "판매액" in joined:
+            return "판매액_순위"
+        return None
+
+    def _parse_product_pair(s):
+        m = _re.match(r"^(.+?)\((\d+)\)$", s.strip())
+        if m:
+            return m.group(1).strip(), m.group(2)
+        return s.strip(), None
+
+    result_rows = []
+    for t in tables:
+        cat = _classify(t["headers"])
+        if not cat:
+            continue
+        for rank_idx, r in enumerate(t["rows"], start=1):
+            if not r:
+                continue
+            prod_col = None
+            for i, h in enumerate(t["headers"]):
+                if "상품명" in h:
+                    prod_col = i
+                    break
+            if prod_col is None:
+                prod_col = 1 if len(r) > 1 else 0
+            cell = r[prod_col] if prod_col < len(r) else {"text": ""}
+            name, no = _parse_product_pair(cell.get("text", "") if isinstance(cell, dict) else cell)
+            rank = rank_idx
+            if t["headers"] and "순위" in t["headers"][0]:
+                first = r[0]
+                try:
+                    rank = int(first.get("text", "") if isinstance(first, dict) else first)
+                except (ValueError, IndexError, AttributeError):
+                    pass
+            flat_row = [(c.get("text", "") if isinstance(c, dict) else c) for c in r]
+            result_rows.append({
+                "category": cat,
+                "rank": rank,
+                "product_no": no,
+                "product_name": name,
+                "raw": {"headers": t["headers"], "row": flat_row},
+            })
+    _phase(f"추출 완료 — {len(result_rows)}건")
+    return result_rows
+
+
+def scrape_product_analytics(account, period="7d", target_date=None):
+    """[standalone] 자체 브라우저로 로그인 후 상품분석 추출. 06:00 잡 등에서 사용.
+    period: '7d' | 'today' | 'yesterday'."""
+    aid = account.get("id", account["cafe24_id"])
 
     def _phase(name):
         print(f"[{aid}] product phase: {name}", flush=True)
@@ -1029,170 +1191,16 @@ def scrape_product_analytics(account, period="7d", target_date=None):
         page = context.new_page()
         _phase("ensure_login")
         ensure_login(page, context, account)
-
-        # 카페24 애널리틱스 dashboard 로딩
-        _phase("dashboard 진입")
-        page.goto(f"{base}/disp/admin/shop1/menu/cafe24analytics?type=best",
-                  wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(6000)
-
-        # iframe 안의 '상품 분석' 클릭 → /products/by-product
-        _phase("상품 분석 클릭")
-        af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
-        if not af:
-            browser.close()
-            raise RuntimeError("adminFrameContent iframe 못 찾음")
         try:
-            af.locator("text=상품 분석").first.click(timeout=10000)
-        except Exception as e:
-            browser.close()
-            raise RuntimeError(f"'상품 분석' 클릭 실패: {e}")
-        page.wait_for_timeout(5000)
-
-        af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
-        _phase(f"by-product 페이지 (url={af.url})")
-        # 추가 wait — table 렌더 완료
-        page.wait_for_timeout(3000)
-
-        # 기간 변경 (today/yesterday) — 7d 는 페이지 기본값이라 변경 안 함
-        if period in ("today", "yesterday") and target_date:
+            result_rows = _navigate_and_extract_products(page, account, period, target_date, _phase)
+        finally:
             try:
-                _set_product_period(af, page, target_date, _phase)
-                af = next((f for f in page.frames if f.name == "adminFrameContent"), None)
-                page.wait_for_timeout(1500)
-            except Exception as e:
-                browser.close()
-                raise RuntimeError(f"기간({period}={target_date}) 세팅 실패: {e}")
-
-        # Radix tooltip: 각 trigger 를 순차 hover 해서 풀텍스트 읽어옴. 한 번에 하나만 가능.
-        # 결과: tooltip 매핑 {trigger-button-index → fulltext}
-        _phase("tooltip 풀텍스트 수집")
-        tooltip_map = af.evaluate(r"""async () => {
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-            const triggers = Array.from(document.querySelectorAll('button[data-slot="tooltip-trigger"]'));
-            const out = [];
-            for (let i = 0; i < triggers.length; i++) {
-                const btn = triggers[i];
-                // Radix 는 pointer 이벤트로 tooltip 띄움
-                const rect = btn.getBoundingClientRect();
-                const eventInit = {bubbles: true, cancelable: true, clientX: rect.left + 4, clientY: rect.top + 4, pointerType: 'mouse'};
-                btn.dispatchEvent(new PointerEvent('pointerover', eventInit));
-                btn.dispatchEvent(new PointerEvent('pointerenter', eventInit));
-                btn.dispatchEvent(new MouseEvent('mouseover', eventInit));
-                btn.dispatchEvent(new MouseEvent('mouseenter', eventInit));
-                btn.focus();
-                await sleep(60);
-                // tooltip 텍스트 읽기 — aria-describedby 우선, fallback role=tooltip
-                let txt = '';
-                const id = btn.getAttribute('aria-describedby');
-                if (id) {
-                    const tt = document.getElementById(id);
-                    if (tt) txt = (tt.textContent || '').replace(/\s+/g, ' ').trim();
-                }
-                if (!txt) {
-                    const tt2 = document.querySelector('[role="tooltip"]');
-                    if (tt2) txt = (tt2.textContent || '').replace(/\s+/g, ' ').trim();
-                }
-                out.push({idx: i, text: txt, visible: (btn.textContent || '').trim()});
-                // hover 해제
-                btn.dispatchEvent(new PointerEvent('pointerleave', eventInit));
-                btn.dispatchEvent(new MouseEvent('mouseleave', eventInit));
-                btn.blur();
-                await sleep(20);
-            }
-            return out;
-        }""")
-        # trigger-button 의 DOM 순서대로 매핑된 풀텍스트.
-        # 같은 trigger 가 fresh evaluate 에서도 같은 순서로 잡히도록 셀별 trigger 인덱스를 evaluate 안에서 부여함.
-
-        tables = af.evaluate(r"""(tooltipMap) => {
-            const triggers = Array.from(document.querySelectorAll('button[data-slot="tooltip-trigger"]'));
-            const triggerIndex = new Map();
-            triggers.forEach((b, i) => triggerIndex.set(b, i));
-            const lookup = new Map();
-            (tooltipMap || []).forEach(m => lookup.set(m.idx, m.text));
-
-            const cellFullText = (td) => {
-                const tr = td.querySelector('button[data-slot="tooltip-trigger"]');
-                if (tr) {
-                    const idx = triggerIndex.get(tr);
-                    const txt = lookup.get(idx);
-                    if (txt) return txt;
-                }
-                return (td.textContent || '').replace(/\s+/g, ' ').trim();
-            };
-            const out = [];
-            document.querySelectorAll('table').forEach((t, i) => {
-                const headers = Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.textContent || '').replace(/\s+/g, ' ').trim());
-                const rows = Array.from(t.querySelectorAll('tbody tr')).map(r =>
-                    Array.from(r.querySelectorAll('td')).map(td => ({text: cellFullText(td)}))
-                );
-                out.push({idx: i, headers, rows});
-            });
-            return out;
-        }""", tooltip_map)
-
-        # category 매핑 — 헤더 키워드로 의미 추정
-        def _classify(headers):
-            joined = " ".join(headers)
-            if "증감" in joined:
-                return "급상승_변화량"
-            if "노출" in joined and "%" in joined:
-                return "전환율_TOP"
-            if "판매금액" in joined:
-                return "베스트_매출"
-            if "판매액" in joined:
-                return "판매액_순위"
-            return None
-
-        def _parse_product_pair(s):
-            """'상품명(상품번호)' → (name, no). 매칭 실패 시 (s, None)."""
-            m = _re.match(r"^(.+?)\((\d+)\)$", s.strip())
-            if m:
-                return m.group(1).strip(), m.group(2)
-            return s.strip(), None
-
-        result_rows = []
-        for t in tables:
-            cat = _classify(t["headers"])
-            if not cat:
-                continue
-            for rank_idx, r in enumerate(t["rows"], start=1):
-                if not r:
-                    continue
-                # 상품명 컬럼 위치
-                prod_col = None
-                for i, h in enumerate(t["headers"]):
-                    if "상품명" in h:
-                        prod_col = i
-                        break
-                if prod_col is None:
-                    prod_col = 1 if len(r) > 1 else 0
-                cell = r[prod_col] if prod_col < len(r) else {"text": ""}
-                name, no = _parse_product_pair(cell.get("text", "") if isinstance(cell, dict) else cell)
-                # 순위
-                rank = rank_idx
-                if t["headers"] and "순위" in t["headers"][0]:
-                    first = r[0]
-                    try:
-                        rank = int(first.get("text", "") if isinstance(first, dict) else first)
-                    except (ValueError, IndexError, AttributeError):
-                        pass
-                # raw 저장 — text 만 평탄화해서 보관 (디버깅용)
-                flat_row = [(c.get("text", "") if isinstance(c, dict) else c) for c in r]
-                result_rows.append({
-                    "category": cat,
-                    "rank": rank,
-                    "product_no": no,
-                    "product_name": name,
-                    "raw": {"headers": t["headers"], "row": flat_row},
-                })
-
-        _phase(f"추출 완료 — {len(result_rows)}건")
-        context.storage_state(path=str(session_file))
-        browser.close()
-
+                context.storage_state(path=str(session_file))
+            except Exception:
+                pass
+            browser.close()
     return result_rows
+
 
 
 if __name__ == "__main__":
