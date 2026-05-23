@@ -1881,6 +1881,27 @@ def dashboard():
             })
     except Exception:
         traceback.print_exc()
+    # -0.5) cafe24 Premium 만료/샘플데이터 (가장 critical — 데이터 자체가 안 들어옴)
+    try:
+        label_by_id = {a["id"]: (a.get("label") or a["id"]) for a in all_accounts}
+        with db.db_conn() as conn:
+            sample_rows = conn.execute(
+                "SELECT DISTINCT account_id FROM runs "
+                "WHERE status='error' AND error LIKE '%sample%' "
+                "AND started_at >= ? ORDER BY account_id",
+                (today + " 00:00:00",)
+            ).fetchall()
+        for r in sample_rows:
+            aid = r["account_id"]
+            lbl = label_by_id.get(aid, aid)
+            alerts.insert(0, {
+                "type": "critical",
+                "label": f"🚨 {lbl} Premium 만료?",
+                "msg": f"cafe24가 샘플(데모) 데이터 반환 — 애널리틱스 Premium 구독 만료/권한 문제 가능. "
+                       f"`{aid}` 데이터 수집 중단됨 (백필 불가, cafe24 구독 확인 필요)",
+            })
+    except Exception:
+        traceback.print_exc()
     # 0) 서버 startup cleanup (직전 stuck run 들 자동 정리됨)
     if _startup_cleanup_info["count"] > 0:
         alerts.append({
