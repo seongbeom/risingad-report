@@ -360,6 +360,15 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
             if results.get("_is_sample"):
                 msg = f"[{account_id}] is_sample=True - 카페24 Premium 만료 또는 권한 문제. 시트/DB 입력 스킵"
                 print(msg)
+                label = account.get("label") or account_id
+                # 사용자에게 즉시 알림 (계정-날짜당 6h 쿨다운으로 매 사이클 도배 방지)
+                _heartbeat_alert(
+                    f"sample_{account_id}_{scraped_date}",
+                    f"🚨 *{label}* (`{account_id}`) — cafe24가 *샘플(데모) 데이터* 반환 ({scraped_date})\n"
+                    f"→ **애널리틱스 Premium 구독 만료 또는 권한 문제** 가능성. 데이터 수집 중단됨.\n"
+                    f"cafe24 해당 매장 구독 상태 확인 필요 (백필로 복구 불가).",
+                    severity="critical",
+                )
                 db.finish_run(run_id, "error", error="cafe24 returned sample data (premium expired?)", attempts=attempts_used)
                 return
 
