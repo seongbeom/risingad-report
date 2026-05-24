@@ -78,10 +78,14 @@
                         <td>{{ a.sub_id }}</td>
                         <td>
                             <form method="POST" action="/accounts/{{ a.id }}/spreadsheet"
-                                  style="display:flex; gap:4px;">
+                                  style="display:flex; gap:4px; align-items:center;">
                                 <input name="spreadsheet_id" value="{{ a.spreadsheet_id or '' }}"
                                        placeholder="시트 ID" style="width:120px; font-size:0.75rem;">
                                 <button class="btn btn-sm" type="submit">저장</button>
+                                {% if a.spreadsheet_id %}
+                                <a href="https://docs.google.com/spreadsheets/d/{{ a.spreadsheet_id }}/edit" target="_blank" rel="noopener"
+                                   title="구글 시트 열기" style="text-decoration:none; font-size:0.95rem">📊</a>
+                                {% endif %}
                             </form>
                         </td>
                         <td style="font-size:0.7rem;line-height:1.45;white-space:nowrap">
