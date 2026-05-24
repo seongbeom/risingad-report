@@ -660,6 +660,37 @@
     </div>
     {% endif %}
 
+    <!-- 메타 광고 → 시트 자동입력 현황 -->
+    <div class="card">
+        <h2>📣 메타 광고 → 시트 자동입력
+            <span style="font-size:0.78rem; color:#888; font-weight:400">매일 07:00 자동 (최근 {{ meta_status.backfill_days }}일 보정)</span>
+        </h2>
+        <p class="card-sub">
+            Meta API로 매장별 광고성과(노출/클릭/광고비/전환/매출)를 끌어와 각 매장 <strong>효율 시트</strong>에 자동 기입합니다 (광고비 부가세 포함). 사람이 CSV 받아 입력하던 작업 대체.
+        </p>
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px; font-size:0.85rem">
+            <div>🔗 연결된 매장: <strong>{{ meta_status.connected }}/{{ meta_status.total }}</strong></div>
+            <div>⏱ 다음 수집: <strong>{{ meta_status.next_run or '-' }}</strong></div>
+            <div>✅ 마지막 수집: <strong>{{ meta_status.last_run or '아직 없음' }}</strong></div>
+        </div>
+        <table style="font-size:0.8rem; width:100%; border-collapse:collapse">
+            <thead><tr style="border-bottom:1px solid #eee; color:#888; text-align:left">
+                <th style="padding:3px 6px">매장</th><th style="padding:3px 6px">광고계정 연결</th>
+                <th style="padding:3px 6px">시트</th><th style="padding:3px 6px">마지막 기입</th>
+            </tr></thead>
+            <tbody>
+            {% for m in meta_status.accounts %}
+            <tr style="border-bottom:1px solid #f5f5f5">
+                <td style="padding:3px 6px">{{ m.label }}</td>
+                <td style="padding:3px 6px">{% if m.connected %}<span style="color:#27ae60">🟢 연결됨</span> <span style="color:#bbb; font-size:0.72rem">{{ m.meta_id }}</span>{% else %}<span style="color:#ccc">미연결</span>{% endif %}</td>
+                <td style="padding:3px 6px">{% if m.has_sheet %}✓{% else %}<span style="color:#ccc">없음</span>{% endif %}</td>
+                <td style="padding:3px 6px">{% if m.last %}<span style="color:#27ae60">{{ m.last }}</span>{% elif m.connected %}<span style="color:#e67e22">대기</span>{% else %}<span style="color:#ccc">-</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
     <!-- 전환 깔때기 -->
     <div class="card">
         <h2>🪜 전환 깔때기 — 방문 → 회원가입 → 구매</h2>

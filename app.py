@@ -2168,6 +2168,36 @@ def dashboard():
         "jobs": jobs_status,
     }
 
+    # ----- 메타 → 시트 자동입력 현황 (전용 카드용) -----
+    meta_next = None
+    try:
+        for j in scheduler.get_jobs():
+            if j.id == "meta_collect" and j.next_run_time:
+                meta_next = j.next_run_time.strftime("%m/%d %H:%M")
+    except Exception:
+        pass
+    meta_accounts = []
+    n_connected = 0
+    for a in all_accounts:
+        mid = (a.get("meta_account_id") or "").strip()
+        if mid:
+            n_connected += 1
+        meta_accounts.append({
+            "label": a.get("label") or a["cafe24_id"],
+            "connected": bool(mid),
+            "meta_id": mid,
+            "last": db.get_setting(f"meta_last_{a['id']}", None),
+            "has_sheet": bool(a.get("spreadsheet_id")),
+        })
+    meta_status = {
+        "next_run": meta_next,
+        "last_run": db.get_setting("meta_last_run", None),
+        "connected": n_connected,
+        "total": len(all_accounts),
+        "accounts": meta_accounts,
+        "backfill_days": META_BACKFILL_DAYS,
+    }
+
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
     # 매출 0인 일자는 미수집(백필 안 한 일자)일 가능성이 커서 트렌드 왜곡됨 → 제외.
     # 진짜 영업 안 한 0원 일자가 있다면 분석에서 빠지지만 가짜 0 포함보다 안전.
@@ -2299,6 +2329,7 @@ def dashboard():
         product_dates=product_dates,
         product_collect_date=product_collect_date,
         product_running=list(_running.keys()),
+        meta_status=meta_status,
         now=now.strftime("%H:%M"),
     )
 
