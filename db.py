@@ -167,6 +167,9 @@ def init_db():
         cols = [r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()]
         if "spreadsheet_id" not in cols:
             conn.execute("ALTER TABLE accounts ADD COLUMN spreadsheet_id TEXT DEFAULT ''")
+        # Meta 광고계정 ID (act_ 접두사 없는 숫자) — 메타 광고성과 자동입력용
+        if "meta_account_id" not in cols:
+            conn.execute("ALTER TABLE accounts ADD COLUMN meta_account_id TEXT DEFAULT ''")
 
         # runs.attempts 마이그레이션 (1회 시도가 기본, 재시도 시 증가)
         run_cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
@@ -430,6 +433,14 @@ def update_spreadsheet_id(account_id, spreadsheet_id):
         conn.execute(
             "UPDATE accounts SET spreadsheet_id=? WHERE id=?",
             (spreadsheet_id, account_id),
+        )
+
+
+def update_meta_account_id(account_id, meta_account_id):
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE accounts SET meta_account_id=? WHERE id=?",
+            (meta_account_id, account_id),
         )
 
 

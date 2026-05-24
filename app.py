@@ -16,6 +16,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for, s
 import db
 import scraper
 import sheets
+import meta
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -638,6 +639,49 @@ def _product_collect_job(periods=("7d", "yesterday")):
     )
 
 
+META_BACKFILL_DAYS = 4  # 매 실행 시 최근 N일 재수집 (어트리뷰션 보정)
+
+
+def _meta_collect_job(days=META_BACKFILL_DAYS):
+    """메타 광고 성과 수집 → 각 매장 효율시트 메타 칸 기입. 브라우저 없이 API.
+    meta_account_id 설정된 매장만. 최근 days 일 재수집(어트리뷰션 보정)."""
+    if not os.environ.get("META_ACCESS_TOKEN"):
+        print("[meta] META_ACCESS_TOKEN 미설정 - 스킵")
+        return
+    today = datetime.now()
+    since = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    until = today.strftime("%Y-%m-%d")
+    accounts = [a for a in db.list_accounts() if (a.get("meta_account_id") or "").strip()]
+    print(f"[meta] {since}~{until} {len(accounts)}계정 시작")
+    ok_acct = 0
+    fail = []
+    for a in accounts:
+        aid = a["id"]
+        lbl = a.get("label") or aid
+        ssid = a.get("spreadsheet_id") or ""
+        if not ssid:
+            continue
+        try:
+            insights = meta.fetch_insights(a["meta_account_id"], since, until)
+            wrote = 0
+            for d, m in sorted(insights.items()):
+                okw, _msg = meta.write_meta_to_sheet(ssid, d, m)
+                if okw:
+                    wrote += 1
+            db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
+            print(f"[meta] {lbl} {wrote}일 기입")
+            ok_acct += 1
+        except Exception as e:
+            fail.append(lbl)
+            print(f"[meta] {lbl} 실패: {repr(e)[:160]}")
+    db.set_setting("meta_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    print(f"[meta] done — 성공 {ok_acct} / 실패 {len(fail)}")
+    slack_notify(
+        f"meta-collect 완료 ({until}) · 성공 {ok_acct} / 실패 {len(fail)}" + (f" [{', '.join(fail)}]" if fail else ""),
+        severity="report" if not fail else "warn",
+    )
+
+
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -883,7 +927,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "product_today", "heartbeat"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "product_today", "heartbeat", "meta_collect"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -927,6 +971,14 @@ def reload_schedules():
 
     # 상품 분석은 별도 잡 없음 — 메트릭 세션에 piggyback:
     #   라이브(오늘 메트릭) → 오늘 일별 랭킹 / finalize(어제 메트릭) → 전일 일별 + 최근7일 추세
+
+    # 메타 광고성과 수집 — 매일 07:00 (API라 가벼움, chromium 무관). 최근 4일 재수집.
+    scheduler.add_job(
+        _meta_collect_job, "cron",
+        hour=7, minute=0,
+        id="meta_collect", replace_existing=True,
+    )
+    print(f"[scheduler] meta_collect: 매일 07:00 (최근 {META_BACKFILL_DAYS}일)")
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
@@ -1265,6 +1317,27 @@ def admin_product_collect():
 
     threading.Thread(target=_run_one, daemon=True).start()
     return jsonify({"ok": True, "accounts": [a["id"] for a in target], "date": today, "period": period})
+
+
+@app.route("/admin/meta_collect", methods=["POST"])
+def admin_meta_collect():
+    """localhost 전용 메타 수집 수동 트리거. body: days(선택, 기본 4)."""
+    remote = request.remote_addr or ""
+    if remote not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        days = int(request.form.get("days", str(META_BACKFILL_DAYS)))
+    except ValueError:
+        days = META_BACKFILL_DAYS
+    threading.Thread(target=lambda: _meta_collect_job(days=days), daemon=True).start()
+    return jsonify({"ok": True, "days": days})
+
+
+@app.route("/accounts/<account_id>/meta", methods=["POST"])
+@login_required
+def update_meta_route(account_id):
+    db.update_meta_account_id(account_id, request.form.get("meta_account_id", "").strip())
+    return redirect(url_for("index"))
 
 
 @app.route("/accounts/<account_id>/update", methods=["POST"])
