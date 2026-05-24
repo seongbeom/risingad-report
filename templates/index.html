@@ -54,6 +54,28 @@
             <a href="/logout" style="color: #888; font-size: 0.9rem; text-decoration: none;">로그아웃</a>
         </p>
 
+        <!-- 자동 스케줄 현황 -->
+        <div class="card" style="background:#f8fbff; border:1px solid #d6e6f5">
+            <h2 style="border-bottom:none; padding-bottom:0">⏱ 자동 수집 스케줄</h2>
+            <p class="card-sub" style="margin-bottom:8px">서버가 자동으로 돌리는 작업. 각 다음 실행 시각.</p>
+            <table style="width:100%; font-size:0.85rem; border-collapse:collapse">
+                <thead><tr style="text-align:left; color:#888; border-bottom:1px solid #e5e5e5">
+                    <th style="padding:4px 8px">작업</th><th style="padding:4px 8px">주기</th>
+                    <th style="padding:4px 8px">다음 실행</th><th style="padding:4px 8px">마지막</th>
+                </tr></thead>
+                <tbody>
+                {% for s in sched_rows %}
+                <tr style="border-bottom:1px solid #eef3f8">
+                    <td style="padding:4px 8px; font-weight:600">{{ s.name }}{% if not s.active %} <span style="color:#e74c3c; font-size:0.72rem">(미등록!)</span>{% endif %}</td>
+                    <td style="padding:4px 8px; color:#555">{{ s.desc }}</td>
+                    <td style="padding:4px 8px; font-variant-numeric:tabular-nums"><strong>{{ s.next }}</strong></td>
+                    <td style="padding:4px 8px; color:#888">{{ s.last or '-' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
         <!-- 계정 관리 -->
         <div class="card">
             <h2>계정 관리</h2>

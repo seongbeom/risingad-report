@@ -1112,6 +1112,27 @@ def index():
     live = db.get_live_settings()
     daily = db.get_daily_finalize_settings()
 
+    # 자동 스케줄 현황 (관리 페이지 상단 표시용) — 잡별 주기/다음실행/마지막결과
+    _sched_info = {
+        "live_global": ("🔴 라이브 스크랩", f"활성시간 매시간 (오늘 매트릭+상품)", None),
+        "daily_finalize": ("📋 일일 정리", "매일 03:00 (어제 확정+시트+상품)", None),
+        "meta_collect": ("📣 메타 광고 수집", f"매일 07:00 (최근 {META_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("meta_last_run", None)),
+        "db_backup": ("💾 DB 백업", "매일 04:00", None),
+        "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
+    }
+    sched_rows = []
+    try:
+        jobs = {j.id: j for j in scheduler.get_jobs()}
+        for jid in ["live_global", "daily_finalize", "meta_collect", "db_backup", "daily_restart"]:
+            if jid not in _sched_info:
+                continue
+            name, desc, last = _sched_info[jid]
+            j = jobs.get(jid)
+            nxt = j.next_run_time.strftime("%m/%d %H:%M") if (j and j.next_run_time) else "-"
+            sched_rows.append({"name": name, "desc": desc, "next": nxt, "last": last, "active": jid in jobs})
+    except Exception:
+        traceback.print_exc()
+
     # 계정별 마지막 상태 요약 (계정 관리 표 표시용)
     acct_status = {}
     try:
@@ -1160,6 +1181,7 @@ def index():
         live=live,
         daily=daily,
         acct_status=acct_status,
+        sched_rows=sched_rows,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
 
