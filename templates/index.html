@@ -255,8 +255,9 @@
                 </div>
             </form>
             <p style="font-size:0.75rem;color:#aaa;margin-top:10px">
-                현재 라이브: <strong>{% if live.interval_min %}{{ live.interval_min }}분 간격, {{ live.start_hour }}~{{ live.end_hour }}시{% else %}비활성{% endif %}</strong> ·
-                시트 기록: <strong>매일 {{ '%02d' % daily.hour }}:{{ '%02d' % daily.minute }}</strong>
+                여기서 바꾸는 건 <strong>라이브 인터벌</strong>과 <strong>시트기록 시각</strong> 둘뿐이에요
+                (현재 라이브 {% if live.interval_min %}{{ live.interval_min }}분, {{ live.start_hour }}~{{ live.end_hour }}시{% else %}비활성{% endif %} / 시트기록 {{ '%02d' % daily.hour }}:{{ '%02d' % daily.minute }}).
+                메타 광고 수집(07:00) 등 <strong>전체 자동작업은 맨 위 '⏱ 자동 수집 스케줄'</strong> 표에서 확인하세요.
             </p>
         </div>
 
