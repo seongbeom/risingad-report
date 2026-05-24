@@ -66,6 +66,7 @@
                         <th>쇼핑몰 ID</th>
                         <th>부운영자 ID</th>
                         <th>구글 시트 ID</th>
+                        <th>Meta 광고계정</th>
                         <th>마지막 상태</th>
                         <th>동작</th>
                     </tr>
@@ -87,6 +88,17 @@
                                    title="구글 시트 열기" style="text-decoration:none; font-size:0.95rem">📊</a>
                                 {% endif %}
                             </form>
+                        </td>
+                        <td>
+                            <form method="POST" action="/accounts/{{ a.id }}/meta" style="display:flex; gap:4px; align-items:center;">
+                                <input name="meta_account_id" value="{{ a.meta_account_id or '' }}"
+                                       placeholder="act ID(숫자)" style="width:110px; font-size:0.75rem;">
+                                <button class="btn btn-sm" type="submit">저장</button>
+                            </form>
+                            {% set mst = acct_status.get(a.id) %}
+                            <div style="font-size:0.68rem; color:#888; margin-top:2px">
+                                {% if a.meta_account_id %}{% if mst and mst.meta_last %}🟢 {{ mst.meta_last }}{% else %}<span style="color:#e67e22">연결됨·미수집</span>{% endif %}{% else %}<span style="color:#bbb">미연결</span>{% endif %}
+                            </div>
                         </td>
                         <td style="font-size:0.7rem;line-height:1.45;white-space:nowrap">
                             {% set st = acct_status.get(a.id) %}
@@ -130,7 +142,7 @@
                         </td>
                     </tr>
                     <tr id="edit-{{ a.id }}" style="display:none;background:#fffbea">
-                        <td colspan="6">
+                        <td colspan="7">
                             <form method="POST" action="/accounts/{{ a.id }}/update" class="form-row" style="margin:0">
                                 <div class="form-group">
                                     <label>라벨</label>

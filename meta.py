@@ -102,28 +102,44 @@ def _find_daily_row(ws, date_str):
     return None
 
 
-def write_meta_to_sheet(spreadsheet_id, date_str, metrics):
-    """효율_26년N월 탭의 date_str 행 메타 칸(AZ/BA/BC/BE/BG)에 값 기입.
-    metrics: fetch_insights 의 한 날짜 dict. 파생 칸(수식)은 안 건드림.
-    반환: (ok, msg)."""
-    import sheets  # 지연 import (순환 방지)
+def write_meta_days(spreadsheet_id, insights):
+    """여러 날짜를 한 시트에 한 번에 기입 (구글 API 호출 최소화 — 쿼터 보호).
+    insights: {date_str: metrics}. 같은 달끼리 묶어 탭별로 1회 읽기 + 1회 batch write.
+    반환: (written_days, [errors])."""
+    import sheets
+    from collections import defaultdict
     gc = sheets.get_client()
     sh = gc.open_by_key(spreadsheet_id)
-    eff_name = sheets.efficiency_sheet_name(date_str)
-    try:
-        ws = sh.worksheet(eff_name)
-    except Exception:
-        return False, f"효율 탭 '{eff_name}' 없음"
-    row = _find_daily_row(ws, date_str)
-    if not row:
-        return False, f"{date_str} 행 못 찾음 ({eff_name})"
-    # 5개 셀 batch 업데이트 (수식 칸은 제외)
-    data = [
-        {"range": f"{META_COLS['impressions']}{row}", "values": [[metrics["impressions"]]]},
-        {"range": f"{META_COLS['clicks']}{row}", "values": [[metrics["clicks"]]]},
-        {"range": f"{META_COLS['spend_vat']}{row}", "values": [[metrics["spend_vat"]]]},
-        {"range": f"{META_COLS['purchases']}{row}", "values": [[metrics["purchases"]]]},
-        {"range": f"{META_COLS['revenue']}{row}", "values": [[metrics["revenue"]]]},
-    ]
-    ws.batch_update(data, value_input_option="USER_ENTERED")
-    return True, f"{eff_name} R{row} 기입"
+    # 날짜를 효율탭(월)별로 그룹
+    by_tab = defaultdict(dict)
+    for d, m in insights.items():
+        by_tab[sheets.efficiency_sheet_name(d)][d] = m
+    written = 0
+    errors = []
+    for eff_name, days in by_tab.items():
+        try:
+            ws = sh.worksheet(eff_name)
+        except Exception:
+            errors.append(f"{eff_name} 탭없음")
+            continue
+        col_b = ws.col_values(2)  # 탭당 1회만 읽기
+        rowmap = {}
+        for i, v in enumerate(col_b, start=1):
+            rowmap[(v or "").strip()] = i
+        data = []
+        for d, m in days.items():
+            row = rowmap.get(d.replace("-", "/"))
+            if not row:
+                errors.append(f"{d} 행없음")
+                continue
+            data += [
+                {"range": f"{META_COLS['impressions']}{row}", "values": [[m["impressions"]]]},
+                {"range": f"{META_COLS['clicks']}{row}", "values": [[m["clicks"]]]},
+                {"range": f"{META_COLS['spend_vat']}{row}", "values": [[m["spend_vat"]]]},
+                {"range": f"{META_COLS['purchases']}{row}", "values": [[m["purchases"]]]},
+                {"range": f"{META_COLS['revenue']}{row}", "values": [[m["revenue"]]]},
+            ]
+            written += 1
+        if data:
+            ws.batch_update(data, value_input_option="USER_ENTERED")  # 탭당 1회만 쓰기
+    return written, errors

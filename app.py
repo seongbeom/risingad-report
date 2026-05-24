@@ -663,17 +663,14 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
             continue
         try:
             insights = meta.fetch_insights(a["meta_account_id"], since, until)
-            wrote = 0
-            for d, m in sorted(insights.items()):
-                okw, _msg = meta.write_meta_to_sheet(ssid, d, m)
-                if okw:
-                    wrote += 1
+            wrote, errs = meta.write_meta_days(ssid, insights)
             db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
-            print(f"[meta] {lbl} {wrote}일 기입")
+            print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
             ok_acct += 1
         except Exception as e:
             fail.append(lbl)
             print(f"[meta] {lbl} 실패: {repr(e)[:160]}")
+        time.sleep(1.5)  # 구글 시트 쿼터(분당 읽기) 보호
     db.set_setting("meta_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
     print(f"[meta] done — 성공 {ok_acct} / 실패 {len(fail)}")
     slack_notify(
@@ -1149,6 +1146,7 @@ def index():
                     "fail_at": fail_at,
                     "fail_err": fail_err,
                     "fail_kind": fail_kind,
+                    "meta_last": db.get_setting(f"meta_last_{aid}", None),
                 }
     except Exception:
         traceback.print_exc()
