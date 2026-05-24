@@ -456,7 +456,19 @@
                         <span class="label-sub" style="margin-left:6px;color:#aaa">{{ ops_status.last_run.started_at[5:16] if ops_status.last_run.started_at|length >= 16 else ops_status.last_run.started_at }}</span>
                     </td></tr>
                 {% endif %}
+                <tr><td style="padding:4px 8px;color:#666">메타 광고 수집</td>
+                    <td>{% if ops_status.meta_last %}<span style="color:#27ae60">🟢 {{ ops_status.meta_last }}</span>{% else %}<span style="color:#aaa">대기</span>{% endif %}</td></tr>
             </table>
+            <!-- 자동 스케줄 -->
+            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e0e0e0">
+                <div style="font-size:0.8rem; font-weight:600; color:#555; margin-bottom:4px">⏱ 자동 스케줄 (다음 실행)</div>
+                <table style="font-size:0.78rem; width:100%">
+                    {% for j in ops_status.jobs %}
+                    <tr><td style="padding:2px 8px; color:#666">{{ j.label }}</td>
+                        <td style="text-align:right; color:#888; font-variant-numeric:tabular-nums">{{ j.next }}</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
         </div>
         <div>
             <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length }}건</span></h2>

@@ -2135,6 +2135,27 @@ def dashboard():
         else:
             next_live_label = f"활성시간({live_settings['start_hour']}시 부터)"
 
+    # 스케줄 잡 목록 (이름/주기/다음실행) — 화면 표시용
+    _job_labels = {
+        "live_global": "라이브 스크랩 (오늘 매트릭+상품)",
+        "daily_finalize": "일일 정리 (어제 확정+시트+상품7일/전일)",
+        "meta_collect": "메타 광고 수집 (최근 4일)",
+        "db_backup": "DB 백업",
+        "daily_restart": "정기 재시작",
+        "heartbeat": "self-check",
+    }
+    jobs_status = []
+    try:
+        for j in scheduler.get_jobs():
+            if j.id not in _job_labels:
+                continue
+            nxt = j.next_run_time.strftime("%m/%d %H:%M") if j.next_run_time else "-"
+            jobs_status.append({"id": j.id, "label": _job_labels.get(j.id, j.id), "next": nxt})
+        order = {k: i for i, k in enumerate(["live_global", "daily_finalize", "meta_collect", "db_backup", "daily_restart", "heartbeat"])}
+        jobs_status.sort(key=lambda x: order.get(x["id"], 99))
+    except Exception:
+        traceback.print_exc()
+
     ops_status = {
         "last_run": last_live_run,
         "next_live": next_live_label,
@@ -2143,6 +2164,8 @@ def dashboard():
         "live_active": live_settings["start_hour"] <= cur_hour < live_settings["end_hour"],
         "today_success_runs": today_success_runs,
         "today_failed_runs": today_failed_runs,
+        "meta_last": db.get_setting("meta_last_run", None),
+        "jobs": jobs_status,
     }
 
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
