@@ -140,6 +140,22 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_product_metrics_lookup ON product_metrics(account_id, date, period, category);
 
+            -- 메타 광고 성과 (일별, 대시보드 ROAS 뷰용). spend=원본, spend_vat=부가세포함
+            CREATE TABLE IF NOT EXISTS meta_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                spend INTEGER DEFAULT 0,
+                spend_vat INTEGER DEFAULT 0,
+                purchases INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_meta_metrics_date ON meta_metrics(date);
+
             -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
             CREATE TABLE IF NOT EXISTS capsolver_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -385,6 +401,37 @@ def list_product_metrics(account_id=None, date=None, category=None, period=None)
                 d["raw"] = None
             out.append(d)
         return out
+
+
+def upsert_meta_metric(account_id, date, m):
+    """메타 일별 성과 1건 upsert. m: {impressions,clicks,spend,spend_vat,purchases,revenue}"""
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO meta_metrics (account_id,date,impressions,clicks,spend,spend_vat,purchases,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date) DO UPDATE SET
+                 impressions=excluded.impressions, clicks=excluded.clicks, spend=excluded.spend,
+                 spend_vat=excluded.spend_vat, purchases=excluded.purchases, revenue=excluded.revenue,
+                 updated_at=excluded.updated_at""",
+            (account_id, date, m.get("impressions", 0), m.get("clicks", 0), m.get("spend", 0),
+             m.get("spend_vat", 0), m.get("purchases", 0), m.get("revenue", 0)),
+        )
+
+
+def list_meta_metrics(account_ids=None, start_date=None, end_date=None):
+    """메타 일별 성과 조회. 반환: list of dict."""
+    sql = "SELECT * FROM meta_metrics WHERE 1=1"
+    params = []
+    if account_ids:
+        sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"
+        params.extend(account_ids)
+    if start_date:
+        sql += " AND date >= ?"; params.append(start_date)
+    if end_date:
+        sql += " AND date <= ?"; params.append(end_date)
+    sql += " ORDER BY date DESC"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def latest_product_collect_date(account_id):

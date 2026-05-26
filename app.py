@@ -663,6 +663,12 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
             continue
         try:
             insights = meta.fetch_insights(a["meta_account_id"], since, until)
+            # DB 저장 (대시보드 ROAS 뷰용) — 시트 실패와 무관하게 저장
+            for d, m in insights.items():
+                try:
+                    db.upsert_meta_metric(aid, d, m)
+                except Exception:
+                    traceback.print_exc()
             wrote, errs = meta.write_meta_days(ssid, insights)
             db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
@@ -2220,6 +2226,47 @@ def dashboard():
         "backfill_days": META_BACKFILL_DAYS,
     }
 
+    # ----- 광고 효율(ROAS) — 메타 광고비 vs 매출 (선택 매장, 오늘/어제) -----
+    # 오늘은 진행중(부분), 어제는 확정. 둘 다 제공하고 화면서 탭.
+    label_by_id = {a["id"]: (a.get("label") or a["cafe24_id"]) for a in all_accounts}
+    meta_rows_all = db.list_meta_metrics(account_ids=selected_ids, start_date=last_week_same, end_date=today)
+    meta_by_key = {(r["account_id"], r["date"]): r for r in meta_rows_all}
+
+    def _build_ad_eff(ad_date):
+        out = []
+        tot = {"spend": 0, "ad_rev": 0, "sales": 0, "purch": 0, "imp": 0, "clk": 0}
+        for aid in selected_ids:
+            mm = meta_by_key.get((aid, ad_date))
+            if not mm:
+                continue
+            spend = mm["spend_vat"] or 0
+            ad_rev = mm["revenue"] or 0
+            sales = (by_key.get((aid, ad_date), {}) or {}).get("매출") or 0  # cafe24 전체매출
+            roas = round(ad_rev / spend * 100) if spend else None
+            broas = round(sales / spend * 100) if spend else None       # 블렌디드(전체매출/광고비)
+            dep = round(spend / sales * 100, 1) if sales else None      # 광고의존도
+            out.append({
+                "label": label_by_id.get(aid, aid), "id": aid,
+                "spend": spend, "ad_rev": ad_rev, "roas": roas,
+                "sales": sales, "broas": broas, "dep": dep,
+                "purch": mm["purchases"] or 0, "imp": mm["impressions"] or 0, "clk": mm["clicks"] or 0,
+            })
+            tot["spend"] += spend; tot["ad_rev"] += ad_rev; tot["sales"] += sales
+            tot["purch"] += mm["purchases"] or 0; tot["imp"] += mm["impressions"] or 0; tot["clk"] += mm["clicks"] or 0
+        out.sort(key=lambda x: x["spend"], reverse=True)  # 광고비 큰 순
+        tot["roas"] = round(tot["ad_rev"] / tot["spend"] * 100) if tot["spend"] else None
+        tot["broas"] = round(tot["sales"] / tot["spend"] * 100) if tot["spend"] else None
+        tot["dep"] = round(tot["spend"] / tot["sales"] * 100, 1) if tot["sales"] else None
+        return out, tot
+
+    ad_eff_yday, ad_eff_yday_tot = _build_ad_eff(yesterday)
+    ad_eff_today, ad_eff_today_tot = _build_ad_eff(today)
+    ad_eff = {
+        "yesterday": {"date": yesterday, "rows": ad_eff_yday, "tot": ad_eff_yday_tot},
+        "today": {"date": today, "rows": ad_eff_today, "tot": ad_eff_today_tot},
+        "has_data": bool(ad_eff_yday or ad_eff_today),
+    }
+
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
     # 매출 0인 일자는 미수집(백필 안 한 일자)일 가능성이 커서 트렌드 왜곡됨 → 제외.
     # 진짜 영업 안 한 0원 일자가 있다면 분석에서 빠지지만 가짜 0 포함보다 안전.
@@ -2352,6 +2399,7 @@ def dashboard():
         product_collect_date=product_collect_date,
         product_running=list(_running.keys()),
         meta_status=meta_status,
+        ad_eff=ad_eff,
         now=now.strftime("%H:%M"),
     )
 

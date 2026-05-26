@@ -428,6 +428,65 @@
         </table>
     </div>
 
+    <!-- 광고 효율 (ROAS) -->
+    {% if ad_eff.has_data %}
+    <div class="card">
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">📈 광고 효율 (ROAS)
+            <span style="display:inline-flex; gap:4px">
+                <button type="button" class="ae-tab" data-k="yesterday" onclick="switchAdEff('yesterday')" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;border:1px solid #ddd;cursor:pointer;background:#4a90d9;color:#fff">어제 (확정)</button>
+                <button type="button" class="ae-tab" data-k="today" onclick="switchAdEff('today')" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;border:1px solid #ddd;cursor:pointer;background:#fff;color:#555">오늘 (진행중)</button>
+            </span>
+        </h2>
+        <p class="card-sub">메타 광고비(부가세포함) 대비 매출. <strong>광고ROAS</strong>=광고매출/광고비, <strong>블렌디드</strong>=전체매출/광고비, <strong>광고의존도</strong>=광고비/전체매출.</p>
+        {% for key in ['yesterday','today'] %}
+        {% set ae = ad_eff[key] %}
+        <div class="ae-grid" data-k="{{ key }}" style="{% if key != 'yesterday' %}display:none{% endif %}">
+            {% if ae.rows %}
+            <table class="num" style="width:100%; font-size:0.83rem; border-collapse:collapse">
+                <thead><tr style="text-align:right; color:#888; border-bottom:1px solid #e5e5e5">
+                    <th style="text-align:left; padding:4px 8px">매장 ({{ ae.date }})</th>
+                    <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">광고매출</th>
+                    <th style="padding:4px 8px">광고ROAS</th><th style="padding:4px 8px">전체매출</th>
+                    <th style="padding:4px 8px">블렌디드</th><th style="padding:4px 8px">광고의존도</th>
+                    <th style="padding:4px 8px">전환</th>
+                </tr></thead>
+                <tbody>
+                {% for r in ae.rows %}
+                <tr style="text-align:right; border-bottom:1px solid #f5f5f5">
+                    <td style="text-align:left; padding:3px 8px; font-weight:600">{{ r.label }}</td>
+                    <td style="padding:3px 8px">{{ "{:,.0f}".format(r.spend) }}</td>
+                    <td style="padding:3px 8px">{{ "{:,.0f}".format(r.ad_rev) }}</td>
+                    <td style="padding:3px 8px; font-weight:700; color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
+                    <td style="padding:3px 8px; color:#666">{{ "{:,.0f}".format(r.sales) }}</td>
+                    <td style="padding:3px 8px; color:#666">{% if r.broas is not none %}{{ r.broas }}%{% else %}-{% endif %}</td>
+                    <td style="padding:3px 8px; color:#666">{% if r.dep is not none %}{{ r.dep }}%{% else %}-{% endif %}</td>
+                    <td style="padding:3px 8px; color:#666">{{ r.purch }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot><tr style="text-align:right; border-top:2px solid #e5e5e5; font-weight:700">
+                    <td style="text-align:left; padding:4px 8px">합계</td>
+                    <td style="padding:4px 8px">{{ "{:,.0f}".format(ae.tot.spend) }}</td>
+                    <td style="padding:4px 8px">{{ "{:,.0f}".format(ae.tot.ad_rev) }}</td>
+                    <td style="padding:4px 8px; color:{% if ae.tot.roas and ae.tot.roas>=300 %}#27ae60{% elif ae.tot.roas and ae.tot.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if ae.tot.roas is not none %}{{ ae.tot.roas }}%{% else %}-{% endif %}</td>
+                    <td style="padding:4px 8px; color:#666">{{ "{:,.0f}".format(ae.tot.sales) }}</td>
+                    <td style="padding:4px 8px; color:#666">{% if ae.tot.broas is not none %}{{ ae.tot.broas }}%{% else %}-{% endif %}</td>
+                    <td style="padding:4px 8px; color:#666">{% if ae.tot.dep is not none %}{{ ae.tot.dep }}%{% else %}-{% endif %}</td>
+                    <td style="padding:4px 8px; color:#666">{{ ae.tot.purch }}</td>
+                </tr></tfoot>
+            </table>
+            {% else %}<p style="color:#aaa; font-size:0.85rem">{{ ae.date }} 광고 데이터 없음</p>{% endif %}
+        </div>
+        {% endfor %}
+        <script>
+        function switchAdEff(k){
+            document.querySelectorAll('.ae-grid').forEach(function(g){ g.style.display = g.getAttribute('data-k')===k ? '' : 'none'; });
+            document.querySelectorAll('.ae-tab').forEach(function(b){ var on=b.getAttribute('data-k')===k; b.style.background=on?'#4a90d9':'#fff'; b.style.color=on?'#fff':'#555'; });
+        }
+        </script>
+    </div>
+    {% endif %}
+
     <!-- 운영 상태 + 알람 -->
     <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div>
