@@ -1372,6 +1372,17 @@ def update_meta_route(account_id):
     return redirect(url_for("index"))
 
 
+@app.route("/settings/target_roas", methods=["POST"])
+@login_required
+def set_target_roas():
+    try:
+        v = int(request.form.get("target_roas", "300"))
+        db.set_setting("target_roas", str(max(0, v)))
+    except ValueError:
+        pass
+    return redirect(request.referrer or url_for("dashboard"))
+
+
 @app.route("/accounts/<account_id>/update", methods=["POST"])
 @login_required
 def update_account_route(account_id):
@@ -2338,6 +2349,30 @@ def dashboard():
         if r["dep"] is not None and r["dep"] >= 60:
             ad_alerts.append({"label": r["label"], "msg": f"광고 의존도 높음: {r['dep']}% (매출 대부분이 광고)"})
 
+    # 실행 제안(자동 인사이트) — 어제 기준 + 목표 ROAS 대비
+    target_roas = int(db.get_setting("target_roas", "300") or 300)
+    ad_insights = []
+    for r in ad_eff_yday:
+        if r["roas"] is None:
+            continue
+        if r["roas"] >= target_roas * 1.4 and r["spend"] > 0:
+            ad_insights.append({"kind": "up", "label": r["label"],
+                "msg": f"ROAS {r['roas']}% (목표 {target_roas}% 크게 상회) → 광고비 증액 검토 (현재 {r['spend']:,}원)"})
+        elif r["roas"] < target_roas:
+            ad_insights.append({"kind": "down", "label": r["label"],
+                "msg": f"ROAS {r['roas']}% < 목표 {target_roas}% → 소재/타겟 점검 또는 감액"})
+        if r["freq"] and r["freq"] >= 3:
+            ad_insights.append({"kind": "fatigue", "label": r["label"],
+                "msg": f"빈도 {r['freq']} → 소재 교체 권장 (같은 사람 반복 노출, 효율 하락 신호)"})
+        if r["atc"] and r["atc"] >= 10 and r["purch"] is not None:
+            a2p = r["purch"] / r["atc"] * 100
+            if a2p < 20:
+                ad_insights.append({"kind": "funnel", "label": r["label"],
+                    "msg": f"장바구니→구매 {a2p:.0f}% 낮음 → 결제/상세페이지 이탈 점검"})
+    # 정렬: 기회(up) 먼저, 그다음 경고
+    _order = {"up": 0, "down": 1, "fatigue": 2, "funnel": 3}
+    ad_insights.sort(key=lambda x: _order.get(x["kind"], 9))
+
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
     # 매출 0인 일자는 미수집(백필 안 한 일자)일 가능성이 커서 트렌드 왜곡됨 → 제외.
     # 진짜 영업 안 한 0원 일자가 있다면 분석에서 빠지지만 가짜 0 포함보다 안전.
@@ -2474,6 +2509,8 @@ def dashboard():
         ad_campaigns=ad_campaigns,
         ad_trend=ad_trend,
         ad_alerts=ad_alerts,
+        ad_insights=ad_insights,
+        target_roas=target_roas,
         now=now.strftime("%H:%M"),
     )
 

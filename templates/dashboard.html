@@ -498,6 +498,30 @@
     {% endif %}
 
     {% if ad_eff.has_data %}
+    <!-- 실행 제안 (자동 인사이트) -->
+    <div class="card" style="background:#fffdf5; border:1px solid #f0e6c0">
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">💡 실행 제안
+            <span style="font-size:0.78rem; color:#888; font-weight:400">어제 광고 기준 · 목표 ROAS</span>
+            <form method="POST" action="/settings/target_roas" style="display:inline-flex; gap:4px; align-items:center; margin-left:auto">
+                <span style="font-size:0.78rem; color:#666">목표 ROAS</span>
+                <input name="target_roas" type="number" value="{{ target_roas }}" style="width:64px; font-size:0.8rem; padding:2px 4px">%
+                <button class="btn btn-sm" type="submit">저장</button>
+            </form>
+        </h2>
+        {% if ad_insights %}
+        <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px">
+            {% for ins in ad_insights %}
+            <div style="display:flex; gap:8px; padding:7px 10px; border-radius:6px; font-size:0.86rem;
+                background:{% if ins.kind=='up' %}#eafaf0{% elif ins.kind=='down' %}#fdeeee{% elif ins.kind=='fatigue' %}#fff4e6{% else %}#eef3fb{% endif %};
+                border-left:3px solid {% if ins.kind=='up' %}#27ae60{% elif ins.kind=='down' %}#e74c3c{% elif ins.kind=='fatigue' %}#e67e22{% else %}#4a90d9{% endif %}">
+                <span>{% if ins.kind=='up' %}📈{% elif ins.kind=='down' %}📉{% elif ins.kind=='fatigue' %}🔁{% else %}🔻{% endif %}</span>
+                <span><strong>{{ ins.label }}</strong> · <span style="color:#555">{{ ins.msg }}</span></span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}<p class="empty" style="margin-top:6px; font-size:0.86rem">제안 없음 — 전 매장 목표 ROAS 충족 ✅</p>{% endif %}
+    </div>
+
     {% set aey = ad_eff.yesterday %}
     <!-- 광고 효율 지표 -->
     <div class="card">
