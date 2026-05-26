@@ -128,6 +128,36 @@ def fetch_campaign_insights(ad_account_id, since, until, token=None):
     return out
 
 
+def fetch_ad_insights(ad_account_id, since, until, token=None):
+    """광고(소재)별 일별 insights. 반환: list of {date, ad_id, ad_name, campaign_name, ...metrics}."""
+    token = token or _token()
+    if not token:
+        raise RuntimeError("META_ACCESS_TOKEN 미설정")
+    acct = ad_account_id if str(ad_account_id).startswith("act_") else f"act_{ad_account_id}"
+    params = {
+        "access_token": token,
+        "fields": "ad_id,ad_name,campaign_name,impressions,clicks,spend,actions,action_values",
+        "time_range": json.dumps({"since": since, "until": until}),
+        "time_increment": "1",
+        "level": "ad",
+        "limit": "200",
+    }
+    url = f"https://graph.facebook.com/{GRAPH_VER}/{acct}/insights?" + urllib.parse.urlencode(params)
+    out = []
+    while url:
+        with urllib.request.urlopen(url, timeout=40) as r:
+            payload = json.load(r)
+        for row in payload.get("data", []):
+            m = _row_to_metrics(row)
+            m["date"] = row.get("date_start")
+            m["ad_id"] = row.get("ad_id")
+            m["ad_name"] = row.get("ad_name", "")
+            m["campaign_name"] = row.get("campaign_name", "")
+            out.append(m)
+        url = payload.get("paging", {}).get("next")
+    return out
+
+
 def verify_token(token=None):
     """토큰 유효성 + 이름 반환. 실패 시 예외."""
     token = token or _token()

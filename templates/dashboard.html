@@ -601,6 +601,33 @@
     </div>
     {% endif %}
 
+    <!-- 광고(소재)별 성과 -->
+    {% if ad_creatives %}
+    <div class="card">
+        <h2>🖼 광고(소재)별 성과 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 · 광고비 큰 순 top 20</span></h2>
+        <p class="card-sub">어느 소재(광고)가 잘 나가는지. ROAS 낮은데 광고비 큰 소재는 끄거나 교체 후보.</p>
+        <table class="num" style="width:100%; font-size:0.8rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="text-align:left;padding:4px 8px">소재(광고)</th>
+                <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">매출</th>
+                <th style="padding:4px 8px">ROAS</th><th style="padding:4px 8px">구매</th>
+            </tr></thead>
+            <tbody>
+            {% for c in ad_creatives %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;color:#888">{{ c.store }}</td>
+                <td style="text-align:left;padding:3px 8px" title="{{ c.campaign }}">{{ c.name[:34] }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(c.spend) }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(c.rev) }}</td>
+                <td style="padding:3px 8px;font-weight:700;color:{% if c.roas and c.roas>=300 %}#27ae60{% elif c.roas and c.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if c.roas is not none %}{{ c.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{{ c.purch }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <!-- ROAS 추세 -->
     {% if ad_trend %}
     <div class="card">

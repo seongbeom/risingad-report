@@ -180,6 +180,25 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_meta_campaign_lookup ON meta_campaign_metrics(account_id, date);
 
+            -- 메타 광고(소재)별 일별 성과
+            CREATE TABLE IF NOT EXISTS meta_ad_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                ad_id TEXT NOT NULL,
+                ad_name TEXT DEFAULT '',
+                campaign_name TEXT DEFAULT '',
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                spend INTEGER DEFAULT 0,
+                spend_vat INTEGER DEFAULT 0,
+                purchases INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date, ad_id),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_meta_ad_lookup ON meta_ad_metrics(account_id, date);
+
             -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
             CREATE TABLE IF NOT EXISTS capsolver_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -476,6 +495,35 @@ def upsert_meta_campaign(account_id, date, campaign_id, name, m):
 
 def list_meta_campaigns(account_ids=None, date=None):
     sql = "SELECT * FROM meta_campaign_metrics WHERE 1=1"
+    params = []
+    if account_ids:
+        sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"
+        params.extend(account_ids)
+    if date:
+        sql += " AND date=?"; params.append(date)
+    sql += " ORDER BY spend DESC"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def upsert_meta_ad(account_id, date, ad_id, ad_name, campaign_name, m):
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO meta_ad_metrics (account_id,date,ad_id,ad_name,campaign_name,
+                 impressions,clicks,spend,spend_vat,purchases,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date,ad_id) DO UPDATE SET
+                 ad_name=excluded.ad_name, campaign_name=excluded.campaign_name,
+                 impressions=excluded.impressions, clicks=excluded.clicks, spend=excluded.spend,
+                 spend_vat=excluded.spend_vat, purchases=excluded.purchases, revenue=excluded.revenue,
+                 updated_at=excluded.updated_at""",
+            (account_id, date, ad_id, ad_name, campaign_name, m.get("impressions", 0), m.get("clicks", 0),
+             m.get("spend", 0), m.get("spend_vat", 0), m.get("purchases", 0), m.get("revenue", 0)),
+        )
+
+
+def list_meta_ads(account_ids=None, date=None):
+    sql = "SELECT * FROM meta_ad_metrics WHERE 1=1"
     params = []
     if account_ids:
         sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"

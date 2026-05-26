@@ -675,6 +675,12 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
                     db.upsert_meta_campaign(aid, c["date"], c["campaign_id"], c.get("campaign_name", ""), c)
             except Exception:
                 traceback.print_exc()
+            # 광고(소재)별 성과
+            try:
+                for ad in meta.fetch_ad_insights(a["meta_account_id"], since, until):
+                    db.upsert_meta_ad(aid, ad["date"], ad["ad_id"], ad.get("ad_name", ""), ad.get("campaign_name", ""), ad)
+            except Exception:
+                traceback.print_exc()
             wrote, errs = meta.write_meta_days(ssid, insights)
             db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
@@ -2321,6 +2327,20 @@ def dashboard():
     ad_campaigns.sort(key=lambda x: x["spend"], reverse=True)
     ad_campaigns = ad_campaigns[:20]
 
+    # 광고(소재)별 성과 (어제) — 광고비 큰 순 top
+    ad_creatives = []
+    for c in db.list_meta_ads(account_ids=selected_ids, date=yesterday):
+        sp = c["spend_vat"] or 0
+        rev = c["revenue"] or 0
+        ad_creatives.append({
+            "store": label_by_id.get(c["account_id"], c["account_id"]),
+            "name": c["ad_name"] or "(이름없음)", "campaign": c["campaign_name"] or "",
+            "spend": sp, "rev": rev, "roas": round(rev / sp * 100) if sp else None,
+            "purch": c["purchases"] or 0,
+        })
+    ad_creatives.sort(key=lambda x: x["spend"], reverse=True)
+    ad_creatives = ad_creatives[:20]
+
     # ROAS 추세 (선택매장 합계, 최근 8일) — 일별 광고비/광고매출/ROAS
     ad_trend = []
     trend_dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7, -1, -1)]
@@ -2507,6 +2527,7 @@ def dashboard():
         meta_status=meta_status,
         ad_eff=ad_eff,
         ad_campaigns=ad_campaigns,
+        ad_creatives=ad_creatives,
         ad_trend=ad_trend,
         ad_alerts=ad_alerts,
         ad_insights=ad_insights,
