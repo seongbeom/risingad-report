@@ -95,6 +95,13 @@
         /* 페이스 바 */
         .pace-bar { width: 60px; height: 4px; background: #eee; border-radius: 2px; display: inline-block; vertical-align: middle; margin-left: 4px; position: relative; }
         .pace-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: #4a90d9; border-radius: 2px; }
+
+        /* 퀵 네비 (섹션 점프바, 상단 고정) */
+        #quicknav { position: sticky; top: 0; z-index: 500; background: rgba(255,255,255,0.96); backdrop-filter: blur(4px);
+            display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 4px; margin-bottom: 12px; border-bottom: 1px solid #e5e5e5; }
+        #quicknav a { font-size: 0.76rem; color: #555; text-decoration: none; padding: 3px 9px; border-radius: 12px; background: #f0f3f7; white-space: nowrap; }
+        #quicknav a:hover { background: #4a90d9; color: #fff; }
+        :target { scroll-margin-top: 54px; }  /* 점프 시 고정바에 안 가리게 */
     </style>
 </head>
 <body>
@@ -105,6 +112,9 @@
         <a href="/">← 관리자</a>
         <a href="/dashboard/range">기간 분석 →</a>
     </div>
+
+    <!-- 퀵 네비 (JS 자동 생성) -->
+    <div id="quicknav"></div>
 
     <!-- 매장 필터 -->
     <div class="card" style="padding:12px 16px">
@@ -1338,6 +1348,30 @@
     el.addEventListener('mousemove', move);
     el.addEventListener('mouseleave', hide);
   });
+})();
+</script>
+<script>
+// 퀵 네비 자동 생성 — 각 카드의 첫 h2 를 찾아 점프 링크 생성
+(function(){
+  var nav = document.getElementById('quicknav');
+  if (!nav) return;
+  var cards = document.querySelectorAll('.container > .card');
+  var made = 0;
+  cards.forEach(function(card, i){
+    var h2 = card.querySelector('h2');
+    if (!h2) return;
+    // 라벨: h2 첫 텍스트 (이모지+짧은 단어). 너무 길면 자름
+    var txt = (h2.textContent || '').trim().split(/[—·\(]/)[0].trim();
+    if (!txt || txt.length > 16) txt = txt.slice(0, 14);
+    if (!txt) return;
+    var id = card.id || ('sec-' + i);
+    card.id = id;
+    var a = document.createElement('a');
+    a.href = '#' + id; a.textContent = txt;
+    nav.appendChild(a);
+    made++;
+  });
+  if (made === 0) nav.style.display = 'none';
 })();
 </script>
 </body>
