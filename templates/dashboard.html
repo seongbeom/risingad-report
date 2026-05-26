@@ -497,6 +497,35 @@
     </div>
     {% endif %}
 
+    {% if ad_summary.has_data %}
+    <!-- 주간/월간 광고 요약 -->
+    {% macro deltabadge(d) %}{% if d is not none %}<span style="font-size:0.74rem; color:{% if d>0 %}#27ae60{% elif d<0 %}#e74c3c{% else %}#888{% endif %}">{{ '▲' if d>0 else ('▼' if d<0 else '─') }}{{ '%+.1f'|format(d) }}%</span>{% endif %}{% endmacro %}
+    <div class="card">
+        <h2>🗓 주간 / 월간 광고 요약 <span style="font-size:0.78rem;color:#888;font-weight:400">선택매장 합계</span></h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+            {% for blk, title, sub in [(ad_summary.week, '주간 (최근 7일)', '이전 7일 대비'), (ad_summary.month, '월간 (이번달)', '지난달 동기간 대비')] %}
+            <div style="background:#f8fbff; border-radius:8px; padding:12px 14px">
+                <div style="font-weight:700; margin-bottom:8px">{{ title }} <span style="font-size:0.74rem; color:#999; font-weight:400">{{ sub }}</span></div>
+                <table style="width:100%; font-size:0.85rem">
+                    <tr><td style="color:#666; padding:3px 0">광고비</td>
+                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.spend) }}원</td>
+                        <td style="text-align:right">{{ deltabadge(blk.spend_d) }}</td></tr>
+                    <tr><td style="color:#666; padding:3px 0">광고매출</td>
+                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.rev) }}원</td>
+                        <td style="text-align:right">{{ deltabadge(blk.rev_d) }}</td></tr>
+                    <tr><td style="color:#666; padding:3px 0">ROAS</td>
+                        <td style="text-align:right; font-weight:700; color:{% if blk.this.roas and blk.this.roas>=300 %}#27ae60{% elif blk.this.roas and blk.this.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if blk.this.roas is not none %}{{ blk.this.roas }}%{% else %}-{% endif %}</td>
+                        <td style="text-align:right">{{ deltabadge(blk.roas_d) }}</td></tr>
+                    <tr><td style="color:#666; padding:3px 0">구매</td>
+                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.purch) }}건</td>
+                        <td style="text-align:right; color:#aaa; font-size:0.74rem">이전 {{ "{:,.0f}".format(blk.last.purch) }}</td></tr>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {% if ad_eff.has_data %}
     <!-- 실행 제안 (자동 인사이트) -->
     <div class="card" style="background:#fffdf5; border:1px solid #f0e6c0">

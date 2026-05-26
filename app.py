@@ -2350,6 +2350,56 @@ def dashboard():
         ad_trend.append({"date": d[5:], "spend": sp, "rev": rev,
                          "roas": round(rev / sp * 100) if sp else None})
 
+    # 주간/월간 광고 요약 (WoW / MoM) — 선택매장 합계
+    _mrows = db.list_meta_metrics(account_ids=selected_ids,
+                                  start_date=(now - timedelta(days=70)).strftime("%Y-%m-%d"),
+                                  end_date=today)
+    _mday = {}
+    for r in _mrows:
+        _mday[r["date"]] = (r["spend_vat"] or 0, r["revenue"] or 0, r["purchases"] or 0)
+
+    def _sum_range(d_from, d_to):
+        sp = rv = pu = 0
+        cur = d_from
+        while cur <= d_to:
+            ds = cur.strftime("%Y-%m-%d")
+            if ds in _mday:
+                sp += _mday[ds][0]; rv += _mday[ds][1]; pu += _mday[ds][2]
+            cur += timedelta(days=1)
+        return {"spend": sp, "rev": rv, "purch": pu, "roas": round(rv / sp * 100) if sp else None}
+
+    def _delta(cur, prev):
+        if not prev:
+            return None
+        return round((cur - prev) / prev * 100, 1)
+
+    yday = now - timedelta(days=1)
+    # 주간: 최근 7일(어제까지) vs 이전 7일
+    wk_this = _sum_range(yday - timedelta(days=6), yday)
+    wk_last = _sum_range(yday - timedelta(days=13), yday - timedelta(days=7))
+    # 월간: 이번달 1일~어제 vs 지난달 1일~지난달 같은 일자
+    month_start = now.replace(day=1)
+    mtd_this = _sum_range(month_start, yday)
+    last_month_end = month_start - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    lm_same = last_month_start + timedelta(days=(yday - month_start).days)
+    if lm_same > last_month_end:
+        lm_same = last_month_end
+    mtd_last = _sum_range(last_month_start, lm_same)
+    ad_summary = {
+        "week": {"this": wk_this, "last": wk_last,
+                 "spend_d": _delta(wk_this["spend"], wk_last["spend"]),
+                 "rev_d": _delta(wk_this["rev"], wk_last["rev"]),
+                 "roas_d": _delta(wk_this["roas"] or 0, wk_last["roas"] or 0) if wk_last["roas"] else None},
+        "month": {"this": mtd_this, "last": mtd_last,
+                  "this_label": now.strftime("%m월 1~%d일") % () if False else f"{now.month}월 1~{yday.day}일",
+                  "last_label": f"{last_month_start.month}월 1~{lm_same.day}일",
+                  "spend_d": _delta(mtd_this["spend"], mtd_last["spend"]),
+                  "rev_d": _delta(mtd_this["rev"], mtd_last["rev"]),
+                  "roas_d": _delta(mtd_this["roas"] or 0, mtd_last["roas"] or 0) if mtd_last["roas"] else None},
+        "has_data": bool(_mday),
+    }
+
     # 광고 알림 — 어제 기준: ROAS 급락(7일평균 대비), 빈도 과다, 광고의존도 과다
     ad_alerts = []
     for r in ad_eff_yday:
@@ -2532,6 +2582,7 @@ def dashboard():
         ad_alerts=ad_alerts,
         ad_insights=ad_insights,
         target_roas=target_roas,
+        ad_summary=ad_summary,
         now=now.strftime("%H:%M"),
     )
 
