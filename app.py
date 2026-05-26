@@ -2240,29 +2240,51 @@ def dashboard():
 
     def _build_ad_eff(ad_date):
         out = []
-        tot = {"spend": 0, "ad_rev": 0, "sales": 0, "purch": 0, "imp": 0, "clk": 0}
+        tot = {"spend": 0, "ad_rev": 0, "sales": 0, "purch": 0, "imp": 0, "clk": 0,
+               "reach": 0, "lpv": 0, "atc": 0, "ic": 0, "link_clk": 0}
         for aid in selected_ids:
             mm = meta_by_key.get((aid, ad_date))
             if not mm:
                 continue
             spend = mm["spend_vat"] or 0
+            spend_raw = mm["spend"] or 0
             ad_rev = mm["revenue"] or 0
-            sales = (by_key.get((aid, ad_date), {}) or {}).get("매출") or 0  # cafe24 전체매출
+            sales = (by_key.get((aid, ad_date), {}) or {}).get("매출") or 0
+            imp = mm["impressions"] or 0
+            clk = mm["clicks"] or 0
+            purch = mm["purchases"] or 0
             roas = round(ad_rev / spend * 100) if spend else None
-            broas = round(sales / spend * 100) if spend else None       # 블렌디드(전체매출/광고비)
-            dep = round(spend / sales * 100, 1) if sales else None      # 광고의존도
+            broas = round(sales / spend * 100) if spend else None
+            dep = round(spend / sales * 100, 1) if sales else None
             out.append({
                 "label": label_by_id.get(aid, aid), "id": aid,
                 "spend": spend, "ad_rev": ad_rev, "roas": roas,
                 "sales": sales, "broas": broas, "dep": dep,
-                "purch": mm["purchases"] or 0, "imp": mm["impressions"] or 0, "clk": mm["clicks"] or 0,
+                "purch": purch, "imp": imp, "clk": clk,
+                # 효율 지표
+                "cpm": round(spend / imp * 1000) if imp else None,
+                "cpc": round(spend / clk) if clk else None,
+                "ctr": round(clk / imp * 100, 2) if imp else None,
+                "freq": mm.get("frequency") or 0,
+                "cpa": round(spend / purch) if purch else None,
+                "reach": mm.get("reach") or 0,
+                # 퍼널
+                "link_clk": mm.get("link_clicks") or 0, "lpv": mm.get("lpv") or 0,
+                "atc": mm.get("atc") or 0, "ic": mm.get("ic") or 0,
             })
             tot["spend"] += spend; tot["ad_rev"] += ad_rev; tot["sales"] += sales
-            tot["purch"] += mm["purchases"] or 0; tot["imp"] += mm["impressions"] or 0; tot["clk"] += mm["clicks"] or 0
-        out.sort(key=lambda x: x["spend"], reverse=True)  # 광고비 큰 순
+            tot["purch"] += purch; tot["imp"] += imp; tot["clk"] += clk
+            tot["reach"] += mm.get("reach") or 0; tot["lpv"] += mm.get("lpv") or 0
+            tot["atc"] += mm.get("atc") or 0; tot["ic"] += mm.get("ic") or 0
+            tot["link_clk"] += mm.get("link_clicks") or 0
+        out.sort(key=lambda x: x["spend"], reverse=True)
         tot["roas"] = round(tot["ad_rev"] / tot["spend"] * 100) if tot["spend"] else None
         tot["broas"] = round(tot["sales"] / tot["spend"] * 100) if tot["spend"] else None
         tot["dep"] = round(tot["spend"] / tot["sales"] * 100, 1) if tot["sales"] else None
+        tot["cpm"] = round(tot["spend"] / tot["imp"] * 1000) if tot["imp"] else None
+        tot["cpc"] = round(tot["spend"] / tot["clk"]) if tot["clk"] else None
+        tot["ctr"] = round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else None
+        tot["cpa"] = round(tot["spend"] / tot["purch"]) if tot["purch"] else None
         return out, tot
 
     ad_eff_yday, ad_eff_yday_tot = _build_ad_eff(yesterday)
@@ -2272,6 +2294,49 @@ def dashboard():
         "today": {"date": today, "rows": ad_eff_today, "tot": ad_eff_today_tot},
         "has_data": bool(ad_eff_yday or ad_eff_today),
     }
+
+    # 캠페인별 성과 (어제) — 광고비 큰 순
+    ad_campaigns = []
+    for c in db.list_meta_campaigns(account_ids=selected_ids, date=yesterday):
+        sp = c["spend_vat"] or 0
+        rev = c["revenue"] or 0
+        ad_campaigns.append({
+            "store": label_by_id.get(c["account_id"], c["account_id"]),
+            "name": c["campaign_name"] or "(이름없음)",
+            "spend": sp, "rev": rev,
+            "roas": round(rev / sp * 100) if sp else None,
+            "purch": c["purchases"] or 0,
+        })
+    ad_campaigns.sort(key=lambda x: x["spend"], reverse=True)
+    ad_campaigns = ad_campaigns[:20]
+
+    # ROAS 추세 (선택매장 합계, 최근 8일) — 일별 광고비/광고매출/ROAS
+    ad_trend = []
+    trend_dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7, -1, -1)]
+    for d in trend_dates:
+        sp = sum((meta_by_key.get((aid, d), {}) or {}).get("spend_vat") or 0 for aid in selected_ids)
+        rev = sum((meta_by_key.get((aid, d), {}) or {}).get("revenue") or 0 for aid in selected_ids)
+        ad_trend.append({"date": d[5:], "spend": sp, "rev": rev,
+                         "roas": round(rev / sp * 100) if sp else None})
+
+    # 광고 알림 — 어제 기준: ROAS 급락(7일평균 대비), 빈도 과다, 광고의존도 과다
+    ad_alerts = []
+    for r in ad_eff_yday:
+        aid = r["id"]
+        # 최근 7일(어제 제외 이전) 평균 ROAS
+        prev = []
+        for i in range(2, 9):
+            d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+            mm = meta_by_key.get((aid, d))
+            if mm and (mm["spend_vat"] or 0) > 0:
+                prev.append((mm["revenue"] or 0) / mm["spend_vat"] * 100)
+        avg_roas = sum(prev) / len(prev) if prev else None
+        if r["roas"] is not None and avg_roas and avg_roas > 0 and r["roas"] < avg_roas * 0.7:
+            ad_alerts.append({"label": r["label"], "msg": f"ROAS 급락: {r['roas']}% (7일평균 {avg_roas:.0f}% 대비 -30%↓)"})
+        if r["freq"] and r["freq"] >= 3:
+            ad_alerts.append({"label": r["label"], "msg": f"광고 피로도 높음: 빈도 {r['freq']} (같은 사람 반복 노출)"})
+        if r["dep"] is not None and r["dep"] >= 60:
+            ad_alerts.append({"label": r["label"], "msg": f"광고 의존도 높음: {r['dep']}% (매출 대부분이 광고)"})
 
     # ----- 신규: 매장별 7일 트렌드 (평균/최고/최저/추세) -----
     # 매출 0인 일자는 미수집(백필 안 한 일자)일 가능성이 커서 트렌드 왜곡됨 → 제외.
@@ -2406,6 +2471,9 @@ def dashboard():
         product_running=list(_running.keys()),
         meta_status=meta_status,
         ad_eff=ad_eff,
+        ad_campaigns=ad_campaigns,
+        ad_trend=ad_trend,
+        ad_alerts=ad_alerts,
         now=now.strftime("%H:%M"),
     )
 

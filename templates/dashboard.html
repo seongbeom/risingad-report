@@ -497,6 +497,109 @@
     </div>
     {% endif %}
 
+    {% if ad_eff.has_data %}
+    {% set aey = ad_eff.yesterday %}
+    <!-- 광고 효율 지표 -->
+    <div class="card">
+        <h2>📊 광고 효율 지표 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 ({{ aey.date }}) · 메타</span></h2>
+        <p class="card-sub">CPM=1000노출당 비용 · CPC=클릭당 · CTR=클릭률 · <strong>빈도</strong>=같은 사람 노출횟수(높으면 피로) · <strong>CPA</strong>=구매당 비용</p>
+        {% if aey.rows %}
+        <table class="num" style="width:100%; font-size:0.83rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="padding:4px 8px">광고비</th>
+                <th style="padding:4px 8px">노출</th><th style="padding:4px 8px">도달</th>
+                <th style="padding:4px 8px">빈도</th><th style="padding:4px 8px">CPM</th>
+                <th style="padding:4px 8px">CPC</th><th style="padding:4px 8px">CTR</th><th style="padding:4px 8px">CPA</th>
+            </tr></thead>
+            <tbody>
+            {% for r in aey.rows %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;font-weight:600">{{ r.label }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(r.spend) }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(r.imp) }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(r.reach) }}</td>
+                <td style="padding:3px 8px;font-weight:600;color:{% if r.freq>=3 %}#e74c3c{% elif r.freq>=2 %}#e67e22{% else %}#333{% endif %}">{{ r.freq }}</td>
+                <td style="padding:3px 8px;color:#666">{% if r.cpm %}{{ "{:,.0f}".format(r.cpm) }}{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{% if r.cpc %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{% if r.cpa %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p style="color:#aaa">어제 광고 데이터 없음</p>{% endif %}
+    </div>
+
+    <!-- 광고 퍼널 -->
+    <div class="card">
+        <h2>🔻 광고 퍼널 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 ({{ aey.date }}) · 선택매장 합계</span></h2>
+        <p class="card-sub">노출 → 링크클릭 → 랜딩뷰 → 장바구니 → 결제시작 → 구매. 단계별 전환율로 이탈 구간 파악.</p>
+        {% set t = aey.tot %}
+        {% set steps = [('노출', t.imp), ('링크클릭', t.link_clk), ('랜딩뷰', t.lpv), ('장바구니', t.atc), ('결제시작', t.ic), ('구매', t.purch)] %}
+        <div style="display:flex; gap:6px; align-items:stretch; flex-wrap:wrap">
+            {% for name, val in steps %}
+            <div style="flex:1; min-width:90px; background:#f6f9fc; border-radius:8px; padding:8px 10px; text-align:center">
+                <div style="font-size:0.72rem; color:#888">{{ name }}</div>
+                <div style="font-size:1.05rem; font-weight:700; color:#4a90d9">{{ "{:,.0f}".format(val) }}</div>
+                {% if not loop.first and steps[loop.index0-1][1] %}
+                <div style="font-size:0.68rem; color:#27ae60">{{ "%.1f"|format(val / steps[loop.index0-1][1] * 100) }}%</div>
+                {% endif %}
+            </div>
+            {% if not loop.last %}<div style="align-self:center; color:#ccc">→</div>{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 캠페인별 성과 -->
+    {% if ad_campaigns %}
+    <div class="card">
+        <h2>🎯 캠페인별 성과 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 · 광고비 큰 순</span></h2>
+        <table class="num" style="width:100%; font-size:0.82rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="text-align:left;padding:4px 8px">캠페인</th>
+                <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">매출</th>
+                <th style="padding:4px 8px">ROAS</th><th style="padding:4px 8px">구매</th>
+            </tr></thead>
+            <tbody>
+            {% for c in ad_campaigns %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;color:#888">{{ c.store }}</td>
+                <td style="text-align:left;padding:3px 8px">{{ c.name }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(c.spend) }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(c.rev) }}</td>
+                <td style="padding:3px 8px;font-weight:700;color:{% if c.roas and c.roas>=300 %}#27ae60{% elif c.roas and c.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if c.roas is not none %}{{ c.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{{ c.purch }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- ROAS 추세 -->
+    {% if ad_trend %}
+    <div class="card">
+        <h2>📈 ROAS 추세 <span style="font-size:0.78rem;color:#888;font-weight:400">최근 8일 · 선택매장 합계</span></h2>
+        <table class="num" style="width:100%; font-size:0.8rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888"><th style="text-align:left;padding:3px 6px">날짜</th>
+                <th style="padding:3px 6px">광고비</th><th style="padding:3px 6px">광고매출</th><th style="padding:3px 6px">ROAS</th><th style="padding:3px 6px;width:40%">　</th></tr></thead>
+            <tbody>
+            {% set maxroas = (ad_trend | map(attribute='roas') | select('!=', none) | list | max) or 100 %}
+            {% for d in ad_trend %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:3px 6px">{{ d.date }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.spend) }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.rev) }}</td>
+                <td style="padding:3px 6px;font-weight:700;color:{% if d.roas and d.roas>=300 %}#27ae60{% elif d.roas and d.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if d.roas is not none %}{{ d.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 6px"><div style="background:#eaf2fb;border-radius:3px;height:12px"><div style="background:#4a90d9;height:12px;border-radius:3px;width:{{ ((d.roas or 0)/maxroas*100)|round }}%"></div></div></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <!-- 운영 상태 + 알람 -->
     <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div>
@@ -540,9 +643,15 @@
             </div>
         </div>
         <div>
-            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length }}건</span></h2>
-            {% if alerts %}
+            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length + ad_alerts|length }}건</span></h2>
+            {% if alerts or ad_alerts %}
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
+                {% for a in ad_alerts %}
+                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;background:#fff0f5;border-left:3px solid #d63384">
+                    <span style="font-size:0.95rem">📣</span>
+                    <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
+                </div>
+                {% endfor %}
                 {% for a in alerts %}
                 <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;
                             background:{% if a.type == 'critical' %}#fee{% elif a.type == 'partial' %}#fff5e6{% elif a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% elif a.type == 'stuck' or a.type == 'timeout' %}#fef0f0{% else %}#f0f4ff{% endif %};
