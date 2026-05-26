@@ -684,10 +684,16 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
             wrote, errs = meta.write_meta_days(ssid, insights)
             db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
+            db.add_sheet_log(aid, "meta", f"{since}~{until}", wrote,
+                             "ok" if not errs else "warn", "; ".join(errs) if errs else "")
             ok_acct += 1
         except Exception as e:
             fail.append(lbl)
             print(f"[meta] {lbl} 실패: {repr(e)[:160]}")
+            try:
+                db.add_sheet_log(aid, "meta", f"{since}~{until}", 0, "fail", repr(e)[:280])
+            except Exception:
+                pass
         time.sleep(1.5)  # 구글 시트 쿼터(분당 읽기) 보호
     db.set_setting("meta_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
     print(f"[meta] done — 성공 {ok_acct} / 실패 {len(fail)}")
@@ -2247,6 +2253,7 @@ def dashboard():
         "total": len(all_accounts),
         "accounts": meta_accounts,
         "backfill_days": META_BACKFILL_DAYS,
+        "fill_log": db.list_sheet_log(limit=30),
     }
 
     # ----- 광고 효율(ROAS) — 메타 광고비 vs 매출 (선택 매장, 오늘/어제) -----

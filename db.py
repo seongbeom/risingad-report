@@ -199,6 +199,19 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_meta_ad_lookup ON meta_ad_metrics(account_id, date);
 
+            -- 시트 입력 기록 (메타 등 채널별 시트 기입 결과/문제 추적)
+            CREATE TABLE IF NOT EXISTS sheet_fill_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT DEFAULT (datetime('now', 'localtime')),
+                account_id TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                date_range TEXT DEFAULT '',
+                days_written INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'ok',
+                detail TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_sheet_fill_log_ts ON sheet_fill_log(ts);
+
             -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
             CREATE TABLE IF NOT EXISTS capsolver_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -533,6 +546,22 @@ def list_meta_ads(account_ids=None, date=None):
     sql += " ORDER BY spend DESC"
     with db_conn() as conn:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def add_sheet_log(account_id, channel, date_range, days_written, status, detail=""):
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO sheet_fill_log (account_id,channel,date_range,days_written,status,detail) VALUES (?,?,?,?,?,?)",
+            (account_id, channel, date_range, days_written, status, (detail or "")[:300]),
+        )
+        # 최근 500건만 보관
+        conn.execute("DELETE FROM sheet_fill_log WHERE id NOT IN (SELECT id FROM sheet_fill_log ORDER BY id DESC LIMIT 500)")
+
+
+def list_sheet_log(limit=40):
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM sheet_fill_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
 
 
 def list_meta_metrics(account_ids=None, start_date=None, end_date=None):

@@ -947,6 +947,30 @@
             {% endfor %}
             </tbody>
         </table>
+        {% if meta_status.fill_log %}
+        <details style="margin-top:10px">
+            <summary style="cursor:pointer; font-size:0.8rem; color:#666; font-weight:600">📝 시트 입력 기록 (최근 {{ meta_status.fill_log|length }}건) — 문제 추적용</summary>
+            <table style="width:100%; font-size:0.76rem; margin-top:6px; border-collapse:collapse">
+                <thead><tr style="text-align:left; color:#999; border-bottom:1px solid #eee">
+                    <th style="padding:2px 6px">시각</th><th style="padding:2px 6px">매장</th><th style="padding:2px 6px">채널</th>
+                    <th style="padding:2px 6px">기간</th><th style="padding:2px 6px">기입</th><th style="padding:2px 6px">상태</th><th style="padding:2px 6px">상세</th>
+                </tr></thead>
+                <tbody>
+                {% for lg in meta_status.fill_log %}
+                <tr style="border-bottom:1px solid #f7f7f7; {% if lg.status=='fail' %}background:#fdeeee{% elif lg.status=='warn' %}background:#fff8ec{% endif %}">
+                    <td style="padding:2px 6px; color:#888">{{ lg.ts[5:16] }}</td>
+                    <td style="padding:2px 6px">{{ lg.account_id }}</td>
+                    <td style="padding:2px 6px">{{ lg.channel }}</td>
+                    <td style="padding:2px 6px; color:#888">{{ lg.date_range }}</td>
+                    <td style="padding:2px 6px; text-align:right">{{ lg.days_written }}일</td>
+                    <td style="padding:2px 6px">{% if lg.status=='ok' %}<span style="color:#27ae60">✓</span>{% elif lg.status=='warn' %}<span style="color:#e67e22">⚠</span>{% else %}<span style="color:#e74c3c">✗</span>{% endif %}</td>
+                    <td style="padding:2px 6px; color:#c0392b; font-size:0.72rem">{{ lg.detail[:60] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
     </div>
 
     <!-- 전환 깔때기 -->
