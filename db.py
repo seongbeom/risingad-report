@@ -150,11 +150,35 @@ def init_db():
                 spend_vat INTEGER DEFAULT 0,
                 purchases INTEGER DEFAULT 0,
                 revenue INTEGER DEFAULT 0,
+                reach INTEGER DEFAULT 0,
+                frequency REAL DEFAULT 0,
+                link_clicks INTEGER DEFAULT 0,
+                lpv INTEGER DEFAULT 0,
+                atc INTEGER DEFAULT 0,
+                ic INTEGER DEFAULT 0,
                 updated_at TEXT DEFAULT (datetime('now', 'localtime')),
                 PRIMARY KEY (account_id, date),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_meta_metrics_date ON meta_metrics(date);
+
+            -- 메타 캠페인별 일별 성과 (캠페인 분해 뷰용)
+            CREATE TABLE IF NOT EXISTS meta_campaign_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                campaign_id TEXT NOT NULL,
+                campaign_name TEXT DEFAULT '',
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                spend INTEGER DEFAULT 0,
+                spend_vat INTEGER DEFAULT 0,
+                purchases INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date, campaign_id),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_meta_campaign_lookup ON meta_campaign_metrics(account_id, date);
 
             -- CapSolver 풀이 호출 기록 (비용/성공률 추적)
             CREATE TABLE IF NOT EXISTS capsolver_calls (
@@ -186,6 +210,18 @@ def init_db():
         # Meta 광고계정 ID (act_ 접두사 없는 숫자) — 메타 광고성과 자동입력용
         if "meta_account_id" not in cols:
             conn.execute("ALTER TABLE accounts ADD COLUMN meta_account_id TEXT DEFAULT ''")
+
+        # meta_metrics 추가지표 컬럼 마이그레이션
+        try:
+            mm_cols = [r[1] for r in conn.execute("PRAGMA table_info(meta_metrics)").fetchall()]
+            if mm_cols:
+                for col, typ in [("reach", "INTEGER DEFAULT 0"), ("frequency", "REAL DEFAULT 0"),
+                                 ("link_clicks", "INTEGER DEFAULT 0"), ("lpv", "INTEGER DEFAULT 0"),
+                                 ("atc", "INTEGER DEFAULT 0"), ("ic", "INTEGER DEFAULT 0")]:
+                    if col not in mm_cols:
+                        conn.execute(f"ALTER TABLE meta_metrics ADD COLUMN {col} {typ}")
+        except Exception:
+            pass
 
         # runs.attempts 마이그레이션 (1회 시도가 기본, 재시도 시 증가)
         run_cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
@@ -404,18 +440,51 @@ def list_product_metrics(account_id=None, date=None, category=None, period=None)
 
 
 def upsert_meta_metric(account_id, date, m):
-    """메타 일별 성과 1건 upsert. m: {impressions,clicks,spend,spend_vat,purchases,revenue}"""
+    """메타 일별 성과 1건 upsert (계정 단위, 추가지표 포함)."""
     with db_conn() as conn:
         conn.execute(
-            """INSERT INTO meta_metrics (account_id,date,impressions,clicks,spend,spend_vat,purchases,revenue,updated_at)
-               VALUES (?,?,?,?,?,?,?,?,datetime('now','localtime'))
+            """INSERT INTO meta_metrics (account_id,date,impressions,clicks,spend,spend_vat,purchases,revenue,
+                 reach,frequency,link_clicks,lpv,atc,ic,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                ON CONFLICT(account_id,date) DO UPDATE SET
                  impressions=excluded.impressions, clicks=excluded.clicks, spend=excluded.spend,
                  spend_vat=excluded.spend_vat, purchases=excluded.purchases, revenue=excluded.revenue,
-                 updated_at=excluded.updated_at""",
+                 reach=excluded.reach, frequency=excluded.frequency, link_clicks=excluded.link_clicks,
+                 lpv=excluded.lpv, atc=excluded.atc, ic=excluded.ic, updated_at=excluded.updated_at""",
             (account_id, date, m.get("impressions", 0), m.get("clicks", 0), m.get("spend", 0),
-             m.get("spend_vat", 0), m.get("purchases", 0), m.get("revenue", 0)),
+             m.get("spend_vat", 0), m.get("purchases", 0), m.get("revenue", 0),
+             m.get("reach", 0), m.get("frequency", 0), m.get("link_clicks", 0),
+             m.get("lpv", 0), m.get("atc", 0), m.get("ic", 0)),
         )
+
+
+def upsert_meta_campaign(account_id, date, campaign_id, name, m):
+    """메타 캠페인별 일별 성과 upsert."""
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO meta_campaign_metrics (account_id,date,campaign_id,campaign_name,
+                 impressions,clicks,spend,spend_vat,purchases,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date,campaign_id) DO UPDATE SET
+                 campaign_name=excluded.campaign_name, impressions=excluded.impressions, clicks=excluded.clicks,
+                 spend=excluded.spend, spend_vat=excluded.spend_vat, purchases=excluded.purchases,
+                 revenue=excluded.revenue, updated_at=excluded.updated_at""",
+            (account_id, date, campaign_id, name, m.get("impressions", 0), m.get("clicks", 0),
+             m.get("spend", 0), m.get("spend_vat", 0), m.get("purchases", 0), m.get("revenue", 0)),
+        )
+
+
+def list_meta_campaigns(account_ids=None, date=None):
+    sql = "SELECT * FROM meta_campaign_metrics WHERE 1=1"
+    params = []
+    if account_ids:
+        sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"
+        params.extend(account_ids)
+    if date:
+        sql += " AND date=?"; params.append(date)
+    sql += " ORDER BY spend DESC"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def list_meta_metrics(account_ids=None, start_date=None, end_date=None):

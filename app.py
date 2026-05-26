@@ -669,6 +669,12 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
                     db.upsert_meta_metric(aid, d, m)
                 except Exception:
                     traceback.print_exc()
+            # 캠페인별 성과도 수집·저장 (실패해도 계정단위엔 영향 없음)
+            try:
+                for c in meta.fetch_campaign_insights(a["meta_account_id"], since, until):
+                    db.upsert_meta_campaign(aid, c["date"], c["campaign_id"], c.get("campaign_name", ""), c)
+            except Exception:
+                traceback.print_exc()
             wrote, errs = meta.write_meta_days(ssid, insights)
             db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))

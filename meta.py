@@ -38,6 +38,42 @@ def _pick_action(actions, types=_PURCHASE_TYPES):
     return 0.0
 
 
+def _action_val(actions, type_name):
+    """단일 action_type 값 (퍼널 단계용)."""
+    if not actions:
+        return 0
+    for a in actions:
+        if a.get("action_type") == type_name:
+            try:
+                return int(float(a.get("value", 0)))
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def _row_to_metrics(row):
+    """insights 한 행 → 표준 metrics dict (계정/캠페인 공통)."""
+    imp = int(float(row.get("impressions", 0) or 0))
+    clk = int(float(row.get("clicks", 0) or 0))
+    spend = float(row.get("spend", 0) or 0)
+    acts = row.get("actions")
+    return {
+        "impressions": imp,
+        "clicks": clk,
+        "spend": round(spend),
+        "spend_vat": round(spend * VAT_MULTIPLIER),
+        "purchases": int(_pick_action(acts)),
+        "revenue": round(_pick_action(row.get("action_values"))),
+        # 추가 지표
+        "reach": int(float(row.get("reach", 0) or 0)),
+        "frequency": round(float(row.get("frequency", 0) or 0), 2),
+        "link_clicks": int(float(row.get("inline_link_clicks", 0) or 0)),
+        "lpv": _action_val(acts, "landing_page_view"),
+        "atc": _action_val(acts, "add_to_cart"),
+        "ic": _action_val(acts, "initiate_checkout"),
+    }
+
+
 def fetch_insights(ad_account_id, since, until, token=None):
     """ad_account_id(act_ 접두사 없어도 됨)의 since~until 일별 insights.
     반환: {date_str: {impressions, clicks, spend, spend_vat, purchases, revenue}}
@@ -48,7 +84,7 @@ def fetch_insights(ad_account_id, since, until, token=None):
     acct = ad_account_id if str(ad_account_id).startswith("act_") else f"act_{ad_account_id}"
     params = {
         "access_token": token,
-        "fields": "impressions,clicks,spend,actions,action_values",
+        "fields": "impressions,clicks,spend,reach,frequency,inline_link_clicks,actions,action_values",
         "time_range": json.dumps({"since": since, "until": until}),
         "time_increment": "1",
         "level": "account",
@@ -59,21 +95,35 @@ def fetch_insights(ad_account_id, since, until, token=None):
         with urllib.request.urlopen(url, timeout=40) as r:
             payload = json.load(r)
         for row in payload.get("data", []):
-            d = row.get("date_start")
-            imp = int(float(row.get("impressions", 0) or 0))
-            clk = int(float(row.get("clicks", 0) or 0))
-            spend = float(row.get("spend", 0) or 0)
-            purch = int(_pick_action(row.get("actions")))
-            rev = round(_pick_action(row.get("action_values")))
-            out[d] = {
-                "impressions": imp,
-                "clicks": clk,
-                "spend": round(spend),
-                "spend_vat": round(spend * VAT_MULTIPLIER),  # 시트 입력용(부가세 포함)
-                "purchases": purch,
-                "revenue": rev,
-            }
-        # 페이지네이션
+            out[row.get("date_start")] = _row_to_metrics(row)
+        url = payload.get("paging", {}).get("next")
+    return out
+
+
+def fetch_campaign_insights(ad_account_id, since, until, token=None):
+    """캠페인별 일별 insights. 반환: list of {date, campaign_id, campaign_name, ...metrics}."""
+    token = token or _token()
+    if not token:
+        raise RuntimeError("META_ACCESS_TOKEN 미설정")
+    acct = ad_account_id if str(ad_account_id).startswith("act_") else f"act_{ad_account_id}"
+    params = {
+        "access_token": token,
+        "fields": "campaign_id,campaign_name,impressions,clicks,spend,reach,frequency,inline_link_clicks,actions,action_values",
+        "time_range": json.dumps({"since": since, "until": until}),
+        "time_increment": "1",
+        "level": "campaign",
+    }
+    url = f"https://graph.facebook.com/{GRAPH_VER}/{acct}/insights?" + urllib.parse.urlencode(params)
+    out = []
+    while url:
+        with urllib.request.urlopen(url, timeout=40) as r:
+            payload = json.load(r)
+        for row in payload.get("data", []):
+            m = _row_to_metrics(row)
+            m["date"] = row.get("date_start")
+            m["campaign_id"] = row.get("campaign_id")
+            m["campaign_name"] = row.get("campaign_name", "")
+            out.append(m)
         url = payload.get("paging", {}).get("next")
     return out
 
