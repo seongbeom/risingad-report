@@ -1403,7 +1403,7 @@ def add_account():
     sub_id = request.form.get("sub_id", "").strip()
     password = request.form["password"].strip()
     label = request.form.get("label", "").strip()
-    spreadsheet_id = request.form.get("spreadsheet_id", "").strip()
+    spreadsheet_id = sheets.clean_spreadsheet_id(request.form.get("spreadsheet_id", "").strip())
     db.add_account(cafe24_id, sub_id, password, label, spreadsheet_id)
     return redirect(url_for("index"))
 
@@ -1411,7 +1411,7 @@ def add_account():
 @app.route("/accounts/<account_id>/spreadsheet", methods=["POST"])
 @login_required
 def update_spreadsheet(account_id):
-    sid = request.form.get("spreadsheet_id", "").strip()
+    sid = sheets.clean_spreadsheet_id(request.form.get("spreadsheet_id", "").strip())
     db.update_spreadsheet_id(account_id, sid)
     return redirect(url_for("index"))
 

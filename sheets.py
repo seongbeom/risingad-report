@@ -45,6 +45,22 @@ TEMPLATE_SHEET = "26년 4월"
 SOURCE_EFFICIENCY_SHEET = "효율_26년4월"
 
 
+def clean_spreadsheet_id(raw):
+    """붙여넣기 실수 방지 — URL/쿼리 꼬리표가 섞여도 순수 스프레드시트 ID만 추출.
+    예) '.../d/<ID>/edit?gid=..' , '<ID>/edit#gid=..' , 'https://docs.google.com/...' → '<ID>'"""
+    raw = (raw or "").strip()
+    if not raw:
+        return raw
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", raw)
+    if m:
+        return m.group(1)
+    # 'ID/edit?...' 또는 'ID#...' 또는 순수 ID — 첫 ID 토큰만
+    m = re.match(r"([a-zA-Z0-9_-]{20,})", raw)
+    if m:
+        return m.group(1)
+    return raw
+
+
 def month_sheet_name(date_str):
     """'2026-04-25' -> '26년 4월'"""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -417,7 +433,7 @@ def _ensure_month_sheet(spreadsheet, sheet_name, dt):
 def write_result(result, spreadsheet_id=None, sheet_name=None):
     """스크래핑 결과를 Google Sheets에 입력. sheet_name 미지정 시 'YY년 M월' 자동.
     수식 컬럼(C ROI, S 재구매비중, W 비중, X cac, V 광고비총액)은 건드리지 않음."""
-    spreadsheet_id = spreadsheet_id or DEFAULT_SPREADSHEET_ID
+    spreadsheet_id = clean_spreadsheet_id(spreadsheet_id or DEFAULT_SPREADSHEET_ID)
     date_str = result.get("date", datetime.now().strftime("%Y-%m-%d"))
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     # 비정상 날짜 가드: 스크래퍼가 캘린더에서 엉뚱한 달을 클릭하면 23년 1월 같은

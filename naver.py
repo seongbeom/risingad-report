@@ -91,7 +91,7 @@ def write_to_sheet(spreadsheet_id, daily):
     import sheets
     from collections import defaultdict
     gc = sheets.get_client()
-    sh = gc.open_by_key(spreadsheet_id)
+    sh = gc.open_by_key(sheets.clean_spreadsheet_id(spreadsheet_id))
     by_tab = defaultdict(dict)
     for d, m in daily.items():
         by_tab[sheets.efficiency_sheet_name(d)][d] = m

@@ -189,7 +189,7 @@ def write_meta_days(spreadsheet_id, insights):
     import sheets
     from collections import defaultdict
     gc = sheets.get_client()
-    sh = gc.open_by_key(spreadsheet_id)
+    sh = gc.open_by_key(sheets.clean_spreadsheet_id(spreadsheet_id))
     # 날짜를 효율탭(월)별로 그룹
     by_tab = defaultdict(dict)
     for d, m in insights.items():
