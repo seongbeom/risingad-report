@@ -106,8 +106,9 @@
     </style>
 </head>
 <body>
-<div class="container">
-    {% set active = 'dashboard' %}{% include '_topnav.html' %}
+<div class="app">
+{% set active = 'dashboard' %}{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner container" style="max-width:none; padding:0;">
     <h1 style="margin-top:0">데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     {% if freshness %}
@@ -1599,7 +1600,7 @@
             </table>
         </div>
     </div>
-</div>
+</div></div></div>
 {% include '_feedback_widget.html' %}
 <script>
 // 모든 title 속성 → 커서 따라다니는 즉시 툴팁 (네이티브 title 지연/클리핑 해소)

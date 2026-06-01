@@ -1,0 +1,96 @@
+{# 공통 좌측 사이드바 (LNB) + 레이아웃 셸. active: dashboard|range|admin|feedback #}
+<style>
+  :root{
+    --accent:#4a90d9; --accent-soft:#eaf3fc; --ink:#1f2d3d; --muted:#6b7785;
+    --line:#e8ebef; --bg:#f4f6f9; --card:#fff;
+    --sb-w:212px; --sb-w-collapsed:60px;
+    --shadow-sm:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+    --shadow-md:0 2px 8px rgba(16,24,40,.06);
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI",Roboto,"Helvetica Neue",sans-serif;}
+  a{color:inherit;}
+
+  /* ===== 레이아웃 셸 ===== */
+  .app{display:flex; min-height:100vh;}
+  .sidebar{width:var(--sb-w); flex-shrink:0; background:#fff; border-right:1px solid var(--line);
+    position:sticky; top:0; height:100vh; display:flex; flex-direction:column;
+    transition:width .18s ease; z-index:600;}
+  body.sb-collapsed .sidebar{width:var(--sb-w-collapsed);}
+  .main{flex:1; min-width:0;}
+  .main-inner{max-width:1320px; margin:0 auto; padding:20px 26px;}
+
+  /* ===== 사이드바 내용 ===== */
+  .sb-head{display:flex; align-items:center; gap:9px; padding:16px 16px 14px; border-bottom:1px solid var(--line);}
+  .sb-logo{width:26px; height:26px; border-radius:7px; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .sb-brand{font-weight:700; font-size:.98rem; white-space:nowrap; overflow:hidden;}
+  body.sb-collapsed .sb-brand{display:none;}
+
+  .sb-nav{padding:10px 8px; display:flex; flex-direction:column; gap:2px; flex:1;}
+  .sb-item{display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:8px;
+    color:var(--muted); text-decoration:none; font-size:.88rem; font-weight:500; white-space:nowrap;
+    transition:background .12s,color .12s;}
+  .sb-item svg{width:19px; height:19px; flex-shrink:0;}
+  .sb-item:hover{background:#f3f5f8; color:var(--ink);}
+  .sb-item.active{background:var(--accent-soft); color:var(--accent); font-weight:600;}
+  .sb-item .lbl{overflow:hidden;}
+  body.sb-collapsed .sb-item{justify-content:center; padding:9px;}
+  body.sb-collapsed .sb-item .lbl{display:none;}
+
+  .sb-foot{padding:10px 8px; border-top:1px solid var(--line);}
+  .sb-toggle{display:flex; align-items:center; gap:11px; width:100%; padding:9px 11px; border:none;
+    background:none; color:var(--muted); cursor:pointer; border-radius:8px; font-size:.84rem;}
+  .sb-toggle:hover{background:#f3f5f8; color:var(--ink);}
+  .sb-toggle svg{width:18px; height:18px; flex-shrink:0; transition:transform .18s;}
+  body.sb-collapsed .sb-toggle svg{transform:rotate(180deg);}
+  body.sb-collapsed .sb-toggle .lbl{display:none;}
+  body.sb-collapsed .sb-toggle{justify-content:center;}
+
+  /* ===== 페이지 헤더 + 카드 (공통 토큰) ===== */
+  .page-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin:0 0 16px;}
+  .page-head h1{font-size:1.35rem; margin:0; font-weight:700;}
+  .page-head .sub{font-size:.82rem; color:var(--muted);}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow-sm); padding:16px 18px; margin-bottom:16px;}
+  .card > h2{font-size:1.02rem; font-weight:700; margin:0 0 4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .card .card-sub{font-size:.78rem; color:var(--muted); margin:0 0 12px;}
+
+  @media (max-width:760px){
+    .sidebar{position:fixed; left:0; transform:translateX(-100%); transition:transform .2s;}
+    body.sb-mobile-open .sidebar{transform:translateX(0);}
+    .main-inner{padding:14px 16px;}
+  }
+</style>
+
+{% macro nav_icon(name) %}{% if name=='dashboard' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>{% elif name=='range' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>{% elif name=='admin' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>{% elif name=='feedback' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>{% endif %}{% endmacro %}
+
+<aside class="sidebar">
+  <div class="sb-head">
+    <span class="sb-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg></span>
+    <span class="sb-brand">RisingAd</span>
+  </div>
+  <nav class="sb-nav">
+    <a href="/" class="sb-item {{ 'active' if active=='dashboard' }}">{{ nav_icon('dashboard') }}<span class="lbl">데일리 대시보드</span></a>
+    <a href="/dashboard/range" class="sb-item {{ 'active' if active=='range' }}">{{ nav_icon('range') }}<span class="lbl">기간 분석</span></a>
+    <a href="/admin" class="sb-item {{ 'active' if active=='admin' }}">{{ nav_icon('admin') }}<span class="lbl">설정 / 관리</span></a>
+    <a href="/feedback" class="sb-item {{ 'active' if active=='feedback' }}">{{ nav_icon('feedback') }}<span class="lbl">피드백</span></a>
+  </nav>
+  <div class="sb-foot">
+    <button class="sb-toggle" type="button" onclick="toggleSidebar()" title="사이드바 접기/펼치기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      <span class="lbl">접기</span>
+    </button>
+    <a href="/logout" class="sb-item" style="color:#a0a0a0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="lbl">로그아웃</span></a>
+  </div>
+</aside>
+<script>
+  function toggleSidebar(){
+    document.body.classList.toggle('sb-collapsed');
+    localStorage.setItem('sb_collapsed', document.body.classList.contains('sb-collapsed') ? '1':'0');
+  }
+  (function(){ if(localStorage.getItem('sb_collapsed')==='1') document.body.classList.add('sb-collapsed'); })();
+</script>
