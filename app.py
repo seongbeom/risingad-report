@@ -3361,10 +3361,6 @@ CHANNEL_MODE = {
     "크리테오": "todo",
 }
 
-# 효율시트 통째 읽기는 느림(구글API 왕복+대용량) → 메모리 TTL 캐시. ?refresh=1 로 강제 갱신.
-_SHEET_GRID_CACHE = {"data": None, "err": None, "ts": 0}
-_SHEET_GRID_TTL = 600  # 10분
-
 
 @app.route("/admin/sheet_channels")
 @login_required
@@ -3387,72 +3383,65 @@ def sheet_channels():
             "naver_customer_id": a.get("naver_customer_id") or "",
         })
 
-    # 실제 신데렐라 효율시트 읽어서 레이아웃+최근 데이터 추출 (구글시트 통째 읽기 → 캐시)
+    # 효율시트 미니뷰 — 시트의 '모양(레이아웃)'은 고정·기지(旣知)이므로 구글시트를 읽지 않는다.
+    # 알려진 채널×지표 구조 + 우리 DB값(메타/네이버, 전 매장 합계)으로 직접 렌더. (구글 API 호출 0회)
     sheet_grid = None
     sheet_err = None
-    _now_ts = time.time()
-    _cached = _SHEET_GRID_CACHE.get("data")
-    if _cached is not None and (_now_ts - _SHEET_GRID_CACHE.get("ts", 0)) < _SHEET_GRID_TTL and not request.args.get("refresh"):
-        sheet_grid = _cached
-        sheet_err = _SHEET_GRID_CACHE.get("err")
-    else:
-      try:
-        sample = db.get_account("cinderella1009")
-        ssid = sample.get("spreadsheet_id") if sample else None
-        if ssid:
-            gc = sheets.get_client()
-            sh = gc.open_by_key(ssid)
-            eff = sheets.efficiency_sheet_name(datetime.now().strftime("%Y-%m-%d"))
-            try:
-                ws = sh.worksheet(eff)
-            except Exception:
-                ws = sh.worksheet(sheets.efficiency_sheet_name((datetime.now()-timedelta(days=1)).strftime("%Y-%m-%d")))
-            vals = ws.get_all_values()
-            chan_hdr = vals[37] if len(vals) > 37 else []
-            met_hdr = vals[38] if len(vals) > 38 else []
-            # 모든 채널 헤더 위치 수집 (시트 전체) — 메타/네이버검색은 서로 다른 영역에 있음
-            starts = [(ci, v.strip()) for ci, v in enumerate(chan_hdr) if v.strip()]
-            start_cols = [ci for ci, _ in starts]
-            # 이름 → 첫 등장 시작열
-            name_to_start = {}
-            for ci, nm in starts:
-                if nm not in name_to_start:
-                    name_to_start[nm] = ci
-            # 보여줄 채널 — 자동 먼저, 그다음 연동가능, 수동. (카페24/구분/중복 노이즈 제외)
-            CURATED = [
-                "메타", "네이버 검색광고",                 # 자동(API)
-                "크리테오", "구글",                        # 연동가능
-                "네이버성과형",                            # 크롤러필요
-                "네이버 쇼핑박스 PC", "네이버 쇼핑박스 MO (트렌드픽)", "다음 쇼핑박스",
-                "카카오 DA", "틱톡", "모비온",             # 수동
-            ]
-            blocks = []
-            for name in CURATED:
-                ci = name_to_start.get(name)
-                if ci is None:
-                    continue
-                nxt = [c for c in start_cols if c > ci]
-                end = min(nxt) if nxt else len(met_hdr)
-                mets = [met_hdr[c].strip() for c in range(ci, end) if c < len(met_hdr) and met_hdr[c].strip()]
-                blocks.append({
-                    "name": name, "start": ci, "metrics": mets,
-                    "mode": CHANNEL_MODE.get(name, "manual"),
-                })
-            # 최근 데이터 행 2개 (어제/그제) — 값 채워진 날
-            data_rows = []
-            for r in vals[40:72]:
-                if r and len(r) > 1 and r[1].strip().startswith("2026/"):
-                    data_rows.append(r)
-            # 최근 3일만
-            data_rows = data_rows[-3:]
-            sheet_grid = {"blocks": blocks, "rows": data_rows, "tab": ws.title}
-      except Exception as e:
+    try:
+        view_dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in (2, 1, 0)]
+        # 전 매장 합계로 일자별 집계
+        def _agg(rows, fields):
+            out = {}
+            for r in rows:
+                d = r["date"]; acc = out.setdefault(d, {f: 0 for f in fields})
+                for f in fields:
+                    acc[f] += r.get(f) or 0
+            return out
+        meta_agg = _agg(db.list_meta_metrics(account_ids=all_ids, start_date=view_dates[0], end_date=view_dates[-1]),
+                        ["impressions", "clicks", "spend_vat", "purchases", "revenue"])
+        naver_agg = _agg(db.list_naver_metrics(account_ids=all_ids, start_date=view_dates[0], end_date=view_dates[-1]),
+                         ["impressions", "clicks", "cost", "conversions", "revenue"])
+
+        def _roas(rev, cost):
+            return round(rev / cost * 100) if cost else None
+
+        def _fmt(v):
+            return "{:,.0f}".format(v) if v else ("0" if v == 0 else "")
+
+        # 알려진 채널 레이아웃 (자동 먼저). metrics 는 시트와 동일 순서.
+        METS = ["노출", "클릭", "광고비", "전환", "매출", "ROAS"]
+        blocks = [
+            {"name": "메타", "mode": "auto", "metrics": METS, "src": "meta"},
+            {"name": "네이버 검색광고", "mode": "auto", "metrics": METS, "src": "naver"},
+            {"name": "크리테오", "mode": "todo", "metrics": METS, "src": None},
+            {"name": "구글", "mode": "todo", "metrics": METS, "src": None},
+            {"name": "네이버성과형", "mode": "crawler", "metrics": METS, "src": None},
+            {"name": "틱톡", "mode": "manual", "metrics": METS, "src": None},
+            {"name": "카카오 DA", "mode": "manual", "metrics": METS, "src": None},
+        ]
+        rows = []
+        for d in view_dates:
+            by = {}
+            for b in blocks:
+                if b["src"] == "meta":
+                    m = meta_agg.get(d)
+                    by[b["name"]] = ["", "", "", "", "", ""] if not m else [
+                        _fmt(m["impressions"]), _fmt(m["clicks"]), _fmt(m["spend_vat"]),
+                        _fmt(m["purchases"]), _fmt(m["revenue"]),
+                        (str(_roas(m["revenue"], m["spend_vat"])) + "%") if _roas(m["revenue"], m["spend_vat"]) is not None else ""]
+                elif b["src"] == "naver":
+                    n = naver_agg.get(d)
+                    by[b["name"]] = ["", "", "", "", "", ""] if not n else [
+                        _fmt(n["impressions"]), _fmt(n["clicks"]), _fmt(n["cost"]),
+                        _fmt(n["conversions"]), _fmt(n["revenue"]),
+                        (str(_roas(n["revenue"], n["cost"])) + "%") if _roas(n["revenue"], n["cost"]) is not None else ""]
+                else:
+                    by[b["name"]] = ["", "", "", "", "", ""]  # 수기/미연동 — DB에 값 없음
+            rows.append({"date": d[5:].replace("-", "/"), "by": by})
+        sheet_grid = {"blocks": blocks, "rows": rows, "tab": "전 매장 합계 (DB)"}
+    except Exception as e:
         sheet_err = repr(e)[:150]
         traceback.print_exc()
-      # 결과를 캐시에 저장 (성공/실패 모두 — 실패도 잠깐 캐시해 재시도 폭주 방지)
-      _SHEET_GRID_CACHE["data"] = sheet_grid
-      _SHEET_GRID_CACHE["err"] = sheet_err
-      _SHEET_GRID_CACHE["ts"] = _now_ts
 
     # SHEET_TARGETS 에 마지막 갱신시각 채우기
     today_s = datetime.now().strftime("%Y-%m-%d")
