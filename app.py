@@ -2796,6 +2796,25 @@ def dashboard_range():
             ],
         }
 
+    # 광고(메타) 기간 요약 — 선택기간 vs 직전 동일기간
+    def _meta_sum(s, e):
+        rows = db.list_meta_metrics(account_ids=selected_ids, start_date=s, end_date=e)
+        sp = sum(r["spend_vat"] or 0 for r in rows)
+        rv = sum(r["revenue"] or 0 for r in rows)
+        pu = sum(r["purchases"] or 0 for r in rows)
+        return {"spend": sp, "rev": rv, "purch": pu, "roas": round(rv / sp * 100) if sp else None}
+    _ad_cur = _meta_sum(start_str, end_str)
+    _ad_prev = _meta_sum(prev_start_str, prev_end_str)
+    def _pd(c, p):
+        return round((c - p) / p * 100, 1) if p else None
+    ad_range = {
+        "cur": _ad_cur, "prev": _ad_prev,
+        "spend_d": _pd(_ad_cur["spend"], _ad_prev["spend"]),
+        "rev_d": _pd(_ad_cur["rev"], _ad_prev["rev"]),
+        "roas_d": _pd(_ad_cur["roas"] or 0, _ad_prev["roas"] or 0) if _ad_prev["roas"] else None,
+        "has_data": _ad_cur["spend"] > 0 or _ad_prev["spend"] > 0,
+    }
+
     return render_template(
         "dashboard_range.html",
         accounts=accounts,
@@ -2808,6 +2827,7 @@ def dashboard_range():
         panels=panels,
         compare_charts=compare_charts,
         hourly_compare=hourly_compare,
+        ad_range=ad_range,
         kpi_fields=[k[0] for k in KPI_FIELDS],
         days_ko=DAYS_KO,
         range_dates=range_dates,
