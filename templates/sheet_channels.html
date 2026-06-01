@@ -158,8 +158,8 @@
 
   {% if sheet_grid %}
   <div class="card">
-    <h2>📊 효율시트 모양 (채널×지표) <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 최근 {{ sheet_grid.rows|length }}일 · <a href="?refresh=1" style="color:#4a90d9">↻ 새로고침</a> <span style="color:#bbb">(10분 캐시)</span></span></h2>
-    <p class="card-sub">실제 시트 그대로 — 시트의 채널·지표·값을 그대로 표시(헤더+일별 구간만 읽어 빠름). 채널 색: 자동(초록)/연동가능(노랑)/크롤러(파랑)/수동(빨강)/수식(회색). 가로 스크롤.</p>
+    <h2>📊 효율시트 채널 구성 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 구조 갱신 {{ sheet_grid.snap_ts }} · <a href="?refresh=1" style="color:#4a90d9">↻ 구조 새로고침</a></span></h2>
+    <p class="card-sub">채널×지표 <b>구성(고정 스냅샷)</b>에 오늘 자동값(메타·네이버)만 채워 <b>즉시</b> 표시 — 평소엔 시트를 읽지 않음. 빈 칸 = 수기/미연동/시트수식. 채널 색: 자동(초록)/연동가능(노랑)/크롤러(파랑)/수동(빨강)/수식(회색). 시트에 채널을 추가했으면 <b>↻ 구조 새로고침</b>. 가로 스크롤.</p>
     <div class="sheet-wrap">
       <table class="xls">
         <thead>

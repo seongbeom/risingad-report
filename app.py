@@ -3471,64 +3471,100 @@ CHANNEL_MODE = {
     "크리테오": "todo",
 }
 
-# 효율시트 미니뷰 캐시 — 헤더+일별 구간(A38:ZZ63)만 읽어 실제 채널·지표·값 그대로 표시.
-# 전체(get_all_values)가 아니라 bounded read 라 빠르고, 캐시로 반복 호출은 즉시.
-_EFF_GRID_CACHE = {"data": None, "err": None, "ts": 0}
-_EFF_GRID_TTL = 600  # 10분
+# 효율시트 채널×지표 레이아웃은 '고정 구조'다. 한 번 추출해 DB(settings)에 스냅샷으로 저장하고,
+# 페이지는 그 스냅샷 + 우리 DB값(메타/네이버)만으로 즉시 렌더. 시트 재읽기는 새로고침(?refresh=1) 때만.
+_EFF_LAYOUT_KEY = "eff_layout_snapshot"
+# 지표 라벨 → DB 필드 (자동 채널만 값 채움. CTR/CPC/CVR/ROAS/객단가는 시트 수식이라 비움)
+_EFF_METRIC_FIELD = {"노출량(Imps)": "imp", "클릭수(Clicks)": "clk", "광고비": "cost",
+                     "전환수": "conv", "매출": "rev"}
+_EFF_AUTO_SRC = {"메타": "meta", "네이버 검색광고": "naver"}
 
 
-def _eff_mini_view(ssid, force=False):
-    """효율시트의 실제 모양(채널 38행 / 지표 39행 / 일별 41~63행)을 그대로 파싱.
-    반환 (grid|None, err|None). grid={blocks:[{name,start,mode,metrics:[..]}], rows:[{date, cells:[..]}], tab}."""
-    now = time.time()
-    if (not force and _EFF_GRID_CACHE["data"] is not None
-            and now - _EFF_GRID_CACHE["ts"] < _EFF_GRID_TTL):
-        return _EFF_GRID_CACHE["data"], _EFF_GRID_CACHE["err"]
-    grid, err = None, None
+def _refresh_eff_layout():
+    """효율시트 헤더 2줄을 읽어 채널×지표 레이아웃 스냅샷을 DB에 저장. 새로고침 때만 호출."""
+    sample = db.get_account("cinderella1009") or (db.list_accounts()[0] if db.list_accounts() else None)
+    ssid = sample.get("spreadsheet_id") if sample else None
+    if not ssid:
+        raise RuntimeError("기준 매장 시트 미설정")
+    gc = sheets.get_client()
+    sh = gc.open_by_key(sheets.clean_spreadsheet_id(ssid))
+    eff = sheets.efficiency_sheet_name(datetime.now().strftime("%Y-%m-%d"))
     try:
-        if not ssid:
-            raise RuntimeError("기준 매장 시트 미설정")
-        gc = sheets.get_client()
-        sh = gc.open_by_key(sheets.clean_spreadsheet_id(ssid))
-        eff = sheets.efficiency_sheet_name(datetime.now().strftime("%Y-%m-%d"))
+        ws = sh.worksheet(eff)
+    except Exception:
+        ws = sh.worksheet(sheets.efficiency_sheet_name((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")))
+    bat = ws.batch_get(["A38:ZZ38", "A39:ZZ39"])
+    chan = bat[0][0] if bat and bat[0] else []
+    met = bat[1][0] if len(bat) > 1 and bat[1] else []
+    starts = [(i, v.strip()) for i, v in enumerate(chan) if v.strip() and v.strip() != "구분"]
+    layout = []
+    for k, (ci, name) in enumerate(starts):
+        end = starts[k + 1][0] if k + 1 < len(starts) else len(met)
+        mets = [met[c].strip() for c in range(ci, end) if c < len(met) and met[c].strip()]
+        if mets:
+            layout.append({"name": name, "metrics": mets})
+    snap = {"layout": layout, "tab": ws.title, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    db.set_setting(_EFF_LAYOUT_KEY, json.dumps(snap, ensure_ascii=False))
+    return snap
+
+
+def _eff_mini_view(force=False):
+    """효율시트 미니뷰 — 저장된 레이아웃 스냅샷 + DB값(메타/네이버 오늘 합계)으로 즉시 렌더.
+    시트는 새로고침(force) 또는 스냅샷이 아직 없을 때만 읽음. 반환 (grid|None, err|None)."""
+    err = None
+    snap = None
+    if force:
         try:
-            ws = sh.worksheet(eff)
-        except Exception:
-            ws = sh.worksheet(sheets.efficiency_sheet_name((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")))
-        # 헤더 2줄(채널/지표) + 일별 데이터 구간 — batch_get 1회 호출 (각 range 독립이라 trim 어긋남 없음)
-        bat = ws.batch_get(["A38:ZZ38", "A39:ZZ39", "A40:ZZ63"])
-        chan = bat[0][0] if bat and bat[0] else []
-        met = bat[1][0] if len(bat) > 1 and bat[1] else []
-        data = bat[2] if len(bat) > 2 else []
-        starts = [(i, v.strip()) for i, v in enumerate(chan) if v.strip() and v.strip() != "구분"]
-        blocks = []
-        for k, (ci, name) in enumerate(starts):
-            end = starts[k + 1][0] if k + 1 < len(starts) else max(len(met), ci + 1)
-            cols = [c for c in range(ci, end) if c < len(met) and met[c].strip()]
-            if not cols:
-                continue
-            blocks.append({
-                "name": name, "start": ci, "mode": CHANNEL_MODE.get(name, "manual"),
-                "cols": cols, "metrics": [met[c].strip() for c in cols],
-            })
-        # B열 날짜가 오늘 이하인 행 중 최근 3일 (시트엔 월말까지 미리 채워져 미래 빈행 존재)
-        today_slash = datetime.now().strftime("%Y/%m/%d")
-        rows = []
-        for r in data:
-            if len(r) > 1 and r[1].strip().startswith("2026/") and r[1].strip() <= today_slash:
-                rows.append(r)
-        rows = rows[-3:]
-        out_rows = []
-        for r in rows:
-            cells = {}  # block.name -> [값들]
-            for b in blocks:
-                cells[b["name"]] = [(r[c] if c < len(r) else "") for c in b["cols"]]
-            out_rows.append({"date": r[1].strip(), "cells": cells})
-        grid = {"blocks": blocks, "rows": out_rows, "tab": ws.title}
-    except Exception as e:
-        err = repr(e)[:150]
-        traceback.print_exc()
-    _EFF_GRID_CACHE.update({"data": grid, "err": err, "ts": now})
+            snap = _refresh_eff_layout()
+        except Exception as e:
+            err = repr(e)[:150]; traceback.print_exc()
+    if snap is None:
+        raw = db.get_setting(_EFF_LAYOUT_KEY, None)
+        if raw:
+            try:
+                snap = json.loads(raw)
+            except Exception:
+                snap = None
+    if snap is None and err is None:  # 최초 1회 자동 추출
+        try:
+            snap = _refresh_eff_layout()
+        except Exception as e:
+            err = repr(e)[:150]; traceback.print_exc()
+    if snap is None:
+        return None, (err or "레이아웃 스냅샷 없음")
+
+    # 오늘 DB값 (전 매장 합계)
+    today = datetime.now().strftime("%Y-%m-%d")
+    all_ids = [a["id"] for a in db.list_accounts()]
+
+    def _sum(rows, field):
+        return sum(r.get(field) or 0 for r in rows)
+    mrows = [r for r in db.list_meta_metrics(account_ids=all_ids, start_date=today, end_date=today)]
+    nrows = [r for r in db.list_naver_metrics(account_ids=all_ids, start_date=today, end_date=today)]
+    src_vals = {
+        "meta": {"imp": _sum(mrows, "impressions"), "clk": _sum(mrows, "clicks"),
+                 "cost": _sum(mrows, "spend_vat"), "conv": _sum(mrows, "purchases"), "rev": _sum(mrows, "revenue")},
+        "naver": {"imp": _sum(nrows, "impressions"), "clk": _sum(nrows, "clicks"),
+                  "cost": _sum(nrows, "cost"), "conv": _sum(nrows, "conversions"), "rev": _sum(nrows, "revenue")},
+    }
+
+    def _fmt(v):
+        return "{:,.0f}".format(v) if v else ""
+
+    blocks, cells = [], {}
+    for b in snap["layout"]:
+        name = b["name"]; mets = b["metrics"]
+        blocks.append({"name": name, "mode": CHANNEL_MODE.get(name, "manual"), "metrics": mets})
+        src = _EFF_AUTO_SRC.get(name)
+        vals = []
+        for m in mets:
+            if src and m in _EFF_METRIC_FIELD:
+                vals.append(_fmt(src_vals[src][_EFF_METRIC_FIELD[m]]))
+            else:
+                vals.append("")  # 수기/미연동/시트수식 칸
+        cells[name] = vals
+    grid = {"blocks": blocks, "rows": [{"date": today[5:].replace("-", "/") + " (오늘·DB)", "cells": cells}],
+            "tab": snap.get("tab", "효율시트"), "snap_ts": snap.get("ts", "")}
     return grid, err
 
 
@@ -3553,10 +3589,8 @@ def sheet_channels():
             "naver_customer_id": a.get("naver_customer_id") or "",
         })
 
-    # 효율시트 미니뷰 — 실제 시트 그대로(채널·지표·값). 전체가 아니라 헤더+일별 구간만 bounded read + 캐시.
-    sample = db.get_account("cinderella1009") or (db.list_accounts()[0] if db.list_accounts() else None)
-    ssid = sample.get("spreadsheet_id") if sample else None
-    sheet_grid, sheet_err = _eff_mini_view(ssid, force=bool(request.args.get("refresh")))
+    # 효율시트 미니뷰 — 저장된 레이아웃 스냅샷 + DB값으로 즉시 렌더. 시트는 ?refresh=1 때만 읽음.
+    sheet_grid, sheet_err = _eff_mini_view(force=bool(request.args.get("refresh")))
 
     # SHEET_TARGETS 에 마지막 갱신시각 채우기
     today_s = datetime.now().strftime("%Y-%m-%d")
