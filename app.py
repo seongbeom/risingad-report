@@ -1176,6 +1176,31 @@ def _heartbeat_job():
         traceback.print_exc()
 
 
+def _s3_upload_backup(path):
+    """백업 파일을 S3 에 업로드(오프사이트). 환경변수 BACKUP_S3_BUCKET 없으면 스킵.
+    전용 키(BACKUP_AWS_*)가 있으면 그걸, 없으면 기본 자격증명 체인 사용."""
+    bucket = os.environ.get("BACKUP_S3_BUCKET")
+    if not bucket:
+        return
+    try:
+        import boto3
+        region = os.environ.get("BACKUP_S3_REGION", "ap-northeast-2")
+        ak = os.environ.get("BACKUP_AWS_ACCESS_KEY_ID")
+        sk = os.environ.get("BACKUP_AWS_SECRET_ACCESS_KEY")
+        if ak and sk:
+            s3 = boto3.client("s3", region_name=region,
+                              aws_access_key_id=ak, aws_secret_access_key=sk)
+        else:
+            s3 = boto3.client("s3", region_name=region)
+        key = f"db-backups/{Path(path).name}"
+        s3.upload_file(str(path), bucket, key)
+        print(f"[db-backup] S3 업로드 완료 s3://{bucket}/{key}")
+    except Exception:
+        # 업로드 실패해도 로컬 백업은 이미 있음 — 잡 전체를 죽이지 않음
+        print("[db-backup] S3 업로드 실패 (로컬 백업은 정상):")
+        traceback.print_exc()
+
+
 def _db_backup_job():
     """매일 04:00 sqlite DB backup. 7일 이상 된 백업 자동 정리.
     sqlite backup API 를 써서 트랜잭션 중에도 일관성 보장."""
@@ -1200,6 +1225,8 @@ def _db_backup_job():
     except Exception:
         traceback.print_exc()
         return
+    # 오프사이트(S3) 업로드 — 인스턴스 소실 대비. 키 없으면 조용히 스킵(로컬 백업은 유지).
+    _s3_upload_backup(dst)
     # 7일 이상 백업 정리
     cutoff = datetime.now() - timedelta(days=7)
     removed = 0
