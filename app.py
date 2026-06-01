@@ -3495,10 +3495,11 @@ def _eff_mini_view(ssid, force=False):
             ws = sh.worksheet(eff)
         except Exception:
             ws = sh.worksheet(sheets.efficiency_sheet_name((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")))
-        # 헤더 2줄(채널/지표) + 일별 데이터 구간만 — 각각 단일행/구간 read (2행 동시읽기는 trim 어긋남)
-        chan = (ws.get("A38:ZZ38") or [[]])[0]
-        met = (ws.get("A39:ZZ39") or [[]])[0]
-        data = ws.get("A40:ZZ63")  # 일별 데이터 구간
+        # 헤더 2줄(채널/지표) + 일별 데이터 구간 — batch_get 1회 호출 (각 range 독립이라 trim 어긋남 없음)
+        bat = ws.batch_get(["A38:ZZ38", "A39:ZZ39", "A40:ZZ63"])
+        chan = bat[0][0] if bat and bat[0] else []
+        met = bat[1][0] if len(bat) > 1 and bat[1] else []
+        data = bat[2] if len(bat) > 2 else []
         starts = [(i, v.strip()) for i, v in enumerate(chan) if v.strip() and v.strip() != "구분"]
         blocks = []
         for k, (ci, name) in enumerate(starts):
