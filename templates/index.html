@@ -84,8 +84,7 @@
                         <th>라벨</th>
                         <th>쇼핑몰 ID</th>
                         <th>부운영자 ID</th>
-                        <th>구글 시트 ID</th>
-                        <th>Meta 광고계정</th>
+                        <th>연결 (시트·메타·네이버)</th>
                         <th>마지막 상태</th>
                         <th>동작</th>
                     </tr>
@@ -96,28 +95,16 @@
                         <td>{{ a.label or '-' }}</td>
                         <td><strong>{{ a.cafe24_id }}</strong></td>
                         <td>{{ a.sub_id }}</td>
-                        <td>
-                            <form method="POST" action="/accounts/{{ a.id }}/spreadsheet"
-                                  style="display:flex; gap:4px; align-items:center;">
-                                <input name="spreadsheet_id" value="{{ a.spreadsheet_id or '' }}"
-                                       placeholder="시트 ID" style="width:120px; font-size:0.75rem;">
-                                <button class="btn btn-sm" type="submit">저장</button>
-                                {% if a.spreadsheet_id %}
-                                <a href="https://docs.google.com/spreadsheets/d/{{ a.spreadsheet_id }}/edit" target="_blank" rel="noopener"
-                                   title="구글 시트 열기" style="text-decoration:none; font-size:0.95rem">📊</a>
-                                {% endif %}
-                            </form>
-                        </td>
-                        <td>
-                            <form method="POST" action="/accounts/{{ a.id }}/meta" style="display:flex; gap:4px; align-items:center;">
-                                <input name="meta_account_id" value="{{ a.meta_account_id or '' }}"
-                                       placeholder="act ID(숫자)" style="width:110px; font-size:0.75rem;">
-                                <button class="btn btn-sm" type="submit">저장</button>
-                            </form>
-                            {% set mst = acct_status.get(a.id) %}
-                            <div style="font-size:0.68rem; color:#888; margin-top:2px">
-                                {% if a.meta_account_id %}{% if mst and mst.meta_last %}🟢 {{ mst.meta_last }}{% else %}<span style="color:#e67e22">연결됨·미수집</span>{% endif %}{% else %}<span style="color:#bbb">미연결</span>{% endif %}
+                        <td style="font-size:0.78rem; line-height:1.7; white-space:nowrap">
+                            {% set has_naver = (a.naver_api_key and a.naver_customer_id) %}
+                            <div>
+                                {% if a.spreadsheet_id %}<span style="color:#27ae60">●</span> 시트
+                                <a href="https://docs.google.com/spreadsheets/d/{{ a.spreadsheet_id }}/edit" target="_blank" rel="noopener" title="구글 시트 열기" style="text-decoration:none">📊</a>
+                                {% else %}<span style="color:#cfd4da">○</span> 시트{% endif %}
                             </div>
+                            <div>{% if a.meta_account_id %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 메타</div>
+                            <div>{% if has_naver %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 네이버</div>
+                            <div style="font-size:0.68rem; color:#aaa; margin-top:1px">설정은 <b>수정</b>에서 ▸</div>
                         </td>
                         <td style="font-size:0.7rem;line-height:1.45;white-space:nowrap">
                             {% set st = acct_status.get(a.id) %}
@@ -161,7 +148,7 @@
                         </td>
                     </tr>
                     <tr id="edit-{{ a.id }}" style="display:none;background:#fffbea">
-                        <td colspan="7">
+                        <td colspan="6">
                             <form method="POST" action="/accounts/{{ a.id }}/update" class="form-row" style="margin:0">
                                 <div class="form-group">
                                     <label>라벨</label>
@@ -178,6 +165,22 @@
                                 <button class="btn btn-primary btn-sm" type="submit">저장</button>
                                 <button type="button" class="btn btn-sm" style="background:#999;color:#fff"
                                         onclick="document.getElementById('edit-{{ a.id }}').style.display='none'">취소</button>
+                            </form>
+                            <div style="font-size:0.72rem; color:#888; margin:10px 0 2px; padding-top:8px; border-top:1px solid #ece4c0">🔌 연동 설정</div>
+                            <form method="POST" action="/accounts/{{ a.id }}/spreadsheet" class="form-row" style="margin:0 0 6px">
+                                <div class="form-group">
+                                    <label>📊 구글 시트 ID / URL</label>
+                                    <input name="spreadsheet_id" value="{{ a.spreadsheet_id or '' }}" placeholder="시트 URL 붙여넣어도 됨" style="width:300px; font-size:0.74rem">
+                                </div>
+                                {% if a.spreadsheet_id %}<a href="https://docs.google.com/spreadsheets/d/{{ a.spreadsheet_id }}/edit" target="_blank" rel="noopener" style="text-decoration:none; align-self:flex-end; padding-bottom:6px">📊 열기</a>{% endif %}
+                                <button class="btn btn-sm" type="submit" style="background:#4a90d9;color:#fff">시트 저장</button>
+                            </form>
+                            <form method="POST" action="/accounts/{{ a.id }}/meta" class="form-row" style="margin:0 0 6px">
+                                <div class="form-group">
+                                    <label>📣 Meta 광고계정 ID (act_ 뒤 숫자)</label>
+                                    <input name="meta_account_id" value="{{ a.meta_account_id or '' }}" placeholder="숫자만" style="width:180px; font-size:0.74rem">
+                                </div>
+                                <button class="btn btn-sm" type="submit" style="background:#1877f2;color:#fff">메타 저장</button>
                             </form>
                             <form method="POST" action="/accounts/{{ a.id }}/goal" class="form-row" style="margin:8px 0 0; padding-top:8px; border-top:1px dashed #e0d8b0">
                                 <div class="form-group">
