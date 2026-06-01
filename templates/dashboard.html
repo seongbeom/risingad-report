@@ -54,6 +54,30 @@
         .ts { color: #aaa; font-size: 0.72rem; }
         .refresh-link { font-size: 0.78rem; color: #4a90d9; cursor: pointer; }
 
+        /* 데이터 점검 알림 배너 */
+        .alert-fresh { border-radius: 10px; padding: 13px 16px; margin: 4px 0 10px; border: 1px solid; }
+        .alert-fresh.af-bad { background: #fff5f5; border-color: #f3c0bd; }
+        .alert-fresh.af-warn { background: #fffbf0; border-color: #f0deb0; }
+        .af-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 9px; }
+        .af-icon { font-size: 1rem; }
+        .af-title { font-weight: 800; font-size: 1rem; }
+        .af-bad .af-title { color: #c0392b; } .af-warn .af-title { color: #b9770e; }
+        .af-sub { font-size: 0.78rem; color: #888; }
+        .af-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+        .af-item { background: #fff; border-radius: 8px; padding: 9px 12px; border-left: 3px solid #ccc; }
+        .af-item.is-bad { border-left-color: #e74c3c; } .af-item.is-warn { border-left-color: #e6a817; }
+        .af-item-name { font-weight: 700; font-size: 0.84rem; margin-bottom: 3px; }
+        .af-basis { font-weight: 400; font-size: 0.72rem; color: #999; margin-left: 4px; }
+        .af-line { font-size: 0.78rem; color: #555; line-height: 1.65; margin-left: 2px; }
+        .af-chip { display: inline-block; background: #f1f3f5; color: #555; border-radius: 6px;
+            padding: 1px 7px; margin: 1px 4px 1px 0; font-size: 0.74rem; font-weight: 600; }
+
+        /* 네이버 KPI 타일 */
+        .nv-kpi { background: #f7faf8; border: 1px solid #e4efe9; border-radius: 8px; padding: 8px 10px; }
+        .nv-kpi-l { font-size: 0.72rem; color: #889; margin-bottom: 2px; }
+        .nv-kpi-v { font-size: 1.02rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .nv-tab.active { border-color: #03c75a !important; background: #e7f7ee !important; color: #03c75a; font-weight: 700; }
+
         /* 메가 KPI */
         .mega-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
         @media (max-width: 1200px) { .mega-grid { grid-template-columns: repeat(3, 1fr); } }
@@ -112,32 +136,47 @@
     <h1 style="margin-top:0">데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     {% if freshness %}
-    {% set fresh_bad = freshness | selectattr('status','in',['bad','warn']) | list %}
-    <div style="margin:-2px 0 8px">
-        <span style="font-size:0.74rem; color:#999; margin-right:8px">📡 데이터 신선도:</span>
-        {% for f in freshness %}
-        <span title="{{ f.detail }}" style="cursor:help; font-size:0.74rem; margin-right:8px; padding:1px 7px; border-radius:8px; background:{% if f.status=='bad' %}#fdecea{% elif f.status=='warn' %}#fff6e6{% else %}#eafaf0{% endif %}; color:{% if f.status=='bad' %}#c0392b{% elif f.status=='warn' %}#b9770e{% else %}#1e8449{% endif %}">
-            {% if f.status=='bad' %}🔴{% elif f.status=='warn' %}🟡{% else %}🟢{% endif %}
-            <strong>{{ f.name }}</strong> {{ f.basis }}{% if f.upd != '—' %} <span style="opacity:0.7">({{ f.upd }})</span>{% endif %}
-        </span>
-        {% endfor %}
-        {% if fresh_bad %}
-        <div style="font-size:0.76rem; color:#555; margin-top:5px; padding:8px 12px; background:#fafafa; border-radius:6px; border-left:3px solid #e74c3c; line-height:1.6">
-            {% for f in fresh_bad %}
-            <div style="margin:4px 0">
-                {% if f.status=='bad' %}🔴{% else %}🟡{% endif %} <strong>{{ f.name }}</strong>
+    {% set fresh_bad = freshness | selectattr('status','equalto','bad') | list %}
+    {% set fresh_warn = freshness | selectattr('status','equalto','warn') | list %}
+    {% set fresh_issues = fresh_bad + fresh_warn %}
+
+    {% if fresh_issues %}
+    <!-- 데이터 점검 알림 (문제 있을 때만 크게) -->
+    <div class="alert-fresh {% if fresh_bad %}af-bad{% else %}af-warn{% endif %}">
+        <div class="af-head">
+            <span class="af-icon">{% if fresh_bad %}🔴{% else %}🟡{% endif %}</span>
+            <span class="af-title">데이터 점검 필요 — {{ fresh_issues|length }}건</span>
+            {% if fresh_bad %}<span class="af-sub">시트 입력/수집 실패 포함 — 확인 필요</span>
+            {% else %}<span class="af-sub">지연·일부 누락 — 확인 권장</span>{% endif %}
+        </div>
+        <div class="af-body">
+            {% for f in fresh_issues %}
+            <div class="af-item {% if f.status=='bad' %}is-bad{% else %}is-warn{% endif %}">
+                <div class="af-item-name">{% if f.status=='bad' %}🔴{% else %}🟡{% endif %} {{ f.name }}
+                    {% if f.basis and f.basis not in ['오늘 실시간'] %}<span class="af-basis">{{ f.basis }}{% if f.upd != '—' %} · 갱신 {{ f.upd }}{% endif %}</span>{% endif %}
+                </div>
                 {% if f.lines %}
-                    {% for ln in f.lines %}<div style="margin-left:18px; color:#666">· {{ ln }}</div>{% endfor %}
+                    {% for ln in f.lines %}<div class="af-line">· {{ ln }}</div>{% endfor %}
                 {% elif f.missing and f.missing|length > 0 %}
-                    <span style="color:#888">— {{ f.detail.split(':')[0] }}:</span>
-                    <div style="margin-left:18px; color:#666">{% for mm in f.missing %}<span style="display:inline-block; margin-right:8px">· {{ mm }}</span>{% endfor %}</div>
+                    <div class="af-line">{{ f.detail.split(':')[0] }}: {% for mm in f.missing %}<span class="af-chip">{{ mm }}</span>{% endfor %}</div>
                 {% else %}
-                    <span style="color:#666">— {{ f.detail }}</span>
+                    <div class="af-line">{{ f.detail }}</div>
                 {% endif %}
             </div>
             {% endfor %}
         </div>
-        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- 전체 소스 상태 한 줄 (항상) -->
+    <div style="margin:0 0 10px">
+        <span style="font-size:0.74rem; color:#999; margin-right:8px">📡 데이터 신선도:</span>
+        {% for f in freshness %}
+        <span title="{{ f.detail }}" style="cursor:help; font-size:0.74rem; margin-right:6px; padding:1px 7px; border-radius:8px; background:{% if f.status=='bad' %}#fdecea{% elif f.status=='warn' %}#fff6e6{% else %}#eafaf0{% endif %}; color:{% if f.status=='bad' %}#c0392b{% elif f.status=='warn' %}#b9770e{% else %}#1e8449{% endif %}">
+            {% if f.status=='bad' %}🔴{% elif f.status=='warn' %}🟡{% else %}🟢{% endif %}
+            <strong>{{ f.name }}</strong>{% if f.upd != '—' %} <span style="opacity:0.7">{{ f.upd }}</span>{% endif %}
+        </span>
+        {% endfor %}
     </div>
     {% endif %}
 
@@ -735,6 +774,111 @@
             </tbody>
         </table>
     </div>
+    {% endif %}
+
+    <!-- 네이버 검색광고 (API 연동분) -->
+    {% if naver_eff and naver_eff.has_data %}
+    <div class="card">
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+            <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:18px;height:18px;border-radius:5px;background:#03c75a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.72rem">N</span> 네이버 검색광고</span>
+            <span style="font-size:0.78rem;color:#888;font-weight:400">API 연동 {{ naver_eff.connected }}개 매장 · 광고비 부가세 미포함</span>
+            <span class="quicknav-target" style="display:none">네이버</span>
+        </h2>
+        {% set nv_keys = [] %}
+        {% if naver_eff.today.rows %}{% set _ = nv_keys.append(('today','오늘')) %}{% endif %}
+        {% set _ = nv_keys.append(('yesterday','어제')) %}
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+            {% for k,lbl in nv_keys %}
+            <button type="button" class="nv-tab" data-nv="{{ k }}" onclick="switchNvTab('{{ k }}')"
+                style="padding:4px 14px;border:1px solid #ddd;background:#fff;border-radius:14px;cursor:pointer;font-size:0.8rem">{{ lbl }} ({{ naver_eff[k].date[5:] }})</button>
+            {% endfor %}
+        </div>
+        {% for k,lbl in nv_keys %}
+        {% set ne = naver_eff[k] %}
+        <div class="nv-pane" data-nv="{{ k }}" style="{% if not loop.first %}display:none{% endif %}">
+            {% set t = ne.tot %}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px">
+                <div class="nv-kpi"><div class="nv-kpi-l">광고비</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.cost) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">광고매출</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.rev) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">ROAS</div><div class="nv-kpi-v" style="color:{% if t.roas and t.roas>=300 %}#27ae60{% elif t.roas and t.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if t.roas is not none %}{{ t.roas }}%{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">클릭</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.clk) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">CTR</div><div class="nv-kpi-v">{% if t.ctr is not none %}{{ t.ctr }}%{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">CPC</div><div class="nv-kpi-v">{% if t.cpc is not none %}{{ "{:,.0f}".format(t.cpc) }}{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">전환수</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.conv) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">CPA</div><div class="nv-kpi-v">{% if t.cpa is not none %}{{ "{:,.0f}".format(t.cpa) }}{% else %}-{% endif %}</div></div>
+            </div>
+            {% if ne.rows %}
+            <div style="overflow-x:auto">
+            <table class="num" style="width:100%;font-size:0.8rem;border-collapse:collapse;min-width:720px">
+                <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
+                    <th style="text-align:left;padding:5px 7px">매장</th>
+                    <th style="padding:5px 7px">광고비</th><th style="padding:5px 7px">노출</th><th style="padding:5px 7px">클릭</th>
+                    <th style="padding:5px 7px">CTR</th><th style="padding:5px 7px">CPC</th>
+                    <th style="padding:5px 7px">전환</th><th style="padding:5px 7px">CPA</th>
+                    <th style="padding:5px 7px">광고매출</th><th style="padding:5px 7px">ROAS</th></tr></thead>
+                <tbody>
+                {% for r in ne.rows %}
+                <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                    <td style="text-align:left;padding:5px 7px;font-weight:600">{{ r.label }}</td>
+                    <td style="padding:5px 7px">{{ "{:,.0f}".format(r.cost) }}</td>
+                    <td style="padding:5px 7px;color:#888">{{ "{:,.0f}".format(r.imp) }}</td>
+                    <td style="padding:5px 7px;color:#666">{{ "{:,.0f}".format(r.clk) }}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.cpc is not none %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px;color:#666">{{ "{:,.0f}".format(r.conv) }}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.cpa is not none %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px">{{ "{:,.0f}".format(r.rev) }}</td>
+                    <td style="padding:5px 7px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot><tr style="text-align:right;border-top:2px solid #eee;font-weight:700;background:#fafcff">
+                    <td style="text-align:left;padding:6px 7px">합계</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.cost) }}</td>
+                    <td style="padding:6px 7px;color:#888">{{ "{:,.0f}".format(t.imp) }}</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.clk) }}</td>
+                    <td style="padding:6px 7px">{% if t.ctr is not none %}{{ t.ctr }}%{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{% if t.cpc is not none %}{{ "{:,.0f}".format(t.cpc) }}{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.conv) }}</td>
+                    <td style="padding:6px 7px">{% if t.cpa is not none %}{{ "{:,.0f}".format(t.cpa) }}{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.rev) }}</td>
+                    <td style="padding:6px 7px;color:{% if t.roas and t.roas>=300 %}#27ae60{% elif t.roas and t.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if t.roas is not none %}{{ t.roas }}%{% else %}-{% endif %}</td>
+                </tr></tfoot>
+            </table>
+            </div>
+            {% else %}<p style="color:#999;font-size:0.82rem">{{ ne.date }} 수집 데이터 없음</p>{% endif %}
+        </div>
+        {% endfor %}
+
+        {% if naver_trend %}
+        <h3 style="font-size:0.86rem;margin:16px 0 6px;color:#555">📈 최근 8일 추세 (광고비/광고매출/ROAS)</h3>
+        <table class="num" style="width:100%;font-size:0.78rem;border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888"><th style="text-align:left;padding:3px 6px">날짜</th>
+                <th style="padding:3px 6px">광고비</th><th style="padding:3px 6px">광고매출</th><th style="padding:3px 6px">클릭</th><th style="padding:3px 6px">ROAS</th><th style="padding:3px 6px;width:35%">　</th></tr></thead>
+            <tbody>
+            {% set nmax = (naver_trend | map(attribute='roas') | select('!=', none) | list | max) or 100 %}
+            {% for d in naver_trend %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:3px 6px">{{ d.date }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.cost) }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.rev) }}</td>
+                <td style="padding:3px 6px;color:#888">{{ "{:,.0f}".format(d.clk) }}</td>
+                <td style="padding:3px 6px;font-weight:700;color:{% if d.roas and d.roas>=300 %}#27ae60{% elif d.roas and d.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if d.roas is not none %}{{ d.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 6px"><div style="background:#e7f7ee;border-radius:3px;height:11px"><div style="background:#03c75a;height:11px;border-radius:3px;width:{{ ((d.roas or 0)/nmax*100)|round }}%"></div></div></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        <p style="font-size:0.72rem;color:#aaa;margin:10px 0 0">전환수는 네이버 API 기준(ccnt) — 시트 수기 전환값과 정의가 다를 수 있음. ROAS=광고매출/광고비.</p>
+    </div>
+    <script>
+    function switchNvTab(k){
+        document.querySelectorAll('.nv-pane').forEach(function(p){ p.style.display = p.getAttribute('data-nv')===k ? '' : 'none'; });
+        document.querySelectorAll('.nv-tab').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nv')===k); });
+    }
+    (function(){ var f=document.querySelector('.nv-tab'); if(f) f.classList.add('active'); })();
+    </script>
     {% endif %}
 
     <!-- 운영 상태 + 알람 -->

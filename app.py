@@ -2631,6 +2631,62 @@ def dashboard():
         "has_data": bool(_mday),
     }
 
+    # ===== 네이버 검색광고 대시보드 (API 연동분) =====
+    naver_rows_all = db.list_naver_metrics(
+        account_ids=selected_ids,
+        start_date=(now - timedelta(days=8)).strftime("%Y-%m-%d"), end_date=today)
+    naver_by_key = {(r["account_id"], r["date"]): r for r in naver_rows_all}
+    naver_connected = [a["id"] for a in all_accounts if a["id"] in selected_ids
+                       and (a.get("naver_api_key") or "").strip() and (a.get("naver_customer_id") or "").strip()]
+
+    def _build_naver_eff(d):
+        out = []
+        tot = {"imp": 0, "clk": 0, "cost": 0, "conv": 0, "rev": 0, "sales": 0}
+        for aid in selected_ids:
+            nm = naver_by_key.get((aid, d))
+            if not nm:
+                continue
+            imp = nm["impressions"] or 0; clk = nm["clicks"] or 0; cost = nm["cost"] or 0
+            conv = nm["conversions"] or 0; rev = nm["revenue"] or 0
+            sales = (by_key.get((aid, d), {}) or {}).get("매출") or 0
+            out.append({
+                "label": label_by_id.get(aid, aid), "id": aid,
+                "imp": imp, "clk": clk, "cost": cost, "conv": conv, "rev": rev, "sales": sales,
+                "ctr": round(clk / imp * 100, 2) if imp else None,
+                "cpc": round(cost / clk) if clk else None,
+                "cvr": round(conv / clk * 100, 2) if clk else None,
+                "cpa": round(cost / conv) if conv else None,
+                "roas": round(rev / cost * 100) if cost else None,
+                "broas": round(sales / cost * 100) if cost else None,
+            })
+            tot["imp"] += imp; tot["clk"] += clk; tot["cost"] += cost
+            tot["conv"] += conv; tot["rev"] += rev; tot["sales"] += sales
+        out.sort(key=lambda x: x["cost"], reverse=True)
+        tot["ctr"] = round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else None
+        tot["cpc"] = round(tot["cost"] / tot["clk"]) if tot["clk"] else None
+        tot["cvr"] = round(tot["conv"] / tot["clk"] * 100, 2) if tot["clk"] else None
+        tot["cpa"] = round(tot["cost"] / tot["conv"]) if tot["conv"] else None
+        tot["roas"] = round(tot["rev"] / tot["cost"] * 100) if tot["cost"] else None
+        tot["broas"] = round(tot["sales"] / tot["cost"] * 100) if tot["cost"] else None
+        return out, tot
+
+    ne_y, ne_yt = _build_naver_eff(yesterday)
+    ne_t, ne_tt = _build_naver_eff(today)
+    naver_eff = {
+        "yesterday": {"date": yesterday, "rows": ne_y, "tot": ne_yt},
+        "today": {"date": today, "rows": ne_t, "tot": ne_tt},
+        "connected": len(naver_connected),
+        "has_data": bool(ne_y or ne_t),
+    }
+    # 8일 추세 (선택매장 합계)
+    naver_trend = []
+    for d in trend_dates:
+        cost = sum((naver_by_key.get((aid, d), {}) or {}).get("cost") or 0 for aid in selected_ids)
+        rev = sum((naver_by_key.get((aid, d), {}) or {}).get("revenue") or 0 for aid in selected_ids)
+        clk = sum((naver_by_key.get((aid, d), {}) or {}).get("clicks") or 0 for aid in selected_ids)
+        naver_trend.append({"date": d[5:], "cost": cost, "rev": rev, "clk": clk,
+                            "roas": round(rev / cost * 100) if cost else None})
+
     # 매장별 월 매출목표 vs 이번달 누적(MTD) 달성률
     month_start_s = now.replace(day=1).strftime("%Y-%m-%d")
     days_in_month = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
@@ -2847,6 +2903,8 @@ def dashboard():
         ad_insights=ad_insights,
         target_roas=target_roas,
         ad_summary=ad_summary,
+        naver_eff=naver_eff,
+        naver_trend=naver_trend,
         goals=goals,
         goal_month=now.month,
         now=now.strftime("%H:%M"),
