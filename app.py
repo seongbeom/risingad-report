@@ -3389,6 +3389,7 @@ def sheet_channels():
     sheet_err = None
     try:
         view_dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in (2, 1, 0)]
+        all_ids = [r["id"] for r in conn_rows]
         # 전 매장 합계로 일자별 집계
         def _agg(rows, fields):
             out = {}
