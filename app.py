@@ -671,6 +671,23 @@ def _product_collect_job(periods=("7d", "yesterday")):
 META_BACKFILL_DAYS = 4  # 매 실행 시 최근 N일 재수집 (어트리뷰션 보정)
 
 
+def _retry_sheet_write(fn, *args, tries=3):
+    """구글시트 일시적 5xx(500/503)·rate limit 시 짧게 재시도. 최종 실패는 그대로 raise."""
+    last = None
+    for i in range(tries):
+        try:
+            return fn(*args)
+        except Exception as e:
+            msg = repr(e)
+            transient = any(c in msg for c in ("[500]", "[503]", "[429]", "InternalError",
+                                               "Internal error", "currently unavailable", "RATE_LIMIT"))
+            last = e
+            if not transient or i == tries - 1:
+                raise
+            time.sleep(2 * (i + 1))  # 2s, 4s 백오프
+    raise last
+
+
 def _meta_collect_job(days=META_BACKFILL_DAYS):
     """메타 광고 성과 수집 → 각 매장 효율시트 메타 칸 기입. 브라우저 없이 API.
     meta_account_id 설정된 매장만. 최근 days 일 재수집(어트리뷰션 보정)."""
@@ -710,7 +727,7 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
                     db.upsert_meta_ad(aid, ad["date"], ad["ad_id"], ad.get("ad_name", ""), ad.get("campaign_name", ""), ad)
             except Exception:
                 traceback.print_exc()
-            wrote, errs = meta.write_meta_days(ssid, insights)
+            wrote, errs = _retry_sheet_write(meta.write_meta_days, ssid, insights)
             db.set_setting(f"meta_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
             db.add_sheet_log(aid, "meta", f"{since}~{until}", wrote,
@@ -756,7 +773,7 @@ def _naver_collect_job(days=META_BACKFILL_DAYS):
                     traceback.print_exc()
             wrote, errs = (0, [])
             if ssid:
-                wrote, errs = naver.write_to_sheet(ssid, daily)
+                wrote, errs = _retry_sheet_write(naver.write_to_sheet, ssid, daily)
             db.set_setting(f"naver_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             db.add_sheet_log(aid, "naver", f"{since}~{until}", wrote, "ok" if not errs else "warn",
                              "; ".join(errs) if errs else "")
