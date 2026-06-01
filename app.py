@@ -400,9 +400,23 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                 day_sales = metrics.get("매출") or 0
                 if day_sales > 0 and hsum > day_sales * 1.5:
                     print(f"[{account_id}] {scraped_date} 시간별 합({hsum:,}) > 종합매출({day_sales:,})×1.5 — 기간 오류로 시간별 저장 스킵")
+                    hourly_rows = None  # 검증에서도 제외
                 else:
                     n = db.upsert_metrics_hourly(account_id, scraped_date, hourly_rows)
                     print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
+
+            # 자동 교차검증 — 데이터 정합성 깨지면 사람 눈 없이 즉시 플래그.
+            try:
+                prev = db.get_metric(account_id, (datetime.strptime(scraped_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"))
+                warns = sheets.validate_metrics(metrics, hourly_rows, prev)
+                if warns:
+                    label = account.get("label") or account_id
+                    msg = f"[검증] {account_id} {scraped_date}: " + " / ".join(warns)
+                    print(msg, flush=True)
+                    db.add_sheet_log(account_id, "validate", scraped_date, 0, "warn", " / ".join(warns))
+                    _validate_alert(account_id, label, scraped_date, warns)
+            except Exception:
+                traceback.print_exc()
 
             # 상품 분석 (라이브/finalize 세션에서 같이 수집됨) — 항목별 date+period 로 저장.
             # daily: date=실제 데이터 날짜 / 7d: date=수집일.
@@ -733,6 +747,17 @@ def _heartbeat_alert(key, text, severity="warn"):
         return
     _heartbeat_last_alert[key] = now
     slack_notify(text, severity=severity)
+
+
+# 데이터 검증 경고 — 최근 것 메모리 보관 (대시보드 표시용, 슬랙 안 보냄)
+_validate_warnings = {}  # account_id → {date, warns, ts}
+
+
+def _validate_alert(account_id, label, date, warns):
+    _validate_warnings[account_id] = {
+        "label": label, "date": date, "warns": warns,
+        "ts": datetime.now().strftime("%m-%d %H:%M"),
+    }
 
 
 def _heartbeat_job():
@@ -2575,6 +2600,8 @@ def dashboard():
         selected_ids=selected_ids,
         dow_summary=dow_summary,
         alerts=alerts,
+        validate_warnings=[{"id": k, **v} for k, v in _validate_warnings.items()
+                           if v.get("date") in (today, yesterday)],
         ops_status=ops_status,
         trend_rows=trend_rows,
         today=today,

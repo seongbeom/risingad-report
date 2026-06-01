@@ -723,9 +723,15 @@
             </div>
         </div>
         <div>
-            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length + ad_alerts|length }}건</span></h2>
-            {% if alerts or ad_alerts %}
+            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length + ad_alerts|length + (validate_warnings|length) }}건</span></h2>
+            {% if alerts or ad_alerts or validate_warnings %}
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
+                {% for w in validate_warnings %}
+                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.84rem;background:#fef0f0;border-left:3px solid #c0392b">
+                    <span>🔬</span>
+                    <span><strong>{{ w.label }}</strong> 데이터 검증 경고 ({{ w.date }}) · <span style="color:#666">{{ w.warns|join(' / ') }}</span></span>
+                </div>
+                {% endfor %}
                 {% for a in ad_alerts %}
                 <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;background:#fff0f5;border-left:3px solid #d63384">
                     <span style="font-size:0.95rem">📣</span>

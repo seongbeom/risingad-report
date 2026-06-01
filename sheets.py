@@ -173,6 +173,54 @@ def extract_metrics(result):
     return m
 
 
+def validate_metrics(metrics, hourly_rows=None, prev_metrics=None):
+    """저장 전 데이터 정합성 교차검증. 논리적으로 안 맞는 값을 잡아냄.
+    반환: list of 경고 문자열 (비어있으면 정상).
+    이번 '월초 7일윈도우 첫행' 같은 버그를 사람 눈 없이 당일 잡기 위함."""
+    warns = []
+    sales = metrics.get("매출") or 0
+    cnt = metrics.get("구매건수") or 0
+    visitors = metrics.get("방문자수") or 0
+    aov = metrics.get("객단가") or 0
+    new_v = metrics.get("신규방문") or 0
+    re_v = metrics.get("재방문") or 0
+    conv = metrics.get("전환율")
+
+    # 1) 매출 ≈ 객단가 × 구매건수 (±10%)
+    if sales > 0 and aov > 0 and cnt > 0:
+        expect = aov * cnt
+        if abs(sales - expect) > expect * 0.12:
+            warns.append(f"매출({sales:,}) ≠ 객단가×구매건수({expect:,}) — 12%+ 오차")
+
+    # 2) 시간별 합 ≈ 종합매출 (시간별 데이터 있을 때)
+    if hourly_rows and sales > 0:
+        hsum = sum((r.get("매출") or 0) for r in hourly_rows)
+        if hsum > sales * 1.5:
+            warns.append(f"시간별합({hsum:,}) > 종합매출({sales:,})×1.5 — 기간 오류 의심")
+        elif hsum > 0 and hsum < sales * 0.5:
+            warns.append(f"시간별합({hsum:,}) < 종합매출({sales:,})×0.5 — 부분수집 의심")
+
+    # 3) 신규+재방문 ≈ 방문자수 (±5%)
+    if visitors > 0 and (new_v + re_v) > 0:
+        s = new_v + re_v
+        if abs(s - visitors) > visitors * 0.05:
+            warns.append(f"신규+재방문({s:,}) ≠ 방문자수({visitors:,})")
+
+    # 4) 전환율 ≈ 구매건수/방문자 (있을 때, ±0.3%p)
+    if conv is not None and visitors > 0 and cnt >= 0:
+        calc = cnt / visitors * 100
+        if abs(conv - calc) > 0.5:
+            warns.append(f"전환율({conv}%) ≠ 구매÷방문({calc:.2f}%)")
+
+    # 5) 전일 대비 급변 (10배↑ 또는 1/10↓) — 이번 버그 패턴(9.24M이 실제론 2.4M)
+    if prev_metrics and (prev_metrics.get("매출") or 0) > 0 and sales > 0:
+        ratio = sales / prev_metrics["매출"]
+        if ratio > 8 or ratio < 0.12:
+            warns.append(f"매출 전일 대비 {ratio:.1f}배 급변 ({prev_metrics['매출']:,}→{sales:,})")
+
+    return warns
+
+
 DEFAULT_HOURLY_HEADERS = ["일시", "구매자수", "구매건수", "구매개수", "매출액", "비교값", "증감"]
 
 
