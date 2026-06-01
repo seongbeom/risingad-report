@@ -65,12 +65,9 @@
 </head>
 <body>
 <div class="container">
-    <h1>기간 분석</h1>
+    {% set active = 'range' %}{% include '_topnav.html' %}
+    <h1 style="margin-top:0">📅 기간 분석</h1>
     <p class="subtitle">{{ start_date }} ~ {{ end_date }} ({{ range_days }}일) · 직전 {{ range_days }}일 ({{ prev_start }} ~ {{ prev_end }}) 비교 · 모두 숫자 기반</p>
-    <div class="nav">
-        <a href="/">← 대시보드</a>
-        <a href="/admin">⚙️ 설정/관리</a>
-    </div>
 
     <div class="card">
         <h2>조회 조건</h2>

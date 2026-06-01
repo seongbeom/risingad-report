@@ -1,0 +1,19 @@
+{# 공통 상단 네비바 — 모든 페이지 동일. active 변수로 현재 페이지 표시 (dashboard|range|admin|feedback) #}
+<style>
+  .topnav { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin:0 0 16px; padding:8px 0; border-bottom:1px solid #eaeaea; }
+  .topnav .brand { font-weight:700; font-size:0.95rem; color:#222; margin-right:14px; text-decoration:none; }
+  .topnav a.navlink { font-size:0.86rem; color:#555; text-decoration:none; padding:6px 14px; border-radius:8px; transition:background .12s; }
+  .topnav a.navlink:hover { background:#f0f3f7; color:#222; }
+  .topnav a.navlink.active { background:#4a90d9; color:#fff; font-weight:600; }
+  .topnav .spacer { margin-left:auto; }
+  .topnav a.logout { font-size:0.82rem; color:#999; text-decoration:none; padding:6px 10px; }
+  .topnav a.logout:hover { color:#e74c3c; }
+</style>
+<nav class="topnav">
+  <a href="/" class="brand">📊 RisingAd</a>
+  <a href="/" class="navlink {{ 'active' if active=='dashboard' else '' }}">데일리 대시보드</a>
+  <a href="/dashboard/range" class="navlink {{ 'active' if active=='range' else '' }}">📅 기간 분석</a>
+  <a href="/admin" class="navlink {{ 'active' if active=='admin' else '' }}">⚙️ 설정/관리</a>
+  <span class="spacer"></span>
+  <a href="/logout" class="logout">로그아웃</a>
+</nav>

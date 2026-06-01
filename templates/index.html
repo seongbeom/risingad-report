@@ -46,15 +46,9 @@
 </head>
 <body>
     <div class="container">
-        <h1>⚙️ 설정 / 관리</h1>
-        <p class="subtitle">스크래퍼 · 계정 · 스케줄 관리 · {{ now }}</p>
-        <p style="margin-bottom: 16px;">
-            <a href="/" style="color: #4a90d9; font-size: 0.9rem; text-decoration: none;">← 📊 대시보드</a>
-            &nbsp;|&nbsp;
-            <a href="/dashboard/range" style="color: #4a90d9; font-size: 0.9rem; text-decoration: none;">📅 기간 분석</a>
-            &nbsp;|&nbsp;
-            <a href="/logout" style="color: #888; font-size: 0.9rem; text-decoration: none;">로그아웃</a>
-        </p>
+        {% set active = 'admin' %}{% include '_topnav.html' %}
+        <h1 style="margin-top:0">⚙️ 설정 / 관리</h1>
+        <p class="subtitle" style="margin-bottom:16px">스크래퍼 · 계정 · 스케줄 관리 · {{ now }}</p>
 
         <!-- 자동 스케줄 현황 -->
         <div class="card" style="background:#f8fbff; border:1px solid #d6e6f5">

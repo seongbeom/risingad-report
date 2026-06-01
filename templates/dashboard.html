@@ -107,7 +107,8 @@
 </head>
 <body>
 <div class="container">
-    <h1>데일리 대시보드</h1>
+    {% set active = 'dashboard' %}{% include '_topnav.html' %}
+    <h1 style="margin-top:0">데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     {% if freshness %}
     {% set fresh_bad = freshness | selectattr('status','in',['bad','warn']) | list %}
@@ -138,10 +139,6 @@
         {% endif %}
     </div>
     {% endif %}
-    <div class="nav">
-        <a href="/dashboard/range">📅 기간 분석</a>
-        <a href="/admin">⚙️ 설정/관리</a>
-    </div>
 
     <!-- 퀵 네비 (JS 자동 생성) -->
     <div id="quicknav"></div>
