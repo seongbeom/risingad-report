@@ -59,15 +59,30 @@
   .card > h2{font-size:1.02rem; font-weight:700; margin:0 0 4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .card .card-sub{font-size:.78rem; color:var(--muted); margin:0 0 12px;}
 
+  /* 모바일 햄버거 (좁은 화면에서만 노출) */
+  .sb-burger{display:none; position:fixed; top:10px; left:10px; z-index:620;
+    width:40px; height:40px; border-radius:9px; border:1px solid var(--line);
+    background:#fff; box-shadow:var(--shadow-md); cursor:pointer; align-items:center; justify-content:center;}
+  .sb-burger svg{width:22px; height:22px; color:var(--ink);}
+  .sb-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:590;}
+
   @media (max-width:760px){
-    .sidebar{position:fixed; left:0; transform:translateX(-100%); transition:transform .2s;}
+    .sidebar{position:fixed; left:0; top:0; width:var(--sb-w)!important; transform:translateX(-100%); transition:transform .2s; box-shadow:2px 0 16px rgba(0,0,0,.12);}
     body.sb-mobile-open .sidebar{transform:translateX(0);}
-    .main-inner{padding:14px 16px;}
+    body.sb-mobile-open .sb-overlay{display:block;}
+    .sidebar .sb-brand, .sidebar .sb-item .lbl, .sidebar .sb-toggle .lbl{display:inline!important;}  /* 모바일선 항상 텍스트 */
+    .sb-burger{display:flex;}
+    .main-inner{padding:56px 16px 16px;}  /* 햄버거 공간 */
+    .sb-foot .sb-toggle{display:none;}  /* 모바일은 데스크탑 접기 버튼 숨김 */
   }
 </style>
 
 {% macro nav_icon(name) %}{% if name=='dashboard' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>{% elif name=='range' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>{% elif name=='admin' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>{% elif name=='feedback' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>{% endif %}{% endmacro %}
 
+<button class="sb-burger" type="button" onclick="document.body.classList.toggle('sb-mobile-open')" aria-label="메뉴 열기">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+<div class="sb-overlay" onclick="document.body.classList.remove('sb-mobile-open')"></div>
 <aside class="sidebar">
   <div class="sb-head">
     <span class="sb-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg></span>
@@ -93,4 +108,8 @@
     localStorage.setItem('sb_collapsed', document.body.classList.contains('sb-collapsed') ? '1':'0');
   }
   (function(){ if(localStorage.getItem('sb_collapsed')==='1') document.body.classList.add('sb-collapsed'); })();
+  // 모바일: 메뉴 클릭 시 사이드바 닫기
+  document.querySelectorAll('.sidebar .sb-item').forEach(function(a){
+    a.addEventListener('click', function(){ document.body.classList.remove('sb-mobile-open'); });
+  });
 </script>
