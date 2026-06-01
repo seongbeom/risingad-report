@@ -1591,7 +1591,8 @@ def update_naver_route(account_id):
         request.form.get("naver_secret", "").strip(),
         request.form.get("naver_customer_id", "").strip(),
     )
-    return redirect(url_for("index"))
+    # 입력한 페이지로 복귀 (시트현황 / 설정 어디서든)
+    return redirect(request.referrer or url_for("index"))
 
 
 @app.route("/settings/target_roas", methods=["POST"])
@@ -3314,10 +3315,14 @@ def sheet_channels():
     conn_rows = []
     for a in db.list_accounts():
         conn_rows.append({
+            "id": a["id"],
             "label": a.get("label") or a["cafe24_id"],
             "sheet": bool(a.get("spreadsheet_id")),
             "meta": bool((a.get("meta_account_id") or "").strip()),
             "naver": bool((a.get("naver_api_key") or "").strip() and (a.get("naver_customer_id") or "").strip()),
+            "naver_api_key": a.get("naver_api_key") or "",
+            "naver_secret": a.get("naver_secret") or "",
+            "naver_customer_id": a.get("naver_customer_id") or "",
         })
 
     # 실제 신데렐라 효율시트 읽어서 레이아웃+최근 데이터 추출
