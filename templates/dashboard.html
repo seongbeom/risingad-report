@@ -120,12 +120,9 @@
         </span>
         {% endfor %}
         {% if fresh_bad %}
-        <details style="display:inline-block; vertical-align:top">
-            <summary style="cursor:pointer; font-size:0.74rem; color:#c0392b; display:inline">⚠ 상세 {{ fresh_bad|length }}건</summary>
-            <div style="font-size:0.76rem; color:#555; margin-top:4px; padding:6px 10px; background:#fafafa; border-radius:6px; border-left:3px solid #e74c3c">
-                {% for f in fresh_bad %}<div style="margin:2px 0">{% if f.status=='bad' %}🔴{% else %}🟡{% endif %} <strong>{{ f.name }}</strong> — {{ f.detail }}</div>{% endfor %}
-            </div>
-        </details>
+        <div style="font-size:0.76rem; color:#555; margin-top:5px; padding:7px 10px; background:#fafafa; border-radius:6px; border-left:3px solid #e74c3c">
+            {% for f in fresh_bad %}<div style="margin:2px 0">{% if f.status=='bad' %}🔴{% else %}🟡{% endif %} <strong>{{ f.name }}</strong> — {{ f.detail }}</div>{% endfor %}
+        </div>
         {% endif %}
     </div>
     {% endif %}
