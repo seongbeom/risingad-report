@@ -1601,41 +1601,48 @@
     items[classify(full)].push({id:id, txt:txt});
   });
 
-  // 렌더: 그룹 버튼 → 클릭 시 그 그룹 섹션칩 펼침
+  // 한눈에 다 보이되 그룹 라벨로 구분. 칩 전부 표시, 그룹마다 색 라벨 + 구분선.
   nav.innerHTML = '';
   var bar = document.createElement('div');
-  bar.style.cssText = 'display:flex; gap:6px; align-items:center; flex-wrap:wrap';
-  var panel = document.createElement('div');
-  panel.style.cssText = 'display:none; flex-wrap:wrap; gap:4px; margin-top:6px; width:100%';
-  var active = null;
+  bar.style.cssText = 'display:flex; gap:5px; align-items:center; flex-wrap:wrap; width:100%';
 
-  // 맨 위로 버튼
-  var topBtn = document.createElement('a');
-  topBtn.href='#'; topBtn.textContent='↑ 맨 위'; topBtn.style.cssText='font-size:0.76rem;color:#999;text-decoration:none;padding:3px 9px';
-  bar.appendChild(topBtn);
-
-  GROUPS.forEach(function(g){
+  GROUPS.forEach(function(g, gi){
     if (!items[g.key].length) return;
-    var btn = document.createElement('button');
-    btn.type='button';
-    btn.textContent = g.label + ' (' + items[g.key].length + ')';
-    btn.style.cssText = 'font-size:0.78rem; padding:4px 12px; border-radius:14px; border:1px solid #ddd; cursor:pointer; background:#fff; color:#555; font-weight:600';
-    btn.onclick = function(){
-      if (active === g.key){ panel.style.display='none'; active=null; resetBtns(); return; }
-      active = g.key; resetBtns(); btn.style.background=g.color; btn.style.color='#fff';
-      panel.innerHTML='';
-      items[g.key].forEach(function(it){
-        var a=document.createElement('a'); a.href='#'+it.id; a.textContent=it.txt;
-        a.style.cssText='font-size:0.74rem;color:#444;text-decoration:none;padding:3px 9px;border-radius:10px;background:#f0f3f7';
-        a.onclick=function(){ setTimeout(function(){panel.style.display='none';active=null;resetBtns();},50); };
-        panel.appendChild(a);
-      });
-      panel.style.display='flex';
-    };
-    btn._g=g; bar.appendChild(btn);
+    // 그룹 라벨 (색 점 + 이름)
+    var lab = document.createElement('span');
+    lab.textContent = g.label;
+    lab.style.cssText = 'font-size:0.74rem; font-weight:700; color:'+g.color+'; padding:2px 4px 2px '+(gi>0?'10px':'4px')+'; '+(gi>0?'border-left:1px solid #e0e0e0;':'');
+    bar.appendChild(lab);
+    // 그 그룹 섹션 칩들
+    items[g.key].forEach(function(it){
+      var a=document.createElement('a'); a.href='#'+it.id; a.textContent=it.txt; a.dataset.sid=it.id;
+      a.style.cssText='font-size:0.74rem;color:#444;text-decoration:none;padding:3px 9px;border-radius:10px;background:#f3f5f8;border:1px solid transparent';
+      a.onmouseenter=function(){ a.style.background=g.color; a.style.color='#fff'; };
+      a.onmouseleave=function(){ if(a.dataset.cur!=='1'){a.style.background='#f3f5f8'; a.style.color='#444';} };
+      a._color=g.color; bar.appendChild(a);
+    });
   });
-  function resetBtns(){ bar.querySelectorAll('button').forEach(function(b){ b.style.background='#fff'; b.style.color='#555'; }); }
-  nav.appendChild(bar); nav.appendChild(panel);
+  nav.appendChild(bar);
+
+  // 스크롤 시 현재 보이는 섹션 칩 하이라이트
+  var allChips = bar.querySelectorAll('a[data-sid]');
+  function onScroll(){
+    var y = window.scrollY + 80, best=null, bestTop=-1;
+    cards.forEach(function(c){
+      if (!c.id) return;
+      var top = c.offsetTop;
+      if (top <= y && top > bestTop){ bestTop=top; best=c.id; }
+    });
+    allChips.forEach(function(a){
+      var on = a.dataset.sid===best;
+      a.dataset.cur = on ? '1' : '0';
+      a.style.background = on ? a._color : '#f3f5f8';
+      a.style.color = on ? '#fff' : '#444';
+    });
+  }
+  var tk=null;
+  window.addEventListener('scroll', function(){ if(tk) return; tk=setTimeout(function(){tk=null; onScroll();}, 120); });
+  onScroll();
 })();
 </script>
 </body>
