@@ -3172,6 +3172,86 @@ def feedback_page():
     return render_template("feedback.html", threads=db.list_feedback_threads())
 
 
+# 우리가 채우는 시트/탭 전체 정의
+SHEET_TARGETS = [
+    {
+        "tab": "월별 탭 (예: 26년N월)", "what": "cafe24 자연 지표",
+        "fields": "매출 · 방문자 · 신규/재방문 · 구매건수 · 전환율 · 구매개수 · 처음/재구매 · 객단가 · 회원가입",
+        "mode": "auto", "src": "cafe24 스크래퍼",
+        "when": "매일 새벽 finalize(어제 확정) + 라이브(오늘 실시간 매시간)",
+        "last_key": None,  # metrics 최신 갱신으로 대체
+        "need": "이미 자동 — 추가 불필요",
+    },
+    {
+        "tab": "효율 탭 — 메타", "what": "메타 광고성과",
+        "fields": "노출 · 클릭 · 광고비(+VAT) · 전환 · 매출",
+        "mode": "auto", "src": "Meta API",
+        "when": "매일 07:00", "last_key": "meta_last_run",
+        "need": "토큰 발급 완료 (연결 매장만)",
+    },
+    {
+        "tab": "효율 탭 — 네이버 검색광고", "what": "네이버 검색광고 성과",
+        "fields": "노출 · 클릭 · 광고비(VAT없음) · 전환 · 매출",
+        "mode": "auto", "src": "Naver SearchAd API",
+        "when": "매일 07:10", "last_key": "naver_last_run",
+        "need": "API키·시크릿·CUSTOMER_ID (매장별, 계정관리에서 입력)",
+    },
+    {
+        "tab": "효율 탭 — 네이버 성과형/쇼핑박스/트렌드픽", "what": "네이버 디스플레이 광고",
+        "fields": "노출 · 클릭 · 광고비 · 전환 · 매출",
+        "mode": "manual", "src": "수기 입력",
+        "when": "사람이 직접", "last_key": None,
+        "need": "GFA 마케팅 API 권한 (일반광고주 제한) — 자동화 어려움",
+    },
+    {
+        "tab": "효율 탭 — 크리테오", "what": "크리테오 광고",
+        "fields": "광고비 · 매출",
+        "mode": "todo", "src": "Criteo API (미연동)",
+        "when": "현재 수기", "last_key": None,
+        "need": "Criteo OAuth client_id/secret + advertiser ID",
+    },
+    {
+        "tab": "효율 탭 — 틱톡/카카오/구글/모비온 등", "what": "기타 채널",
+        "fields": "채널별 상이",
+        "mode": "manual", "src": "수기 입력",
+        "when": "사람이 직접", "last_key": None,
+        "need": "각 플랫폼 API 키 (필요시 연동 가능)",
+    },
+    {
+        "tab": "효율 탭 — 카페24 전환매출 / Total", "what": "채널별 전환매출 · 합계",
+        "fields": "매출 · ROAS",
+        "mode": "formula", "src": "시트 수식 / cafe24 멀티채널(부적합)",
+        "when": "자동 계산", "last_key": None,
+        "need": "불필요 (Total은 SUM 수식, 채널별 카페24칸은 일별 정확도 낮아 자동화 부적합)",
+    },
+]
+
+
+# cafe24 월별 탭에 우리가 자동 기입하는 칸 (write_result 기준, 열 → 지표)
+CAFE24_SHEET_MAP = [
+    {"col": "B", "name": "매출", "mode": "auto", "note": "매출종합(당일 확정/실시간)"},
+    {"col": "C", "name": "(목표/비교)", "mode": "formula", "note": "시트 수식·수기"},
+    {"col": "D", "name": "방문자수", "mode": "auto", "note": "전체방문자수"},
+    {"col": "E", "name": "방문당매출", "mode": "auto", "note": "매출/방문"},
+    {"col": "F", "name": "신규방문", "mode": "auto", "note": "전체방문자 분해"},
+    {"col": "G", "name": "재방문", "mode": "auto", "note": "전체방문자 분해"},
+    {"col": "H", "name": "순방문자수", "mode": "auto", "note": "순방문자수"},
+    {"col": "I", "name": "순방문비중", "mode": "auto", "note": "%"},
+    {"col": "J", "name": "신규비중", "mode": "auto", "note": "%"},
+    {"col": "K", "name": "재방문비중", "mode": "auto", "note": "%"},
+    {"col": "L", "name": "구매건수", "mode": "auto", "note": "매출종합"},
+    {"col": "M", "name": "전환율", "mode": "auto", "note": "%"},
+    {"col": "N", "name": "구매개수", "mode": "auto", "note": "매출종합"},
+    {"col": "O", "name": "합구매", "mode": "auto", "note": "처음+재구매"},
+    {"col": "P", "name": "처음구매", "mode": "auto", "note": "처음구매vs재구매"},
+    {"col": "Q", "name": "처음구매비중", "mode": "auto", "note": "%"},
+    {"col": "R", "name": "재구매", "mode": "auto", "note": "처음구매vs재구매"},
+    {"col": "S", "name": "(여백/수기)", "mode": "manual", "note": "비고 등"},
+    {"col": "T", "name": "객단가", "mode": "auto", "note": "1인당매출(AOV)"},
+    {"col": "U", "name": "회원가입", "mode": "auto", "note": "신규회원수"},
+]
+
+
 # 효율시트 채널별 입력 방식 정의 (시트 구조 기반)
 SHEET_CHANNELS = [
     {"name": "메타 (FB/IG)", "mode": "auto", "src": "Meta Marketing API",
@@ -3264,9 +3344,29 @@ def sheet_channels():
         sheet_err = repr(e)[:150]
         traceback.print_exc()
 
+    # SHEET_TARGETS 에 마지막 갱신시각 채우기
+    today_s = datetime.now().strftime("%Y-%m-%d")
+    cafe24_last = None
+    try:
+        with db.db_conn() as conn:
+            r = conn.execute("SELECT MAX(updated_at) FROM metrics WHERE date=?", (today_s,)).fetchone()
+            cafe24_last = r[0][5:16] if r and r[0] else None
+    except Exception:
+        pass
+    targets = []
+    for t in SHEET_TARGETS:
+        last_at = None
+        if t["last_key"]:
+            last_at = db.get_setting(t["last_key"], None)
+        elif t["mode"] == "auto":  # cafe24
+            last_at = cafe24_last
+        targets.append({**t, "last_at": last_at})
+
     return render_template("sheet_channels.html",
                            channels=SHEET_CHANNELS, last=last, conn_rows=conn_rows,
-                           sheet_grid=sheet_grid, sheet_err=sheet_err, active="channels")
+                           sheet_grid=sheet_grid, sheet_err=sheet_err,
+                           targets=targets, cafe24_map=CAFE24_SHEET_MAP,
+                           cafe24_last=cafe24_last, active="channels")
 
 
 @app.route("/feedback/<int:fid>/status", methods=["POST"])
