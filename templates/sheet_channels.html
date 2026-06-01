@@ -47,6 +47,18 @@
     display:flex; flex-direction:column; gap:1px; min-width:120px; box-shadow:0 1px 2px rgba(16,24,40,.04);}
   .stat-pill .sp-num{font-size:1.5rem; font-weight:800; line-height:1.1;}
   .stat-pill .sp-lbl{font-size:.76rem; color:#6b7785;}
+
+  /* 자동화 방법 칩 */
+  .fez{display:inline-block; padding:3px 10px; border-radius:7px; font-size:.74rem; font-weight:700;}
+  .fz-yes{background:#e3f5ea; color:#1e8e4e;}      /* API */
+  .fz-crawl{background:#e6f0fb; color:#2a6bb3;}    /* 크롤러 */
+  .fz-formula{background:#eef0f2; color:#5b6671;}  /* 수식 */
+  .fz-no{background:#fdecec; color:#c0392b;}       /* 불가 */
+  /* 지금 상태 칩 */
+  .stt{display:inline-block; padding:3px 10px; border-radius:7px; font-size:.74rem; font-weight:700;}
+  .st-live{background:#e3f5ea; color:#1e8e4e;}
+  .st-todo{background:#fbf2dd; color:#a07700;}
+  .st-manual{background:#fdecec; color:#c0392b;}
 </style>
 </head>
 <body>
@@ -64,40 +76,48 @@
     <span><i class="dot d-formula"></i> 시트 수식(자동계산)</span>
   </div>
 
-  <!-- ===== 0. 종합: 우리가 채우는 시트 전체 ===== -->
-  {% set auto_n = targets|selectattr('mode','equalto','auto')|list|length %}
-  {% set manual_n = targets|selectattr('mode','equalto','manual')|list|length %}
-  {% set todo_n = targets|selectattr('mode','equalto','todo')|list|length %}
+  <!-- ===== 0. 종합: 3축 (자동화 가능? / 지금 상태 / 필요한 것) ===== -->
+  {% set live_n = targets|selectattr('status','equalto','live')|list|length %}
+  {% set todo_n = targets|selectattr('status','equalto','todo')|list|length %}
+  {% set manual_n = targets|selectattr('status','equalto','manual')|list|length %}
   <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px">
-    <div class="stat-pill"><span class="sp-num" style="color:#27ae60">{{ auto_n }}</span><span class="sp-lbl">자동 채움</span></div>
-    <div class="stat-pill"><span class="sp-num" style="color:#e6a817">{{ todo_n }}</span><span class="sp-lbl">연동하면 자동화</span></div>
-    <div class="stat-pill"><span class="sp-num" style="color:#e74c3c">{{ manual_n }}</span><span class="sp-lbl">수동 입력 중</span></div>
+    <div class="stat-pill"><span class="sp-num" style="color:#27ae60">🟢 {{ live_n }}</span><span class="sp-lbl">지금 자동으로 채워짐</span></div>
+    <div class="stat-pill"><span class="sp-num" style="color:#e6a817">🟡 {{ todo_n }}</span><span class="sp-lbl">가능하나 미연동</span></div>
+    <div class="stat-pill"><span class="sp-num" style="color:#e74c3c">🔴 {{ manual_n }}</span><span class="sp-lbl">수동 입력 중</span></div>
   </div>
 
   <div class="card" style="padding:0; overflow:hidden">
-    <div style="padding:14px 18px 0"><h2 style="margin:0">🗂 채우는 시트/탭 전체</h2>
-    <p class="card-sub" style="margin:4px 0 0">두 종류의 탭을 채운다 — ① <b>cafe24 월별 탭</b>(자연 지표) ② <b>효율 탭</b>(채널별 광고성과). 각 행이 시트의 한 영역.</p></div>
+    <div style="padding:14px 18px 0"><h2 style="margin:0">🗂 시트 영역별 — 자동화 가능? · 지금 되나? · 뭐가 필요한가</h2>
+    <p class="card-sub" style="margin:4px 0 0">우리가 채우는 모든 영역. 두 종류 탭 — ① <b>cafe24 월별 탭</b>(자연 지표) ② <b>효율 탭</b>(채널별 광고).</p></div>
     <div class="sheet-wrap" style="border:none; border-radius:0; margin-top:10px">
       <table class="sheet">
         <thead>
-          <tr><th style="width:240px">시트 / 영역</th><th style="width:100px">방식</th><th>채우는 항목</th><th style="width:150px">언제</th><th style="width:230px">필요한 것</th><th style="width:120px">마지막</th></tr>
+          <tr>
+            <th style="width:210px">시트 / 영역</th>
+            <th style="width:110px; text-align:center">자동화 방법</th>
+            <th style="width:150px; text-align:center">지금 상태</th>
+            <th>채우는 항목</th>
+            <th style="width:300px">필요한 것 (액션)</th>
+          </tr>
         </thead>
         <tbody>
           {% for t in targets %}
           <tr>
-            <td class="ch-name">{{ t.tab }}<div style="font-size:.72rem; color:#999; font-weight:400; margin-top:2px">{{ t.what }} · {{ t.src }}</div></td>
-            <td>
-              {% if t.mode=='auto' %}<span class="badge2 b-auto">자동</span>
-              {% elif t.mode=='todo' %}<span class="badge2 b-todo">연동가능</span>
-              {% elif t.mode=='manual' %}<span class="badge2 b-manual">수동</span>
-              {% else %}<span class="badge2 b-formula">수식</span>{% endif %}
+            <td class="ch-name">{{ t.tab }}<div style="font-size:.72rem; color:#999; font-weight:400; margin-top:2px">{{ t.what }}</div></td>
+            <td style="text-align:center">
+              {% if t.way=='api' %}<span class="fez fz-yes">API</span>
+              {% elif t.way=='crawler' %}<span class="fez fz-crawl">크롤러</span>
+              {% elif t.way=='formula' %}<span class="fez fz-formula">수식</span>
+              {% else %}<span class="fez fz-no">불가</span>{% endif %}
+            </td>
+            <td style="text-align:center">
+              {% if t.status=='live' %}<span class="stt st-live">🟢 자동</span>
+                {% if t.last_at %}<div style="font-size:.7rem; color:#888; margin-top:3px">{{ t.last_at }}</div>{% endif %}
+              {% elif t.status=='todo' %}<span class="stt st-todo">🟡 미연동</span>
+              {% else %}<span class="stt st-manual">🔴 수동</span>{% endif %}
             </td>
             <td class="ch-detail">{{ t.fields }}</td>
-            <td style="font-size:.78rem; color:#666">{{ t.when }}</td>
             <td class="ch-need">{{ t.need }}</td>
-            <td style="font-size:.78rem; color:#666">
-              {% if t.last_at %}🟢 {{ t.last_at }}{% elif t.mode=='auto' %}<span style="color:#e67e22">대기</span>{% else %}—{% endif %}
-            </td>
           </tr>
           {% endfor %}
         </tbody>

@@ -3173,56 +3173,57 @@ def feedback_page():
 
 
 # 우리가 채우는 시트/탭 전체 정의
+# 3축 정리: way(자동화 방법) / status(지금 상태) / need(필요한 것)
+#   way:    "api"(공식 API) | "crawler"(API 없음, 크롤러로 가능) | "formula"(시트 수식) | "none"(불가)
+#   status: "live"(자동 작동중) | "todo"(가능하나 미연동) | "manual"(수동 입력중)
 SHEET_TARGETS = [
     {
-        "tab": "월별 탭 (예: 26년N월)", "what": "cafe24 자연 지표",
-        "fields": "매출 · 방문자 · 신규/재방문 · 구매건수 · 전환율 · 구매개수 · 처음/재구매 · 객단가 · 회원가입",
-        "mode": "auto", "src": "cafe24 스크래퍼",
-        "when": "매일 새벽 finalize(어제 확정) + 라이브(오늘 실시간 매시간)",
-        "last_key": None,  # metrics 최신 갱신으로 대체
-        "need": "이미 자동 — 추가 불필요",
+        "tab": "월별 탭 (26년N월)", "what": "cafe24 자연 지표",
+        "fields": "매출·방문자·신규/재방문·구매건수·전환율·객단가·회원가입 (B~U 18칸)",
+        "way": "crawler", "status": "live", "last_key": None,  # metrics 최신으로 대체
+        "need": "—  (크롤러 가동 중, 추가 불필요)",
     },
     {
-        "tab": "효율 탭 — 메타", "what": "메타 광고성과",
-        "fields": "노출 · 클릭 · 광고비(+VAT) · 전환 · 매출",
-        "mode": "auto", "src": "Meta API",
-        "when": "매일 07:00", "last_key": "meta_last_run",
-        "need": "토큰 발급 완료 (연결 매장만)",
+        "tab": "효율 — 메타(FB/IG)", "what": "메타 광고성과",
+        "fields": "노출·클릭·광고비(+VAT)·전환·매출",
+        "way": "api", "status": "live", "last_key": "meta_last_run",
+        "need": "—  (토큰 발급 완료, 연결 매장만)",
     },
     {
-        "tab": "효율 탭 — 네이버 검색광고", "what": "네이버 검색광고 성과",
-        "fields": "노출 · 클릭 · 광고비(VAT없음) · 전환 · 매출",
-        "mode": "auto", "src": "Naver SearchAd API",
-        "when": "매일 07:10", "last_key": "naver_last_run",
-        "need": "API키·시크릿·CUSTOMER_ID (매장별, 계정관리에서 입력)",
+        "tab": "효율 — 네이버 검색광고", "what": "네이버 검색광고",
+        "fields": "노출·클릭·광고비(VAT없음)·전환·매출",
+        "way": "api", "status": "live", "last_key": "naver_last_run",
+        "need": "나머지 매장 API키·시크릿·CUSTOMER_ID (계정관리에서 입력)",
     },
     {
-        "tab": "효율 탭 — 네이버 성과형/쇼핑박스/트렌드픽", "what": "네이버 디스플레이 광고",
-        "fields": "노출 · 클릭 · 광고비 · 전환 · 매출",
-        "mode": "manual", "src": "수기 입력",
-        "when": "사람이 직접", "last_key": None,
-        "need": "GFA 마케팅 API 권한 (일반광고주 제한) — 자동화 어려움",
+        "tab": "효율 — 크리테오", "what": "크리테오 광고",
+        "fields": "광고비·매출",
+        "way": "api", "status": "todo", "last_key": None,
+        "need": "Criteo OAuth client_id/secret + advertiser ID 발급",
     },
     {
-        "tab": "효율 탭 — 크리테오", "what": "크리테오 광고",
-        "fields": "광고비 · 매출",
-        "mode": "todo", "src": "Criteo API (미연동)",
-        "when": "현재 수기", "last_key": None,
-        "need": "Criteo OAuth client_id/secret + advertiser ID",
-    },
-    {
-        "tab": "효율 탭 — 틱톡/카카오/구글/모비온 등", "what": "기타 채널",
+        "tab": "효율 — 틱톡/카카오/구글/모비온", "what": "기타 광고 채널",
         "fields": "채널별 상이",
-        "mode": "manual", "src": "수기 입력",
-        "when": "사람이 직접", "last_key": None,
-        "need": "각 플랫폼 API 키 (필요시 연동 가능)",
+        "way": "api", "status": "manual", "last_key": None,
+        "need": "각 플랫폼 광고 API 키 (발급되면 연동 가능)",
     },
     {
-        "tab": "효율 탭 — 카페24 전환매출 / Total", "what": "채널별 전환매출 · 합계",
-        "fields": "매출 · ROAS",
-        "mode": "formula", "src": "시트 수식 / cafe24 멀티채널(부적합)",
-        "when": "자동 계산", "last_key": None,
-        "need": "불필요 (Total은 SUM 수식, 채널별 카페24칸은 일별 정확도 낮아 자동화 부적합)",
+        "tab": "효율 — 네이버 성과형/쇼핑박스", "what": "네이버 디스플레이(GFA)",
+        "fields": "노출·클릭·광고비·전환·매출",
+        "way": "crawler", "status": "manual", "last_key": None,
+        "need": "공식 API 권한 막힘 → 크롤러 구축 필요 (GFA 광고관리자 로그인 스크래핑)",
+    },
+    {
+        "tab": "효율 — 채널별 카페24 전환매출", "what": "채널별 전환매출",
+        "fields": "매출·ROAS",
+        "way": "crawler", "status": "manual", "last_key": None,
+        "need": "cafe24 멀티채널 크롤러로 가능하나 일별 정확도 낮음 → 검토 필요",
+    },
+    {
+        "tab": "효율 — Total 합계", "what": "전체 합계",
+        "fields": "노출·클릭·광고비·매출·ROAS",
+        "way": "formula", "status": "live", "last_key": None,
+        "need": "—  (시트 SUM 수식, 자동 계산)",
     },
 ]
 
@@ -3318,15 +3319,29 @@ def sheet_channels():
             vals = ws.get_all_values()
             chan_hdr = vals[37] if len(vals) > 37 else []
             met_hdr = vals[38] if len(vals) > 38 else []
-            # 채널 블록 파싱 — 일별성과 섹션의 '정상' 채널만 (BL 병합영역 전까지, idx < 60)
-            blocks = []
+            # 모든 채널 헤더 위치 수집 (시트 전체) — 메타/네이버검색은 서로 다른 영역에 있음
             starts = [(ci, v.strip()) for ci, v in enumerate(chan_hdr) if v.strip()]
-            for i, (ci, name) in enumerate(starts):
-                end = starts[i+1][0] if i+1 < len(starts) else len(met_hdr)
-                if ci >= 60:  # BL 이후 병합/중복 영역 스킵
-                    break
-                if name == "구분":
+            start_cols = [ci for ci, _ in starts]
+            # 이름 → 첫 등장 시작열
+            name_to_start = {}
+            for ci, nm in starts:
+                if nm not in name_to_start:
+                    name_to_start[nm] = ci
+            # 보여줄 채널 — 자동 먼저, 그다음 연동가능, 수동. (카페24/구분/중복 노이즈 제외)
+            CURATED = [
+                "메타", "네이버 검색광고",                 # 자동(API)
+                "크리테오", "구글",                        # 연동가능
+                "네이버성과형",                            # 크롤러필요
+                "네이버 쇼핑박스 PC", "네이버 쇼핑박스 MO (트렌드픽)", "다음 쇼핑박스",
+                "카카오 DA", "틱톡", "모비온",             # 수동
+            ]
+            blocks = []
+            for name in CURATED:
+                ci = name_to_start.get(name)
+                if ci is None:
                     continue
+                nxt = [c for c in start_cols if c > ci]
+                end = min(nxt) if nxt else len(met_hdr)
                 mets = [met_hdr[c].strip() for c in range(ci, end) if c < len(met_hdr) and met_hdr[c].strip()]
                 blocks.append({
                     "name": name, "start": ci, "metrics": mets,
@@ -3358,7 +3373,7 @@ def sheet_channels():
         last_at = None
         if t["last_key"]:
             last_at = db.get_setting(t["last_key"], None)
-        elif t["mode"] == "auto":  # cafe24
+        elif t["status"] == "live" and t["what"].startswith("cafe24"):
             last_at = cafe24_last
         targets.append({**t, "last_at": last_at})
 
