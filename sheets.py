@@ -64,16 +64,36 @@ def _cell(row, idx, default=0):
     return parse_number(row[idx])
 
 
+def _pick_row(rows, target_date):
+    """여러 날짜 행 중 target_date(YYYY-MM-DD) 와 일치하는 행 선택.
+    cafe24 가 기간(예: 최근7일) 테이블을 돌려줄 때 첫 행이 오늘이 아닐 수 있어
+    (월 첫날 등) A열 일자가 target 과 맞는 행을 골라야 한다.
+    일자 매칭 실패 시 마지막 행(보통 최신일) → 그것도 없으면 첫 행."""
+    if not rows:
+        return None
+    if target_date:
+        # A열 일자 정규화 비교 (2026-06-01 / 2026.06.01 / 2026/06/01 모두 허용)
+        tnorm = target_date.replace("-", "").replace(".", "").replace("/", "")
+        for r in rows:
+            if r and r[0]:
+                rnorm = str(r[0]).strip().replace("-", "").replace(".", "").replace("/", "").replace(" ", "")
+                if rnorm == tnorm:
+                    return r
+    # 매칭 실패 — 단일행이면 그거, 멀티행이면 마지막(최신)
+    return rows[-1] if len(rows) > 1 else rows[0]
+
+
 def extract_metrics(result):
     """스크래핑 결과 → 시트 지표 dict.
     cafe24 가 부분/빈 테이블을 돌려주는 경우가 있어 모든 row 인덱싱은 _cell 로 방어한다."""
     m = {}
     missing = []
+    target_date = result.get("date")
 
-    # 매출종합분석
+    # 매출종합분석 — cafe24 가 기간(최근7일) 테이블을 줄 때 target_date 행을 골라야 함
     sales = result.get("매출종합분석", {})
     if sales.get("매출종합", {}).get("rows"):
-        row = sales["매출종합"]["rows"][0]
+        row = _pick_row(sales["매출종합"]["rows"], target_date)
         m["매출"] = _cell(row, 1)
         m["구매건수"] = _cell(row, 2)
         if not row or len(row) < 3:
@@ -82,20 +102,20 @@ def extract_metrics(result):
         missing.append("매출종합 rows 없음")
 
     if sales.get("1인당매출", {}).get("rows"):
-        row = sales["1인당매출"]["rows"][0]
+        row = _pick_row(sales["1인당매출"]["rows"], target_date)
         m["방문당매출"] = _cell(row, 1)
         m["객단가"] = _cell(row, 2)
 
     # 방문자분석
     visitors = result.get("방문자분석", {})
     if visitors.get("전체방문자수", {}).get("rows"):
-        row = visitors["전체방문자수"]["rows"][0]
+        row = _pick_row(visitors["전체방문자수"]["rows"], target_date)
         m["방문자수"] = _cell(row, 1)
         m["신규방문"] = _cell(row, 2)
         m["재방문"] = _cell(row, 3)
 
     if visitors.get("순방문자수", {}).get("rows"):
-        row = visitors["순방문자수"]["rows"][0]
+        row = _pick_row(visitors["순방문자수"]["rows"], target_date)
         m["순방문자수"] = _cell(row, 1)
 
     # 비중/전환율 계산
@@ -109,14 +129,14 @@ def extract_metrics(result):
     # 처음구매vs재구매
     buy = result.get("처음방문vs재방문", {})
     if buy.get("처음구매vs재구매", {}).get("rows"):
-        row = buy["처음구매vs재구매"]["rows"][0]
+        row = _pick_row(buy["처음구매vs재구매"]["rows"], target_date)
         m["처음구매액"] = _cell(row, 1)
         m["재구매액"] = _cell(row, 2)
 
     # 신규회원
     members = result.get("신규회원", {})
     if members.get("신규회원수", {}).get("rows"):
-        row = members["신규회원수"]["rows"][0]
+        row = _pick_row(members["신규회원수"]["rows"], target_date)
         m["회원가입"] = _cell(row, 1)
 
     # 매출종합_상세 팝업 → 구매개수 (당일 row만)
