@@ -845,12 +845,13 @@ def _build_freshness(selected_ids, today):
                 "WHERE status IN ('fail','warn') AND ts >= datetime('now','localtime','-1 day') ORDER BY id DESC LIMIT 8"
             ).fetchall()
             if fails:
-                lines = [f"{lbl.get(f[0], f[0])}: {f[3][:40]}" for f in fails]
+                lines = [f"{lbl.get(f[0], f[0])}: {f[3][:45]}" for f in fails]
                 out.append({"name": "시트 입력", "basis": "최근 24h", "upd": "—",
-                            "status": "bad", "detail": "; ".join(lines), "missing": [lbl.get(f[0], f[0]) for f in fails]})
+                            "status": "bad", "detail": "; ".join(lines), "lines": lines,
+                            "missing": [lbl.get(f[0], f[0]) for f in fails]})
             else:
                 out.append({"name": "시트 입력", "basis": "최근 24h", "upd": "—",
-                            "status": "ok", "detail": "실패/경고 없음", "missing": []})
+                            "status": "ok", "detail": "실패/경고 없음", "lines": [], "missing": []})
     except Exception:
         traceback.print_exc()
     return out
