@@ -634,6 +634,22 @@ def scrape_popup_hourly_via_admin(page, context, frame, target_date):
         except Exception:
             p.wait_for_timeout(8000)
 
+        # 팝업이 기본 7일(period=7d)로 열림 → 단일일 기간으로 고정.
+        # 어제 데이터면 '어제' 버튼, 오늘이면 '오늘' 버튼. (set_period_range 달력 클릭이
+        # 연도를 잘못 잡는 케이스가 있어, 팝업의 프리셋 버튼을 쓰는 게 안전)
+        import datetime as _dt
+        _today = _dt.date.today().strftime("%Y-%m-%d")
+        _yest = (_dt.date.today() - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        preset = "오늘" if target_date == _today else ("어제" if target_date == _yest else None)
+        if preset:
+            try:
+                pb = p.locator(f"button:has-text('{preset}')").first
+                if pb.count() > 0:
+                    pb.click(timeout=5000)
+                    p.wait_for_timeout(1500)
+            except Exception:
+                pass
+
         # 표시 기준 → '시간 단위'
         sel = p.locator("select").first
         if sel.count() > 0:
