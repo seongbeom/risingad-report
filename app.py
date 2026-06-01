@@ -17,6 +17,7 @@ import db
 import scraper
 import sheets
 import meta
+import naver
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -731,6 +732,48 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
     )
 
 
+def _naver_collect_job(days=META_BACKFILL_DAYS):
+    """네이버 검색광고 성과 수집 → 효율시트 네이버칸(KH~KO) 기입 + DB 저장. API라 chromium 무관."""
+    today = datetime.now()
+    since = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    until = today.strftime("%Y-%m-%d")
+    accounts = [a for a in db.list_accounts()
+                if (a.get("naver_api_key") or "").strip() and (a.get("naver_customer_id") or "").strip()]
+    print(f"[naver] {since}~{until} {len(accounts)}계정 시작")
+    ok_acct = 0
+    fail = []
+    for a in accounts:
+        aid = a["id"]
+        lbl = a.get("label") or aid
+        ssid = a.get("spreadsheet_id") or ""
+        creds = (a["naver_api_key"], a["naver_secret"], a["naver_customer_id"])
+        try:
+            daily = naver.fetch_daily(creds, since, until)
+            for d, m in daily.items():
+                try:
+                    db.upsert_naver_metric(aid, d, m)
+                except Exception:
+                    traceback.print_exc()
+            wrote, errs = (0, [])
+            if ssid:
+                wrote, errs = naver.write_to_sheet(ssid, daily)
+            db.set_setting(f"naver_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
+            db.add_sheet_log(aid, "naver", f"{since}~{until}", wrote, "ok" if not errs else "warn",
+                             "; ".join(errs) if errs else "")
+            print(f"[naver] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
+            ok_acct += 1
+        except Exception as e:
+            fail.append(lbl)
+            print(f"[naver] {lbl} 실패: {repr(e)[:160]}")
+            try:
+                db.add_sheet_log(aid, "naver", f"{since}~{until}", 0, "fail", repr(e)[:280])
+            except Exception:
+                pass
+        time.sleep(1.5)
+    db.set_setting("naver_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    print(f"[naver] done — 성공 {ok_acct} / 실패 {len(fail)}")
+
+
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -1076,7 +1119,7 @@ def reload_schedules():
     - daily_finalize: 매일 새벽 어제 데이터 풀스크랩 + 시트 write
     계정별 cron은 더 이상 사용 안 함 (단순 시트 write 시각이 글로벌이면 충분)."""
     for job in scheduler.get_jobs():
-        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "product_today", "heartbeat", "meta_collect"):
+        if job.id.startswith("scrape_") or job.id in ("live_global", "daily_finalize", "db_backup", "daily_restart", "product_collect", "product_today", "heartbeat", "meta_collect", "naver_collect"):
             scheduler.remove_job(job.id)
 
     live = db.get_live_settings()
@@ -1128,6 +1171,14 @@ def reload_schedules():
         id="meta_collect", replace_existing=True,
     )
     print(f"[scheduler] meta_collect: 매일 07:00 (최근 {META_BACKFILL_DAYS}일)")
+
+    # 네이버 검색광고 수집 — 매일 07:10 (메타 직후)
+    scheduler.add_job(
+        _naver_collect_job, "cron",
+        hour=7, minute=10,
+        id="naver_collect", replace_existing=True,
+    )
+    print(f"[scheduler] naver_collect: 매일 07:10 (최근 {META_BACKFILL_DAYS}일)")
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
@@ -1514,6 +1565,32 @@ def admin_meta_collect():
 @login_required
 def update_meta_route(account_id):
     db.update_meta_account_id(account_id, request.form.get("meta_account_id", "").strip())
+    return redirect(url_for("index"))
+
+
+@app.route("/admin/naver_collect", methods=["POST"])
+def admin_naver_collect():
+    """localhost 전용 네이버 수집 수동 트리거. body: days(선택)."""
+    remote = request.remote_addr or ""
+    if remote not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        days = int(request.form.get("days", str(META_BACKFILL_DAYS)))
+    except ValueError:
+        days = META_BACKFILL_DAYS
+    threading.Thread(target=lambda: _naver_collect_job(days=days), daemon=True).start()
+    return jsonify({"ok": True, "days": days})
+
+
+@app.route("/accounts/<account_id>/naver", methods=["POST"])
+@login_required
+def update_naver_route(account_id):
+    db.update_naver_creds(
+        account_id,
+        request.form.get("naver_api_key", "").strip(),
+        request.form.get("naver_secret", "").strip(),
+        request.form.get("naver_customer_id", "").strip(),
+    )
     return redirect(url_for("index"))
 
 

@@ -162,6 +162,21 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_meta_metrics_date ON meta_metrics(date);
 
+            -- 네이버 검색광고 일별 성과 (대시보드/검증용)
+            CREATE TABLE IF NOT EXISTS naver_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                cost INTEGER DEFAULT 0,
+                conversions INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_naver_metrics_date ON naver_metrics(date);
+
             -- 메타 캠페인별 일별 성과 (캠페인 분해 뷰용)
             CREATE TABLE IF NOT EXISTS meta_campaign_metrics (
                 account_id TEXT NOT NULL,
@@ -242,6 +257,10 @@ def init_db():
         # Meta 광고계정 ID (act_ 접두사 없는 숫자) — 메타 광고성과 자동입력용
         if "meta_account_id" not in cols:
             conn.execute("ALTER TABLE accounts ADD COLUMN meta_account_id TEXT DEFAULT ''")
+        # 네이버 검색광고 자격 (api_key / secret / customer_id)
+        for col in ("naver_api_key", "naver_secret", "naver_customer_id"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} TEXT DEFAULT ''")
 
         # meta_metrics 추가지표 컬럼 마이그레이션
         try:
@@ -635,6 +654,42 @@ def update_meta_account_id(account_id, meta_account_id):
             "UPDATE accounts SET meta_account_id=? WHERE id=?",
             (meta_account_id, account_id),
         )
+
+
+def update_naver_creds(account_id, api_key, secret, customer_id):
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE accounts SET naver_api_key=?, naver_secret=?, naver_customer_id=? WHERE id=?",
+            (api_key, secret, customer_id, account_id),
+        )
+
+
+def upsert_naver_metric(account_id, date, m):
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO naver_metrics (account_id,date,impressions,clicks,cost,conversions,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date) DO UPDATE SET
+                 impressions=excluded.impressions, clicks=excluded.clicks, cost=excluded.cost,
+                 conversions=excluded.conversions, revenue=excluded.revenue, updated_at=excluded.updated_at""",
+            (account_id, date, m.get("impressions", 0), m.get("clicks", 0), m.get("cost", 0),
+             m.get("conversions", 0), m.get("revenue", 0)),
+        )
+
+
+def list_naver_metrics(account_ids=None, start_date=None, end_date=None):
+    sql = "SELECT * FROM naver_metrics WHERE 1=1"
+    params = []
+    if account_ids:
+        sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"
+        params.extend(account_ids)
+    if start_date:
+        sql += " AND date >= ?"; params.append(start_date)
+    if end_date:
+        sql += " AND date <= ?"; params.append(end_date)
+    sql += " ORDER BY date DESC"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def update_account(account_id, sub_id=None, password=None, label=None):
