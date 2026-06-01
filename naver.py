@@ -97,12 +97,18 @@ def write_to_sheet(spreadsheet_id, daily):
         by_tab[sheets.efficiency_sheet_name(d)][d] = m
     written = 0
     errors = []
+    import datetime as _dt
     for eff_name, days in by_tab.items():
         try:
             ws = sh.worksheet(eff_name)
         except Exception:
-            errors.append(f"{eff_name} 탭없음")
-            continue
+            # 효율 탭 없으면 자동 생성 (월초 재발 버그 방지) — 템플릿 복제
+            try:
+                _d = _dt.datetime.strptime(next(iter(days)), "%Y-%m-%d")
+                ws = sheets._ensure_efficiency_sheet(sh, _d)
+            except Exception as ce:
+                errors.append(f"{eff_name} 자동생성 실패: {repr(ce)[:50]}")
+                continue
         col_b = ws.col_values(2)
         rowmap = {(v or "").strip(): i for i, v in enumerate(col_b, start=1)}
         data = []
