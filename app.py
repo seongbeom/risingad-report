@@ -3361,6 +3361,10 @@ CHANNEL_MODE = {
     "크리테오": "todo",
 }
 
+# 효율시트 통째 읽기는 느림(구글API 왕복+대용량) → 메모리 TTL 캐시. ?refresh=1 로 강제 갱신.
+_SHEET_GRID_CACHE = {"data": None, "err": None, "ts": 0}
+_SHEET_GRID_TTL = 600  # 10분
+
 
 @app.route("/admin/sheet_channels")
 @login_required
@@ -3383,10 +3387,16 @@ def sheet_channels():
             "naver_customer_id": a.get("naver_customer_id") or "",
         })
 
-    # 실제 신데렐라 효율시트 읽어서 레이아웃+최근 데이터 추출
+    # 실제 신데렐라 효율시트 읽어서 레이아웃+최근 데이터 추출 (구글시트 통째 읽기 → 캐시)
     sheet_grid = None
     sheet_err = None
-    try:
+    _now_ts = time.time()
+    _cached = _SHEET_GRID_CACHE.get("data")
+    if _cached is not None and (_now_ts - _SHEET_GRID_CACHE.get("ts", 0)) < _SHEET_GRID_TTL and not request.args.get("refresh"):
+        sheet_grid = _cached
+        sheet_err = _SHEET_GRID_CACHE.get("err")
+    else:
+      try:
         sample = db.get_account("cinderella1009")
         ssid = sample.get("spreadsheet_id") if sample else None
         if ssid:
@@ -3436,9 +3446,13 @@ def sheet_channels():
             # 최근 3일만
             data_rows = data_rows[-3:]
             sheet_grid = {"blocks": blocks, "rows": data_rows, "tab": ws.title}
-    except Exception as e:
+      except Exception as e:
         sheet_err = repr(e)[:150]
         traceback.print_exc()
+      # 결과를 캐시에 저장 (성공/실패 모두 — 실패도 잠깐 캐시해 재시도 폭주 방지)
+      _SHEET_GRID_CACHE["data"] = sheet_grid
+      _SHEET_GRID_CACHE["err"] = sheet_err
+      _SHEET_GRID_CACHE["ts"] = _now_ts
 
     # SHEET_TARGETS 에 마지막 갱신시각 채우기
     today_s = datetime.now().strftime("%Y-%m-%d")

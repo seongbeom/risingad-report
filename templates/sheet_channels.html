@@ -158,7 +158,7 @@
 
   {% if sheet_grid %}
   <div class="card">
-    <h2>📊 실제 효율시트 모양 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 최근 {{ sheet_grid.rows|length }}일 · 채널 색=입력방식</span></h2>
+    <h2>📊 실제 효율시트 모양 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 최근 {{ sheet_grid.rows|length }}일 · 채널 색=입력방식 · <a href="?refresh=1" style="color:#4a90d9">↻ 시트 새로고침</a> <span style="color:#bbb">(10분 캐시)</span></span></h2>
     <p class="card-sub">실제 시트의 채널×지표 배열 그대로. 칸 색으로 자동(초록)/연동가능(노랑)/수동(빨강)/수식(회색) 구분.</p>
     <div class="sheet-wrap">
       <table class="xls">
