@@ -24,6 +24,19 @@
   .ch-detail{color:#555; font-size:.8rem;}
   .ch-need{color:#8a6d00; font-size:.78rem;}
 
+  /* 실제 시트 그리드 (엑셀풍) */
+  table.xls{border-collapse:collapse; font-size:.72rem; white-space:nowrap;}
+  table.xls th, table.xls td{border:1px solid #d8dde2; padding:4px 8px; text-align:right;}
+  table.xls .xls-date{text-align:center; font-weight:600; background:#f3f6f9; position:sticky; left:0; z-index:2;}
+  table.xls thead .xls-date{z-index:3;}
+  table.xls .xls-chan{text-align:center; font-weight:700; color:#fff; font-size:.74rem;}
+  table.xls .xls-met{text-align:center; font-weight:600; font-size:.66rem; color:#444;}
+  table.xls .xls-val{font-variant-numeric:tabular-nums;}
+  /* 채널 모드 색 (헤더) */
+  .m-auto{background:#27ae60;} .m-todo{background:#e6a817;} .m-manual{background:#e74c3c;} .m-formula{background:#9aa3ac;}
+  /* 지표/데이터 연한 배경 */
+  .m-auto-soft{background:#eafaf0;} .m-todo-soft{background:#fdf6e6;} .m-manual-soft{background:#fdeeee;} .m-formula-soft{background:#f0f2f4;}
+
   /* 연결 현황 매트릭스 */
   table.conn{border-collapse:collapse; font-size:.8rem; margin-top:6px;}
   table.conn th, table.conn td{border:1px solid #e8ebef; padding:6px 12px; text-align:center;}
@@ -45,6 +58,43 @@
     <span><i class="dot d-skip"></i> 자동화 부적합</span>
     <span><i class="dot d-formula"></i> 시트 수식(자동계산)</span>
   </div>
+
+  {% if sheet_grid %}
+  <div class="card">
+    <h2>📊 실제 효율시트 모양 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 최근 {{ sheet_grid.rows|length }}일 · 채널 색=입력방식</span></h2>
+    <p class="card-sub">실제 시트의 채널×지표 배열 그대로. 칸 색으로 자동(초록)/연동가능(노랑)/수동(빨강)/수식(회색) 구분.</p>
+    <div class="sheet-wrap">
+      <table class="xls">
+        <thead>
+          <tr>
+            <th rowspan="2" class="xls-date">일자</th>
+            {% for b in sheet_grid.blocks %}
+            <th colspan="{{ b.metrics|length }}" class="xls-chan m-{{ b.mode }}">{{ b.name }}</th>
+            {% endfor %}
+          </tr>
+          <tr>
+            {% for b in sheet_grid.blocks %}{% for m in b.metrics %}
+            <th class="xls-met m-{{ b.mode }}-soft">{{ m }}</th>
+            {% endfor %}{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sheet_grid.rows %}
+          <tr>
+            <td class="xls-date">{{ row[1] }}</td>
+            {% for b in sheet_grid.blocks %}{% for m in b.metrics %}
+            {% set col = b.start + loop.index0 %}
+            <td class="xls-val m-{{ b.mode }}-soft">{{ row[col] if col < row|length else '' }}</td>
+            {% endfor %}{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% elif sheet_err %}
+  <div class="card"><p style="color:#c0392b">시트 읽기 실패: {{ sheet_err }}</p></div>
+  {% endif %}
 
   <div class="card" style="padding:0; overflow:hidden">
     <div class="sheet-wrap">

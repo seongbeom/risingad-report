@@ -3191,16 +3191,27 @@ SHEET_CHANNELS = [
 ]
 
 
+# 채널명 → 입력 모드 (셀 색칠용)
+CHANNEL_MODE = {
+    "Total": "formula", "카페24": "formula",
+    "메타": "auto", "네이버 검색광고": "auto",
+    "네이버성과형": "manual", "네이버 쇼핑박스 PC": "manual",
+    "네이버 쇼핑박스 MO (트렌드픽)": "manual", "다음 쇼핑박스": "manual",
+    "틱톡": "manual", "카카오 DA": "manual", "카카오 모객": "manual",
+    "카카오 메세지": "manual", "아이센드": "manual", "모비온": "manual",
+    "네이트CPC": "manual", "구글": "todo",
+    "크리테오": "todo",
+}
+
+
 @app.route("/admin/sheet_channels")
 @login_required
 def sheet_channels():
-    """효율시트 채널별 입력 현황 — 어디가 자동/수동/필요한지 시트 모양으로."""
-    # 채널별 자동 수집 마지막 시각
+    """효율시트를 실제 모양 그대로 재현 — 채널×지표 셀을 입력방식 색으로."""
     last = {
-        "메타 (FB/IG)": db.get_setting("meta_last_run", None),
+        "메타": db.get_setting("meta_last_run", None),
         "네이버 검색광고": db.get_setting("naver_last_run", None),
     }
-    # 계정별 연결 현황 (메타/네이버)
     conn_rows = []
     for a in db.list_accounts():
         conn_rows.append({
@@ -3209,8 +3220,53 @@ def sheet_channels():
             "meta": bool((a.get("meta_account_id") or "").strip()),
             "naver": bool((a.get("naver_api_key") or "").strip() and (a.get("naver_customer_id") or "").strip()),
         })
+
+    # 실제 신데렐라 효율시트 읽어서 레이아웃+최근 데이터 추출
+    sheet_grid = None
+    sheet_err = None
+    try:
+        sample = db.get_account("cinderella1009")
+        ssid = sample.get("spreadsheet_id") if sample else None
+        if ssid:
+            gc = sheets.get_client()
+            sh = gc.open_by_key(ssid)
+            eff = sheets.efficiency_sheet_name(datetime.now().strftime("%Y-%m-%d"))
+            try:
+                ws = sh.worksheet(eff)
+            except Exception:
+                ws = sh.worksheet(sheets.efficiency_sheet_name((datetime.now()-timedelta(days=1)).strftime("%Y-%m-%d")))
+            vals = ws.get_all_values()
+            chan_hdr = vals[37] if len(vals) > 37 else []
+            met_hdr = vals[38] if len(vals) > 38 else []
+            # 채널 블록 파싱 — 일별성과 섹션의 '정상' 채널만 (BL 병합영역 전까지, idx < 60)
+            blocks = []
+            starts = [(ci, v.strip()) for ci, v in enumerate(chan_hdr) if v.strip()]
+            for i, (ci, name) in enumerate(starts):
+                end = starts[i+1][0] if i+1 < len(starts) else len(met_hdr)
+                if ci >= 60:  # BL 이후 병합/중복 영역 스킵
+                    break
+                if name == "구분":
+                    continue
+                mets = [met_hdr[c].strip() for c in range(ci, end) if c < len(met_hdr) and met_hdr[c].strip()]
+                blocks.append({
+                    "name": name, "start": ci, "metrics": mets,
+                    "mode": CHANNEL_MODE.get(name, "manual"),
+                })
+            # 최근 데이터 행 2개 (어제/그제) — 값 채워진 날
+            data_rows = []
+            for r in vals[40:72]:
+                if r and len(r) > 1 and r[1].strip().startswith("2026/"):
+                    data_rows.append(r)
+            # 최근 3일만
+            data_rows = data_rows[-3:]
+            sheet_grid = {"blocks": blocks, "rows": data_rows, "tab": ws.title}
+    except Exception as e:
+        sheet_err = repr(e)[:150]
+        traceback.print_exc()
+
     return render_template("sheet_channels.html",
-                           channels=SHEET_CHANNELS, last=last, conn_rows=conn_rows, active="admin")
+                           channels=SHEET_CHANNELS, last=last, conn_rows=conn_rows,
+                           sheet_grid=sheet_grid, sheet_err=sheet_err, active="channels")
 
 
 @app.route("/feedback/<int:fid>/status", methods=["POST"])
