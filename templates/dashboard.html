@@ -98,7 +98,8 @@
 
         /* 퀵 네비 (섹션 점프바, 상단 고정) */
         #quicknav { position: sticky; top: 0; z-index: 500; background: rgba(255,255,255,0.97); backdrop-filter: blur(4px);
-            display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 4px; margin-bottom: 12px; border-bottom: 1px solid #e5e5e5; }
+            display: block; padding: 8px 4px; margin-bottom: 12px; border-bottom: 1px solid #e5e5e5;
+            max-height: 40vh; overflow-y: auto; }
         #quicknav a { font-size: 0.76rem; color: #555; text-decoration: none; padding: 3px 9px; border-radius: 12px; background: #f0f3f7; white-space: nowrap; }
         #quicknav a:hover { background: #4a90d9; color: #fff; }
         :target { scroll-margin-top: 54px; }  /* 점프 시 고정바에 안 가리게 */
@@ -1601,31 +1602,33 @@
     items[classify(full)].push({id:id, txt:txt});
   });
 
-  // 한눈에 다 보이되 그룹 라벨로 구분. 칩 전부 표시, 그룹마다 색 라벨 + 구분선.
+  // 한눈에 다 보이되 그룹마다 한 줄. 그룹 색 라벨 + 그 줄에 섹션 칩들.
   nav.innerHTML = '';
-  var bar = document.createElement('div');
-  bar.style.cssText = 'display:flex; gap:5px; align-items:center; flex-wrap:wrap; width:100%';
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex; flex-direction:column; gap:4px; width:100%';
 
-  GROUPS.forEach(function(g, gi){
+  GROUPS.forEach(function(g){
     if (!items[g.key].length) return;
-    // 그룹 라벨 (색 점 + 이름)
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:5px; align-items:center; flex-wrap:wrap';
+    // 그룹 라벨 (고정폭으로 줄 맞춤)
     var lab = document.createElement('span');
     lab.textContent = g.label;
-    lab.style.cssText = 'font-size:0.74rem; font-weight:700; color:'+g.color+'; padding:2px 4px 2px '+(gi>0?'10px':'4px')+'; '+(gi>0?'border-left:1px solid #e0e0e0;':'');
-    bar.appendChild(lab);
-    // 그 그룹 섹션 칩들
+    lab.style.cssText = 'font-size:0.74rem; font-weight:700; color:'+g.color+'; min-width:62px; flex-shrink:0';
+    row.appendChild(lab);
     items[g.key].forEach(function(it){
       var a=document.createElement('a'); a.href='#'+it.id; a.textContent=it.txt; a.dataset.sid=it.id;
       a.style.cssText='font-size:0.74rem;color:#444;text-decoration:none;padding:3px 9px;border-radius:10px;background:#f3f5f8;border:1px solid transparent';
       a.onmouseenter=function(){ a.style.background=g.color; a.style.color='#fff'; };
       a.onmouseleave=function(){ if(a.dataset.cur!=='1'){a.style.background='#f3f5f8'; a.style.color='#444';} };
-      a._color=g.color; bar.appendChild(a);
+      a._color=g.color; row.appendChild(a);
     });
+    wrap.appendChild(row);
   });
-  nav.appendChild(bar);
+  nav.appendChild(wrap);
 
   // 스크롤 시 현재 보이는 섹션 칩 하이라이트
-  var allChips = bar.querySelectorAll('a[data-sid]');
+  var allChips = wrap.querySelectorAll('a[data-sid]');
   function onScroll(){
     var y = window.scrollY + 80, best=null, bestTop=-1;
     cards.forEach(function(c){
