@@ -102,7 +102,7 @@
             max-height: 40vh; overflow-y: auto; }
         #quicknav a { font-size: 0.76rem; color: #555; text-decoration: none; padding: 3px 9px; border-radius: 12px; background: #f0f3f7; white-space: nowrap; }
         #quicknav a:hover { background: #4a90d9; color: #fff; }
-        :target { scroll-margin-top: 54px; }  /* 점프 시 고정바에 안 가리게 */
+        .container > .card { scroll-margin-top: 120px; }  /* 점프 시 고정 퀵네비에 안 가리게 (JS가 실제 높이로 갱신) */
     </style>
 </head>
 <body>
@@ -1680,6 +1680,16 @@
   var tk=null;
   window.addEventListener('scroll', function(){ if(tk) return; tk=setTimeout(function(){tk=null; onScroll();}, 120); });
   onScroll();
+
+  // 퀵네비 실제 높이만큼 카드 scroll-margin-top 보정 (점프 시 제목 안 가리게)
+  function syncMargin(){
+    var h = nav.offsetHeight || 60;
+    cards.forEach(function(c){ c.style.scrollMarginTop = (h + 12) + 'px'; });
+  }
+  syncMargin();
+  window.addEventListener('resize', syncMargin);
+  // 그룹 줄 펼침/접힘으로 높이 바뀔 수 있어 약간 뒤 한 번 더
+  setTimeout(syncMargin, 300);
 })();
 </script>
 </body>
