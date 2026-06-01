@@ -324,7 +324,18 @@ def _ensure_efficiency_sheet(spreadsheet, dt):
     except gspread.exceptions.WorksheetNotFound:
         pass
 
-    template = spreadsheet.worksheet(SOURCE_EFFICIENCY_SHEET)
+    # 소스 템플릿(효율_26년4월) 우선, 없으면 이 스프레드시트의 가장 최근 효율 탭으로 복제
+    try:
+        template = spreadsheet.worksheet(SOURCE_EFFICIENCY_SHEET)
+    except gspread.exceptions.WorksheetNotFound:
+        def _eff_key(title):
+            m = re.match(r"효율_(\d+)년(\d+)월", title)
+            return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
+        eff_tabs = [w for w in spreadsheet.worksheets() if w.title.startswith("효율_")]
+        if not eff_tabs:
+            raise  # 효율 탭이 하나도 없음 → 진짜 수동 셋업 필요
+        template = max(eff_tabs, key=lambda w: _eff_key(w.title))
+        print(f"  ℹ 템플릿 '{SOURCE_EFFICIENCY_SHEET}' 없음 → '{template.title}' 복제로 대체")
     new_ws = template.duplicate(new_sheet_name=name, insert_sheet_index=template.index + 1)
 
     # B33~B63: 새 월의 1~말일 (남는 행은 빈값)
