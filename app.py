@@ -3471,6 +3471,64 @@ CHANNEL_MODE = {
     "크리테오": "todo",
 }
 
+# 효율시트 미니뷰 캐시 — 헤더+일별 구간(A38:ZZ63)만 읽어 실제 채널·지표·값 그대로 표시.
+# 전체(get_all_values)가 아니라 bounded read 라 빠르고, 캐시로 반복 호출은 즉시.
+_EFF_GRID_CACHE = {"data": None, "err": None, "ts": 0}
+_EFF_GRID_TTL = 600  # 10분
+
+
+def _eff_mini_view(ssid, force=False):
+    """효율시트의 실제 모양(채널 38행 / 지표 39행 / 일별 41~63행)을 그대로 파싱.
+    반환 (grid|None, err|None). grid={blocks:[{name,start,mode,metrics:[..]}], rows:[{date, cells:[..]}], tab}."""
+    now = time.time()
+    if (not force and _EFF_GRID_CACHE["data"] is not None
+            and now - _EFF_GRID_CACHE["ts"] < _EFF_GRID_TTL):
+        return _EFF_GRID_CACHE["data"], _EFF_GRID_CACHE["err"]
+    grid, err = None, None
+    try:
+        if not ssid:
+            raise RuntimeError("기준 매장 시트 미설정")
+        gc = sheets.get_client()
+        sh = gc.open_by_key(sheets.clean_spreadsheet_id(ssid))
+        eff = sheets.efficiency_sheet_name(datetime.now().strftime("%Y-%m-%d"))
+        try:
+            ws = sh.worksheet(eff)
+        except Exception:
+            ws = sh.worksheet(sheets.efficiency_sheet_name((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")))
+        # 헤더 2줄(채널/지표) + 일별 데이터 구간만 — 각각 단일행/구간 read (2행 동시읽기는 trim 어긋남)
+        chan = (ws.get("A38:ZZ38") or [[]])[0]
+        met = (ws.get("A39:ZZ39") or [[]])[0]
+        data = ws.get("A40:ZZ63")  # 일별 데이터 구간
+        starts = [(i, v.strip()) for i, v in enumerate(chan) if v.strip() and v.strip() != "구분"]
+        blocks = []
+        for k, (ci, name) in enumerate(starts):
+            end = starts[k + 1][0] if k + 1 < len(starts) else max(len(met), ci + 1)
+            cols = [c for c in range(ci, end) if c < len(met) and met[c].strip()]
+            if not cols:
+                continue
+            blocks.append({
+                "name": name, "start": ci, "mode": CHANNEL_MODE.get(name, "manual"),
+                "cols": cols, "metrics": [met[c].strip() for c in cols],
+            })
+        # 값이 채워진(B열 날짜) 최근 3일 행
+        rows = []
+        for r in data:
+            if len(r) > 1 and r[1].strip().startswith("2026/"):
+                rows.append(r)
+        rows = rows[-3:]
+        out_rows = []
+        for r in rows:
+            cells = {}  # block.name -> [값들]
+            for b in blocks:
+                cells[b["name"]] = [(r[c] if c < len(r) else "") for c in b["cols"]]
+            out_rows.append({"date": r[1].strip(), "cells": cells})
+        grid = {"blocks": blocks, "rows": out_rows, "tab": ws.title}
+    except Exception as e:
+        err = repr(e)[:150]
+        traceback.print_exc()
+    _EFF_GRID_CACHE.update({"data": grid, "err": err, "ts": now})
+    return grid, err
+
 
 @app.route("/admin/sheet_channels")
 @login_required
@@ -3493,66 +3551,10 @@ def sheet_channels():
             "naver_customer_id": a.get("naver_customer_id") or "",
         })
 
-    # 효율시트 미니뷰 — 시트의 '모양(레이아웃)'은 고정·기지(旣知)이므로 구글시트를 읽지 않는다.
-    # 알려진 채널×지표 구조 + 우리 DB값(메타/네이버, 전 매장 합계)으로 직접 렌더. (구글 API 호출 0회)
-    sheet_grid = None
-    sheet_err = None
-    try:
-        view_dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in (2, 1, 0)]
-        all_ids = [r["id"] for r in conn_rows]
-        # 전 매장 합계로 일자별 집계
-        def _agg(rows, fields):
-            out = {}
-            for r in rows:
-                d = r["date"]; acc = out.setdefault(d, {f: 0 for f in fields})
-                for f in fields:
-                    acc[f] += r.get(f) or 0
-            return out
-        meta_agg = _agg(db.list_meta_metrics(account_ids=all_ids, start_date=view_dates[0], end_date=view_dates[-1]),
-                        ["impressions", "clicks", "spend_vat", "purchases", "revenue"])
-        naver_agg = _agg(db.list_naver_metrics(account_ids=all_ids, start_date=view_dates[0], end_date=view_dates[-1]),
-                         ["impressions", "clicks", "cost", "conversions", "revenue"])
-
-        def _roas(rev, cost):
-            return round(rev / cost * 100) if cost else None
-
-        def _fmt(v):
-            return "{:,.0f}".format(v) if v else ("0" if v == 0 else "")
-
-        # 알려진 채널 레이아웃 (자동 먼저). metrics 는 시트와 동일 순서.
-        METS = ["노출", "클릭", "광고비", "전환", "매출", "ROAS"]
-        blocks = [
-            {"name": "메타", "mode": "auto", "metrics": METS, "src": "meta"},
-            {"name": "네이버 검색광고", "mode": "auto", "metrics": METS, "src": "naver"},
-            {"name": "크리테오", "mode": "todo", "metrics": METS, "src": None},
-            {"name": "구글", "mode": "todo", "metrics": METS, "src": None},
-            {"name": "네이버성과형", "mode": "crawler", "metrics": METS, "src": None},
-            {"name": "틱톡", "mode": "manual", "metrics": METS, "src": None},
-            {"name": "카카오 DA", "mode": "manual", "metrics": METS, "src": None},
-        ]
-        rows = []
-        for d in view_dates:
-            by = {}
-            for b in blocks:
-                if b["src"] == "meta":
-                    m = meta_agg.get(d)
-                    by[b["name"]] = ["", "", "", "", "", ""] if not m else [
-                        _fmt(m["impressions"]), _fmt(m["clicks"]), _fmt(m["spend_vat"]),
-                        _fmt(m["purchases"]), _fmt(m["revenue"]),
-                        (str(_roas(m["revenue"], m["spend_vat"])) + "%") if _roas(m["revenue"], m["spend_vat"]) is not None else ""]
-                elif b["src"] == "naver":
-                    n = naver_agg.get(d)
-                    by[b["name"]] = ["", "", "", "", "", ""] if not n else [
-                        _fmt(n["impressions"]), _fmt(n["clicks"]), _fmt(n["cost"]),
-                        _fmt(n["conversions"]), _fmt(n["revenue"]),
-                        (str(_roas(n["revenue"], n["cost"])) + "%") if _roas(n["revenue"], n["cost"]) is not None else ""]
-                else:
-                    by[b["name"]] = ["", "", "", "", "", ""]  # 수기/미연동 — DB에 값 없음
-            rows.append({"date": d[5:].replace("-", "/"), "by": by})
-        sheet_grid = {"blocks": blocks, "rows": rows, "tab": "전 매장 합계 (DB)"}
-    except Exception as e:
-        sheet_err = repr(e)[:150]
-        traceback.print_exc()
+    # 효율시트 미니뷰 — 실제 시트 그대로(채널·지표·값). 전체가 아니라 헤더+일별 구간만 bounded read + 캐시.
+    sample = db.get_account("cinderella1009") or (db.list_accounts()[0] if db.list_accounts() else None)
+    ssid = sample.get("spreadsheet_id") if sample else None
+    sheet_grid, sheet_err = _eff_mini_view(ssid, force=bool(request.args.get("refresh")))
 
     # SHEET_TARGETS 에 마지막 갱신시각 채우기
     today_s = datetime.now().strftime("%Y-%m-%d")

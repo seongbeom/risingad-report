@@ -158,8 +158,8 @@
 
   {% if sheet_grid %}
   <div class="card">
-    <h2>📊 효율시트 모양 (채널×지표) <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 최근 {{ sheet_grid.rows|length }}일</span></h2>
-    <p class="card-sub">레이아웃은 고정이라 시트를 읽지 않고 표시. <b>값은 우리 DB</b>에서 — 자동(메타·네이버)만 채워지고, 수동·미연동 칸은 빈칸(= 시트엔 사람이 입력). 색: 자동(초록)/연동가능(노랑)/크롤러(파랑)/수동(빨강).</p>
+    <h2>📊 효율시트 모양 (채널×지표) <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sheet_grid.tab }} · 최근 {{ sheet_grid.rows|length }}일 · <a href="?refresh=1" style="color:#4a90d9">↻ 새로고침</a> <span style="color:#bbb">(10분 캐시)</span></span></h2>
+    <p class="card-sub">실제 시트 그대로 — 시트의 채널·지표·값을 그대로 표시(헤더+일별 구간만 읽어 빠름). 채널 색: 자동(초록)/연동가능(노랑)/크롤러(파랑)/수동(빨강)/수식(회색). 가로 스크롤.</p>
     <div class="sheet-wrap">
       <table class="xls">
         <thead>
@@ -180,7 +180,7 @@
           <tr>
             <td class="xls-date">{{ row.date }}</td>
             {% for b in sheet_grid.blocks %}{% for m in b.metrics %}
-            <td class="xls-val m-{{ b.mode }}-soft">{{ row.by[b.name][loop.index0] }}</td>
+            <td class="xls-val m-{{ b.mode }}-soft">{{ row.cells[b.name][loop.index0] }}</td>
             {% endfor %}{% endfor %}
           </tr>
           {% endfor %}
@@ -193,30 +193,17 @@
   {% endif %}
 
   <div class="card">
-    <h2>매장별 연결 현황 + 네이버 키 입력</h2>
-    <p class="card-sub">각 매장의 시트/메타/네이버 연결 여부. <b>네이버 검색광고 키는 여기서 바로 입력</b> — "입력/수정" 클릭. (메타·시트는 설정 페이지)</p>
+    <h2>매장별 연결 현황</h2>
+    <p class="card-sub">각 매장의 시트/메타/네이버 연결 여부. ✓연결 / 미연결. <b>키 입력·설정은 <a href="/admin" style="color:#4a90d9">설정 / 관리</a> 페이지</b>에서.</p>
     <table class="conn">
-      <thead><tr><th>매장</th><th>구글시트</th><th>메타</th><th>네이버 검색광고</th><th></th></tr></thead>
+      <thead><tr><th>매장</th><th>구글시트</th><th>메타</th><th>네이버 검색광고</th></tr></thead>
       <tbody>
       {% for r in conn_rows %}
       <tr>
         <td class="lbl">{{ r.label }}</td>
         <td>{% if r.sheet %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
         <td>{% if r.meta %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
-        <td>{% if r.naver %}<span class="ok">✓ 연결됨</span>{% else %}<span class="no">· 미연결</span>{% endif %}</td>
-        <td><button type="button" class="nv-btn" onclick="var e=document.getElementById('nv-{{ r.id }}'); e.style.display=e.style.display==='table-row'?'none':'table-row';">
-          {% if r.naver %}수정{% else %}입력{% endif %}</button></td>
-      </tr>
-      <tr id="nv-{{ r.id }}" style="display:none; background:#f6fbf7">
-        <td colspan="5" style="text-align:left; padding:10px 14px">
-          <form method="POST" action="/accounts/{{ r.id }}/naver" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
-            <label class="nv-f">액세스 라이선스<input name="naver_api_key" value="{{ r.naver_api_key }}" placeholder="API Key" style="width:240px"></label>
-            <label class="nv-f">비밀키(Secret)<input name="naver_secret" value="{{ r.naver_secret }}" placeholder="Secret Key" style="width:210px"></label>
-            <label class="nv-f">CUSTOMER_ID<input name="naver_customer_id" value="{{ r.naver_customer_id }}" placeholder="숫자" style="width:100px"></label>
-            <button type="submit" class="nv-save">저장</button>
-          </form>
-          <p style="font-size:.72rem; color:#888; margin:8px 0 0">네이버 검색광고 → 도구 → API 사용 관리에서 발급. <b>마스터/책임자</b> 권한 계정만 발급 가능.</p>
-        </td>
+        <td>{% if r.naver %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
       </tr>
       {% endfor %}
       </tbody>
