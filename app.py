@@ -3173,58 +3173,94 @@ def feedback_page():
 
 
 # 우리가 채우는 시트/탭 전체 정의
-# 3축 정리: way(자동화 방법) / status(지금 상태) / need(필요한 것)
-#   way:    "api"(공식 API) | "crawler"(API 없음, 크롤러로 가능) | "formula"(시트 수식) | "none"(불가)
-#   status: "live"(자동 작동중) | "todo"(가능하나 미연동) | "manual"(수동 입력중)
+# 우리가 채우는 모든 영역(=시트의 모든 채널)을 한 표로. 채널마다 한 줄.
+#   way:    "api"(공식 API) | "crawler"(API 없음, 크롤러로 가능) | "formula"(시트 수식) | "none"(자동화 부적합)
+#   status: "live"(지금 자동 작동중) | "manual"(지금 수동 입력중)
+#   group:  화면 구분용 라벨 (cafe24 / 효율)
 SHEET_TARGETS = [
-    {
-        "tab": "월별 탭 (26년N월)", "what": "cafe24 자연 지표",
-        "fields": "매출·방문자·신규/재방문·구매건수·전환율·객단가·회원가입 (B~U 18칸)",
-        "way": "crawler", "status": "live", "last_key": None,  # metrics 최신으로 대체
-        "need": "—  (크롤러 가동 중, 추가 불필요)",
-    },
-    {
-        "tab": "효율 — 메타(FB/IG)", "what": "메타 광고성과",
-        "fields": "노출·클릭·광고비(+VAT)·전환·매출",
-        "way": "api", "status": "live", "last_key": "meta_last_run",
-        "need": "—  (토큰 발급 완료, 연결 매장만)",
-    },
-    {
-        "tab": "효율 — 네이버 검색광고", "what": "네이버 검색광고",
-        "fields": "노출·클릭·광고비(VAT없음)·전환·매출",
-        "way": "api", "status": "live", "last_key": "naver_last_run",
-        "need": "나머지 매장 API키·시크릿·CUSTOMER_ID (계정관리에서 입력)",
-    },
-    {
-        "tab": "효율 — 크리테오", "what": "크리테오 광고",
-        "fields": "광고비·매출",
-        "way": "api", "status": "todo", "last_key": None,
-        "need": "Criteo OAuth client_id/secret + advertiser ID 발급",
-    },
-    {
-        "tab": "효율 — 틱톡/카카오/구글/모비온", "what": "기타 광고 채널",
-        "fields": "채널별 상이",
-        "way": "api", "status": "manual", "last_key": None,
-        "need": "각 플랫폼 광고 API 키 (발급되면 연동 가능)",
-    },
-    {
-        "tab": "효율 — 네이버 성과형/쇼핑박스", "what": "네이버 디스플레이(GFA)",
-        "fields": "노출·클릭·광고비·전환·매출",
-        "way": "crawler", "status": "manual", "last_key": None,
-        "need": "공식 API 권한 막힘 → 크롤러 구축 필요 (GFA 광고관리자 로그인 스크래핑)",
-    },
-    {
-        "tab": "효율 — 채널별 카페24 전환매출", "what": "채널별 전환매출",
-        "fields": "매출·ROAS",
-        "way": "crawler", "status": "manual", "last_key": None,
-        "need": "cafe24 멀티채널 크롤러로 가능하나 일별 정확도 낮음 → 검토 필요",
-    },
-    {
-        "tab": "효율 — Total 합계", "what": "전체 합계",
-        "fields": "노출·클릭·광고비·매출·ROAS",
-        "way": "formula", "status": "live", "last_key": None,
-        "need": "—  (시트 SUM 수식, 자동 계산)",
-    },
+    # ── cafe24 자연 지표 탭 ──
+    {"tab": "월별 탭 (26년N월)", "group": "cafe24 월별탭", "what": "cafe24 자연 지표",
+     "fields": "매출·방문자·신규/재방문·구매건수·전환율·객단가·회원가입 (B~U 18칸)",
+     "way": "crawler", "status": "live", "last_key": None,  # metrics 최신으로 대체
+     "need": "—  (크롤러 가동 중, 추가 불필요)"},
+
+    # ── 효율탭: 지금 자동 작동 중 ──
+    {"tab": "메타 (FB/IG)", "group": "효율탭 광고채널", "what": "메타 광고성과",
+     "fields": "노출·클릭·광고비(+VAT)·전환·매출",
+     "way": "api", "status": "live", "last_key": "meta_last_run",
+     "need": "—  (토큰 발급 완료, 연결 매장만)"},
+    {"tab": "네이버 검색광고", "group": "효율탭 광고채널", "what": "네이버 검색광고",
+     "fields": "노출·클릭·광고비(VAT없음)·전환·매출",
+     "way": "api", "status": "live", "last_key": "naver_last_run",
+     "need": "나머지 매장 API키·시크릿·CUSTOMER_ID (계정관리에서 입력)"},
+
+    # ── 효율탭: 공식 API 있음 → 연동하면 자동화 (지금은 수기) ──
+    {"tab": "크리테오", "group": "효율탭 광고채널", "what": "크리테오",
+     "fields": "광고비·매출",
+     "way": "api", "status": "manual", "last_key": None,
+     "need": "Criteo OAuth client_id/secret + advertiser ID 발급"},
+    {"tab": "구글", "group": "효율탭 광고채널", "what": "구글 광고",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "api", "status": "manual", "last_key": None,
+     "need": "Google Ads API developer token + OAuth"},
+    {"tab": "틱톡", "group": "효율탭 광고채널", "what": "틱톡 광고",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "api", "status": "manual", "last_key": None,
+     "need": "TikTok for Business 앱 + access token"},
+    {"tab": "카카오 DA", "group": "효율탭 광고채널", "what": "카카오 디스플레이",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "api", "status": "manual", "last_key": None,
+     "need": "카카오모먼트 API 키 + 광고계정 ID"},
+    {"tab": "카카오 모객", "group": "효율탭 광고채널", "what": "카카오 모객",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "api", "status": "manual", "last_key": None,
+     "need": "카카오모먼트 API 키"},
+    {"tab": "카카오 메세지", "group": "효율탭 광고채널", "what": "카카오 메시지",
+     "fields": "발송·클릭·광고비·전환·매출",
+     "way": "api", "status": "manual", "last_key": None,
+     "need": "카카오모먼트 API 키"},
+
+    # ── 효율탭: 공식 API 없음/제한 → 크롤러로 가능 ──
+    {"tab": "네이버 성과형(GFA)", "group": "효율탭 광고채널", "what": "네이버 디스플레이",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "crawler", "status": "manual", "last_key": None,
+     "need": "공식 API 제한 → GFA 광고관리자 로그인 크롤러 구축 필요"},
+    {"tab": "네이버 쇼핑박스 PC", "group": "효율탭 광고채널", "what": "쇼핑박스 PC",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "crawler", "status": "manual", "last_key": None,
+     "need": "공식 API 없음 → 보장형 관리자 크롤러 구축 필요"},
+    {"tab": "네이버 쇼핑박스 MO (트렌드픽)", "group": "효율탭 광고채널", "what": "쇼핑박스 모바일",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "crawler", "status": "manual", "last_key": None,
+     "need": "공식 API 없음 → 관리자 크롤러 구축 필요"},
+    {"tab": "다음 쇼핑박스", "group": "효율탭 광고채널", "what": "다음 쇼핑박스",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "crawler", "status": "manual", "last_key": None,
+     "need": "공식 API 없음 → 카카오 보장형 관리자 크롤러 필요"},
+    {"tab": "네이트 CPC", "group": "효율탭 광고채널", "what": "네이트 CPC",
+     "fields": "노출·클릭·광고비·전환·매출",
+     "way": "crawler", "status": "manual", "last_key": None,
+     "need": "공식 API 없음 → 관리자 크롤러 검토"},
+
+    # ── 효율탭: 소액/비주력 → 수기 유지 ──
+    {"tab": "모비온", "group": "효율탭 광고채널", "what": "모비온 리타겟팅",
+     "fields": "광고비·매출",
+     "way": "none", "status": "manual", "last_key": None,
+     "need": "소액·비주력 → 수기 유지 (필요시 크롤러 검토)"},
+    {"tab": "아이센드", "group": "효율탭 광고채널", "what": "아이센드 메시지",
+     "fields": "발송·광고비·매출",
+     "way": "none", "status": "manual", "last_key": None,
+     "need": "소액 → 수기 유지"},
+
+    # ── 효율탭: 자동화 부적합 / 수식 ──
+    {"tab": "채널별 카페24 전환매출", "group": "효율탭 합계/전환", "what": "채널별 전환매출",
+     "fields": "매출·ROAS",
+     "way": "none", "status": "manual", "last_key": None,
+     "need": "cafe24 멀티채널 7일기여·멀티터치 → 일별 정확도 낮음, 자동화 부적합"},
+    {"tab": "Total 합계", "group": "효율탭 합계/전환", "what": "전체 합계",
+     "fields": "노출·클릭·광고비·매출·ROAS",
+     "way": "formula", "status": "live", "last_key": None,
+     "need": "—  (시트 SUM 수식, 자동 계산)"},
 ]
 
 
@@ -3252,24 +3288,6 @@ CAFE24_SHEET_MAP = [
     {"col": "U", "name": "회원가입", "mode": "auto", "note": "신규회원수"},
 ]
 
-
-# 효율시트 채널별 입력 방식 정의 (시트 구조 기반)
-SHEET_CHANNELS = [
-    {"name": "메타 (FB/IG)", "mode": "auto", "src": "Meta Marketing API",
-     "detail": "매일 07:00 자동 입력 (노출/클릭/광고비+VAT/전환/매출)", "need": "토큰 발급 완료"},
-    {"name": "네이버 검색광고", "mode": "auto", "src": "Naver SearchAd API",
-     "detail": "매일 07:10 자동 입력 (노출/클릭/광고비/전환/매출). 광고비 부가세 미포함", "need": "API키·시크릿·CUSTOMER_ID (계정별)"},
-    {"name": "네이버 성과형(GFA)", "mode": "manual", "src": "수기 입력",
-     "detail": "광고주센터(GFA)는 셀프 API 미제공 → 수기 입력 유지", "need": "GFA 마케팅 API 권한(일반광고주 제한)"},
-    {"name": "네이버 쇼핑박스/트렌드픽", "mode": "manual", "src": "수기 입력",
-     "detail": "별도 광고상품, 공식 API 없음", "need": "—"},
-    {"name": "크리테오", "mode": "todo", "src": "Criteo Marketing API",
-     "detail": "API로 자동화 가능 (미연동)", "need": "Criteo OAuth client_id/secret + advertiser ID"},
-    {"name": "카페24 전환매출 (채널별)", "mode": "skip", "src": "수기/멀티채널",
-     "detail": "cafe24 멀티채널은 7일기여·멀티터치라 일별 정확도 낮음 → 자동화 부적합", "need": "—"},
-    {"name": "Total / 카페24 합계", "mode": "formula", "src": "시트 수식",
-     "detail": "채널 합산 자동 계산 (SUM)", "need": "불필요"},
-]
 
 
 # 채널명 → 입력 모드 (셀 색칠용)
@@ -3369,18 +3387,27 @@ def sheet_channels():
     except Exception:
         pass
     targets = []
+    n_live = n_possible = n_stuck = 0
     for t in SHEET_TARGETS:
         last_at = None
         if t["last_key"]:
             last_at = db.get_setting(t["last_key"], None)
         elif t["status"] == "live" and t["what"].startswith("cafe24"):
             last_at = cafe24_last
-        targets.append({**t, "last_at": last_at})
+        # 분류: live(자동중) / possible(연동·크롤러하면 자동화) / stuck(수기유지)
+        if t["status"] == "live":
+            cls = "live"; n_live += 1
+        elif t["way"] in ("api", "crawler"):
+            cls = "possible"; n_possible += 1
+        else:
+            cls = "stuck"; n_stuck += 1
+        targets.append({**t, "last_at": last_at, "cls": cls})
+    counts = {"live": n_live, "possible": n_possible, "stuck": n_stuck}
 
     return render_template("sheet_channels.html",
-                           channels=SHEET_CHANNELS, last=last, conn_rows=conn_rows,
+                           last=last, conn_rows=conn_rows,
                            sheet_grid=sheet_grid, sheet_err=sheet_err,
-                           targets=targets, cafe24_map=CAFE24_SHEET_MAP,
+                           targets=targets, counts=counts, cafe24_map=CAFE24_SHEET_MAP,
                            cafe24_last=cafe24_last, active="channels")
 
 
