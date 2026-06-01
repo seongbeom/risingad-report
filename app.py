@@ -1,6 +1,7 @@
 """Cafe24 애널리틱스 스크래퍼 - Web UI"""
 
 import functools
+import json
 import os
 import subprocess
 import threading
