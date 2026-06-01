@@ -899,19 +899,23 @@ def _build_freshness(selected_ids, today):
                         "upd": r[1][5:16] if r and r[1] else "—", "status": st,
                         "detail": det, "missing": pmiss})
 
-            # 4) 시트 입력 (최근 실패/경고)
-            fails = conn.execute(
-                "SELECT account_id, channel, status, detail FROM sheet_fill_log "
-                "WHERE status IN ('fail','warn') AND ts >= datetime('now','localtime','-1 day') ORDER BY id DESC LIMIT 8"
+            # 4) 시트 입력 — (account,channel) 별 '가장 최근' 상태만 봐서 현재 상태 반영.
+            #    (이미 해결된 과거 실패가 24h 동안 계속 빨갛게 남는 문제 방지)
+            latest = conn.execute(
+                "SELECT account_id, channel, status, detail FROM sheet_fill_log s "
+                "WHERE id = (SELECT MAX(id) FROM sheet_fill_log s2 "
+                "           WHERE s2.account_id=s.account_id AND s2.channel=s.channel) "
+                "AND ts >= datetime('now','localtime','-2 day')"
             ).fetchall()
+            fails = [f for f in latest if f[2] in ("fail", "warn")]
             if fails:
-                lines = [f"{lbl.get(f[0], f[0])}: {f[3][:45]}" for f in fails]
-                out.append({"name": "시트 입력", "basis": "최근 24h", "upd": "—",
+                lines = [f"{lbl.get(f[0], f[0])}({f[1]}): {f[3][:45]}" for f in fails]
+                out.append({"name": "시트 입력", "basis": "현재 상태", "upd": "—",
                             "status": "bad", "detail": "; ".join(lines), "lines": lines,
                             "missing": [lbl.get(f[0], f[0]) for f in fails]})
             else:
-                out.append({"name": "시트 입력", "basis": "최근 24h", "upd": "—",
-                            "status": "ok", "detail": "실패/경고 없음", "lines": [], "missing": []})
+                out.append({"name": "시트 입력", "basis": "현재 상태", "upd": "—",
+                            "status": "ok", "detail": "최근 입력 전부 정상", "lines": [], "missing": []})
     except Exception:
         traceback.print_exc()
     return out
