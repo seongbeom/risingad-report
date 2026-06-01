@@ -182,6 +182,13 @@
                                 <button type="button" class="btn btn-sm" style="background:#999;color:#fff"
                                         onclick="document.getElementById('edit-{{ a.id }}').style.display='none'">취소</button>
                             </form>
+                            <form method="POST" action="/accounts/{{ a.id }}/goal" class="form-row" style="margin:8px 0 0; padding-top:8px; border-top:1px dashed #e0d8b0">
+                                <div class="form-group">
+                                    <label>🎯 월 매출목표 (원, 0=해제)</label>
+                                    <input name="monthly_goal" type="text" value="{{ '{:,}'.format(a.monthly_goal) if a.monthly_goal else '' }}" placeholder="예: 200000000" style="width:160px">
+                                </div>
+                                <button class="btn btn-sm" type="submit" style="background:#27ae60;color:#fff">목표 저장</button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}

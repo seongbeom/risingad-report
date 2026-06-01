@@ -439,6 +439,35 @@
         </table>
     </div>
 
+    <!-- 월 매출목표 달성률 -->
+    {% if goals %}
+    <div class="card">
+        <h2>🎯 월 매출목표 달성률 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ goal_month }}월 · 이번달 누적(MTD)</span></h2>
+        <p class="card-sub">페이스 = 경과일 기준 진행 속도(100%=정상). 예상 = 현재 페이스로 추정한 월말 매출. 목표는 계정관리에서 설정.</p>
+        <table class="num" style="width:100%; font-size:0.85rem">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="padding:4px 8px">목표</th>
+                <th style="padding:4px 8px">누적</th><th style="padding:4px 8px">달성률</th>
+                <th style="padding:4px 8px;width:22%">진행</th><th style="padding:4px 8px">페이스</th><th style="padding:4px 8px">월말 예상</th>
+            </tr></thead>
+            <tbody>
+            {% for g in goals %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;font-weight:600">{{ g.label }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(g.goal) }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(g.actual) }}</td>
+                <td style="padding:3px 8px;font-weight:700;color:{% if g.pct>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#e67e22{% endif %}">{{ g.pct }}%</td>
+                <td style="padding:3px 8px"><div style="background:#eef2f7;border-radius:4px;height:14px;position:relative">
+                    <div style="background:{% if g.pct>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#4a90d9{% endif %};height:14px;border-radius:4px;width:{{ g.pct if g.pct<100 else 100 }}%"></div></div></td>
+                <td style="padding:3px 8px;color:{% if g.pace and g.pace>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#666{% endif %}">{% if g.pace is not none %}{{ g.pace }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(g.projected) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <!-- 광고 효율 (ROAS) -->
     {% if ad_eff.has_data %}
     <div class="card">

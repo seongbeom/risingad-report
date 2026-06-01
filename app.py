@@ -1166,6 +1166,11 @@ def logout():
 @login_required
 def index():
     accounts = db.list_accounts()
+    for a in accounts:
+        try:
+            a["monthly_goal"] = int(db.get_setting(f"goal_{a['id']}", "0") or 0)
+        except ValueError:
+            a["monthly_goal"] = 0
     runs = db.list_runs(limit=30)
     for r in runs:
         r["display_date"] = _date_from_run(r)
@@ -1432,6 +1437,18 @@ def set_target_roas():
     except ValueError:
         pass
     return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/accounts/<account_id>/goal", methods=["POST"])
+@login_required
+def set_account_goal(account_id):
+    """매장 월 매출목표(원) 설정. 0/빈값이면 목표 해제."""
+    try:
+        v = int(request.form.get("monthly_goal", "0").replace(",", "") or "0")
+        db.set_setting(f"goal_{account_id}", str(max(0, v)))
+    except ValueError:
+        pass
+    return redirect(request.referrer or url_for("index"))
 
 
 @app.route("/accounts/<account_id>/update", methods=["POST"])
@@ -2446,6 +2463,36 @@ def dashboard():
         "has_data": bool(_mday),
     }
 
+    # 매장별 월 매출목표 vs 이번달 누적(MTD) 달성률
+    month_start_s = now.replace(day=1).strftime("%Y-%m-%d")
+    days_in_month = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
+    day_of_month = now.day
+    mtd_rows = db.list_metrics(start_date=month_start_s, end_date=today)
+    mtd_sales = {}
+    for r in mtd_rows:
+        if r["account_id"] in selected_ids:
+            mtd_sales[r["account_id"]] = mtd_sales.get(r["account_id"], 0) + (r.get("매출") or 0)
+    goals = []
+    for a in accounts:
+        aid = a["id"]
+        try:
+            goal = int(db.get_setting(f"goal_{aid}", "0") or 0)
+        except ValueError:
+            goal = 0
+        if goal <= 0:
+            continue
+        actual = mtd_sales.get(aid, 0)
+        # 진행 기대치 = 목표 × (경과일/총일수) — 페이스 판단용
+        expected = goal * day_of_month / days_in_month
+        goals.append({
+            "label": a.get("label") or aid, "id": aid,
+            "goal": goal, "actual": actual,
+            "pct": round(actual / goal * 100, 1) if goal else 0,
+            "pace": round(actual / expected * 100) if expected else None,  # 100=정상페이스
+            "projected": round(actual / day_of_month * days_in_month) if day_of_month else 0,
+        })
+    goals.sort(key=lambda x: x["pct"], reverse=True)
+
     # 광고 알림 — 어제 기준: ROAS 급락(7일평균 대비), 빈도 과다, 광고의존도 과다
     ad_alerts = []
     for r in ad_eff_yday:
@@ -2631,6 +2678,8 @@ def dashboard():
         ad_insights=ad_insights,
         target_roas=target_roas,
         ad_summary=ad_summary,
+        goals=goals,
+        goal_month=now.month,
         now=now.strftime("%H:%M"),
     )
 
