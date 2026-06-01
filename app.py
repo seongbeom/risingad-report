@@ -415,6 +415,11 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                     print(msg, flush=True)
                     db.add_sheet_log(account_id, "validate", scraped_date, 0, "warn", " / ".join(warns))
                     _validate_alert(account_id, label, scraped_date, warns)
+                else:
+                    # 이전 검증경고가 있었으면 재스크랩으로 해소됐으니 클리어
+                    if account_id in _validate_warnings:
+                        _validate_warnings.pop(account_id, None)
+                        print(f"[검증] {account_id} {scraped_date} 정상화 — 경고 해소", flush=True)
             except Exception:
                 traceback.print_exc()
 
@@ -598,7 +603,10 @@ def _auto_backfill_missing(today, deadline=None):
             not m
             or ((m.get("매출") or 0) == 0 and h_count == 0 and cur_h >= 8)
         )
-        if missing:
+        # 검증경고가 오늘자로 뜬 계정도 재스크랩 대상 (이번 월초 버그 같은 정합성 오류 자동 복구)
+        vw = _validate_warnings.get(aid)
+        has_validate_issue = bool(vw and vw.get("date") == today)
+        if missing or has_validate_issue:
             targets.append(aid)
     if not targets:
         return
