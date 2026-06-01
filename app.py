@@ -840,7 +840,7 @@ def _service_account_email():
     if not _SA_EMAIL_CACHE["loaded"]:
         _SA_EMAIL_CACHE["loaded"] = True
         try:
-            with open("service_account.json") as f:
+            with open(sheets.SERVICE_ACCOUNT_FILE) as f:
                 _SA_EMAIL_CACHE["email"] = json.load(f).get("client_email")
         except Exception:
             _SA_EMAIL_CACHE["email"] = None
