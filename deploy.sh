@@ -7,9 +7,10 @@
 
 set -e
 
-KEY=~/.ssh/cafe24-key.pem
-HOST=ubuntu@13.209.254.190
+KEY=~/cafe24_migration/cafe24-new-key.pem
+HOST=ubuntu@52.79.112.252
 REMOTE_DIR=/opt/cafe24
+SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=12"
 
 # 1) 로컬 dirty 체크
 if [ -n "$(git status --porcelain)" ]; then
@@ -24,10 +25,10 @@ git push origin master
 
 # 3) 서버에서 pull + restart
 echo "▶ 서버 배포 (pull + restart)"
-ssh -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only && sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
+ssh $SSH_OPTS -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only && sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
 
 # 4) healthcheck
 echo "▶ /healthz 확인"
-ssh -i "$KEY" "$HOST" "curl -s http://127.0.0.1:9090/healthz | python3 -m json.tool || echo 'healthz 응답 없음'"
+ssh $SSH_OPTS -i "$KEY" "$HOST" "curl -s http://127.0.0.1:9090/healthz | python3 -m json.tool || echo 'healthz 응답 없음'"
 
 echo "✅ 배포 완료"
