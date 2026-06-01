@@ -97,7 +97,7 @@
         .pace-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: #4a90d9; border-radius: 2px; }
 
         /* 퀵 네비 (섹션 점프바, 상단 고정) */
-        #quicknav { position: sticky; top: 0; z-index: 500; background: rgba(255,255,255,0.96); backdrop-filter: blur(4px);
+        #quicknav { position: sticky; top: 0; z-index: 500; background: rgba(255,255,255,0.97); backdrop-filter: blur(4px);
             display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 4px; margin-bottom: 12px; border-bottom: 1px solid #e5e5e5; }
         #quicknav a { font-size: 0.76rem; color: #555; text-decoration: none; padding: 3px 9px; border-radius: 12px; background: #f0f3f7; white-space: nowrap; }
         #quicknav a:hover { background: #4a90d9; color: #fff; }
@@ -1570,27 +1570,72 @@
 })();
 </script>
 <script>
-// 퀵 네비 자동 생성 — 각 카드의 첫 h2 를 찾아 점프 링크 생성
+// 퀵 네비 — 섹션을 4개 그룹으로 묶어 그룹 탭 + 펼침 메뉴로 정리
 (function(){
   var nav = document.getElementById('quicknav');
   if (!nav) return;
   var cards = document.querySelectorAll('.container > .card');
-  var made = 0;
+
+  // h2 텍스트 → 그룹 분류
+  function classify(t){
+    if (/광고|ROAS|캠페인|소재|퍼널|실행 제안|주간 \/ 월간|메타/.test(t)) return '광고';
+    if (/오늘 누적|시간별 누적|운영 상태|알람/.test(t)) return '핵심';
+    if (/매장|상품|전환 깔때기|효율 랭킹|이상 매장|신규 vs 재구매|트렌드|요일별|최근 9일|시간대 평균/.test(t)) return '매장';
+    return '기타';
+  }
+  var GROUPS = [
+    {key:'핵심', label:'⭐ 핵심', color:'#4a90d9'},
+    {key:'광고', label:'📣 광고', color:'#d63384'},
+    {key:'매장', label:'🏬 매장', color:'#27ae60'},
+    {key:'기타', label:'⚙️ 기타', color:'#888'},
+  ];
+  var items = {핵심:[],광고:[],매장:[],기타:[]};
   cards.forEach(function(card, i){
     var h2 = card.querySelector('h2');
     if (!h2) return;
-    // 라벨: h2 첫 텍스트 (이모지+짧은 단어). 너무 길면 자름
-    var txt = (h2.textContent || '').trim().split(/[—·\(]/)[0].trim();
-    if (!txt || txt.length > 16) txt = txt.slice(0, 14);
+    var full = (h2.textContent || '').trim();
+    var txt = full.split(/[—·\(]/)[0].trim();
     if (!txt) return;
-    var id = card.id || ('sec-' + i);
-    card.id = id;
-    var a = document.createElement('a');
-    a.href = '#' + id; a.textContent = txt;
-    nav.appendChild(a);
-    made++;
+    if (txt.length > 18) txt = txt.slice(0, 16);
+    var id = card.id || ('sec-' + i); card.id = id;
+    items[classify(full)].push({id:id, txt:txt});
   });
-  if (made === 0) nav.style.display = 'none';
+
+  // 렌더: 그룹 버튼 → 클릭 시 그 그룹 섹션칩 펼침
+  nav.innerHTML = '';
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex; gap:6px; align-items:center; flex-wrap:wrap';
+  var panel = document.createElement('div');
+  panel.style.cssText = 'display:none; flex-wrap:wrap; gap:4px; margin-top:6px; width:100%';
+  var active = null;
+
+  // 맨 위로 버튼
+  var topBtn = document.createElement('a');
+  topBtn.href='#'; topBtn.textContent='↑ 맨 위'; topBtn.style.cssText='font-size:0.76rem;color:#999;text-decoration:none;padding:3px 9px';
+  bar.appendChild(topBtn);
+
+  GROUPS.forEach(function(g){
+    if (!items[g.key].length) return;
+    var btn = document.createElement('button');
+    btn.type='button';
+    btn.textContent = g.label + ' (' + items[g.key].length + ')';
+    btn.style.cssText = 'font-size:0.78rem; padding:4px 12px; border-radius:14px; border:1px solid #ddd; cursor:pointer; background:#fff; color:#555; font-weight:600';
+    btn.onclick = function(){
+      if (active === g.key){ panel.style.display='none'; active=null; resetBtns(); return; }
+      active = g.key; resetBtns(); btn.style.background=g.color; btn.style.color='#fff';
+      panel.innerHTML='';
+      items[g.key].forEach(function(it){
+        var a=document.createElement('a'); a.href='#'+it.id; a.textContent=it.txt;
+        a.style.cssText='font-size:0.74rem;color:#444;text-decoration:none;padding:3px 9px;border-radius:10px;background:#f0f3f7';
+        a.onclick=function(){ setTimeout(function(){panel.style.display='none';active=null;resetBtns();},50); };
+        panel.appendChild(a);
+      });
+      panel.style.display='flex';
+    };
+    btn._g=g; bar.appendChild(btn);
+  });
+  function resetBtns(){ bar.querySelectorAll('button').forEach(function(b){ b.style.background='#fff'; b.style.color='#555'; }); }
+  nav.appendChild(bar); nav.appendChild(panel);
 })();
 </script>
 </body>
