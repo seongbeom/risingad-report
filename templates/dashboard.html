@@ -102,13 +102,13 @@
             max-height: 40vh; overflow-y: auto; }
         #quicknav a { font-size: 0.76rem; color: #555; text-decoration: none; padding: 3px 9px; border-radius: 12px; background: #f0f3f7; white-space: nowrap; }
         #quicknav a:hover { background: #4a90d9; color: #fff; }
-        .container > .card { scroll-margin-top: 120px; }  /* 점프 시 고정 퀵네비에 안 가리게 (JS가 실제 높이로 갱신) */
+        .main-inner > .card { scroll-margin-top: 120px; }  /* 점프 시 고정 퀵네비에 안 가리게 (JS가 실제 높이로 갱신) */
     </style>
 </head>
 <body>
 <div class="app">
 {% set active = 'dashboard' %}{% include '_sidebar.html' %}
-<div class="main"><div class="main-inner container" style="max-width:none; padding:0;">
+<div class="main"><div class="main-inner">
     <h1 style="margin-top:0">데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     {% if freshness %}
@@ -1631,7 +1631,7 @@
 (function(){
   var nav = document.getElementById('quicknav');
   if (!nav) return;
-  var cards = document.querySelectorAll('.container > .card');
+  var cards = document.querySelectorAll('.main-inner > .card');
 
   // h2 텍스트 → 그룹 분류
   function classify(t){
