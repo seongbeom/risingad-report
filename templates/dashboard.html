@@ -71,6 +71,9 @@
         .af-line { font-size: 0.78rem; color: #555; line-height: 1.65; margin-left: 2px; }
         .af-chip { display: inline-block; background: #f1f3f5; color: #555; border-radius: 6px;
             padding: 1px 7px; margin: 1px 4px 1px 0; font-size: 0.74rem; font-weight: 600; }
+        .af-hint { margin-top: 6px; padding: 7px 10px; background: #eef4ff; border: 1px solid #cfe0fb;
+            border-radius: 7px; font-size: 0.76rem; color: #2d4a73; line-height: 1.55; }
+        .af-hint b { color: #1a3a66; }
 
         /* 네이버 KPI 타일 */
         .nv-kpi { background: #f7faf8; border: 1px solid #e4efe9; border-radius: 8px; padding: 8px 10px; }
@@ -161,6 +164,9 @@
                     <div class="af-line">{{ f.detail.split(':')[0] }}: {% for mm in f.missing %}<span class="af-chip">{{ mm }}</span>{% endfor %}</div>
                 {% else %}
                     <div class="af-line">{{ f.detail }}</div>
+                {% endif %}
+                {% if f.hints %}
+                    {% for h in f.hints %}<div class="af-hint">{{ h|safe }}</div>{% endfor %}
                 {% endif %}
             </div>
             {% endfor %}

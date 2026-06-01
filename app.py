@@ -832,6 +832,39 @@ def _label_map():
     return {a["id"]: (a.get("label") or a["id"]) for a in db.list_accounts()}
 
 
+_SA_EMAIL_CACHE = {"email": None, "loaded": False}
+
+
+def _service_account_email():
+    """service_account.json 의 client_email (시트 공유 안내용). 1회 읽고 캐시."""
+    if not _SA_EMAIL_CACHE["loaded"]:
+        _SA_EMAIL_CACHE["loaded"] = True
+        try:
+            with open("service_account.json") as f:
+                _SA_EMAIL_CACHE["email"] = json.load(f).get("client_email")
+        except Exception:
+            _SA_EMAIL_CACHE["email"] = None
+    return _SA_EMAIL_CACHE["email"]
+
+
+def _sheet_fail_hints(fail_details):
+    """시트 입력 실패 detail 들에서 상황별 조치 힌트 도출 (중복 제거, 순서 유지)."""
+    sa = _service_account_email() or "서비스 계정"
+    hints = []
+    joined = " ".join(fail_details)
+    if "404" in joined or "SpreadsheetNotFound" in joined:
+        hints.append(f"🔑 시트가 안 열림(404) — 시트 ID가 틀렸거나 공유 안 됨. "
+                     f"해당 구글시트를 '{sa}' 에 <b>편집자</b>로 공유하고, 설정에서 시트 URL을 다시 저장하세요.")
+    if "탭없음" in joined or "자동생성 실패" in joined:
+        hints.append("📑 효율 탭이 없고 자동생성도 실패 — 그 시트에 '효율_26년N월' 형태 탭이 하나라도 있어야 복제 가능. "
+                     "최소 1개 효율 탭을 만들어 두세요.")
+    if "행없음" in joined:
+        hints.append("📅 해당 날짜 행을 못 찾음 — 효율 탭 B열 날짜(YYYY/MM/DD)가 비었거나 형식이 다른지 확인.")
+    if "검증불일치" in joined:
+        hints.append("⚠️ 기입 후 읽은 값이 API값과 다름 — 시트에 수식/서식이 걸려 값이 바뀌는지 확인.")
+    return hints
+
+
 def _build_freshness(selected_ids, today):
     """대시보드 데이터 신선도 — 각 데이터 종류별 기준일/갱신시각 + 누락/문제 상세.
     반환 항목: {name, basis, upd, status(ok|warn|bad), detail(누락 등 설명), missing:[label]}"""
@@ -910,9 +943,10 @@ def _build_freshness(selected_ids, today):
             fails = [f for f in latest if f[2] in ("fail", "warn")]
             if fails:
                 lines = [f"{lbl.get(f[0], f[0])}({f[1]}): {f[3][:45]}" for f in fails]
+                hints = _sheet_fail_hints([f[3] or "" for f in fails])
                 out.append({"name": "시트 입력", "basis": "현재 상태", "upd": "—",
                             "status": "bad", "detail": "; ".join(lines), "lines": lines,
-                            "missing": [lbl.get(f[0], f[0]) for f in fails]})
+                            "hints": hints, "missing": [lbl.get(f[0], f[0]) for f in fails]})
             else:
                 out.append({"name": "시트 입력", "basis": "현재 상태", "upd": "—",
                             "status": "ok", "detail": "최근 입력 전부 정상", "lines": [], "missing": []})
