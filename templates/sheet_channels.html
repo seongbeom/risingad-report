@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>효율시트 채널 현황</title>
+<style>
+  .ch-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:.82rem; margin:6px 0 16px;}
+  .ch-legend span{display:inline-flex; align-items:center; gap:5px;}
+  .dot{width:11px; height:11px; border-radius:3px; display:inline-block;}
+  .d-auto{background:#27ae60;} .d-todo{background:#e6a817;} .d-manual{background:#e74c3c;}
+  .d-skip{background:#95a5a6;} .d-formula{background:#bcc4cc;}
+
+  /* 엑셀풍 채널 표 */
+  .sheet-wrap{overflow-x:auto; border:1px solid #d6dbe0; border-radius:8px;}
+  table.sheet{border-collapse:collapse; width:100%; font-size:.82rem; min-width:760px;}
+  table.sheet th, table.sheet td{border:1px solid #e3e7ec; padding:9px 12px; text-align:left; vertical-align:top;}
+  table.sheet thead th{background:#f3f6f9; font-weight:700; position:sticky; top:0;}
+  table.sheet tbody tr:hover{background:#fafcff;}
+  .ch-name{font-weight:700; white-space:nowrap;}
+  .badge2{display:inline-block; padding:2px 9px; border-radius:11px; font-size:.74rem; font-weight:600; color:#fff;}
+  .b-auto{background:#27ae60;} .b-todo{background:#e6a817;} .b-manual{background:#e74c3c;}
+  .b-skip{background:#95a5a6;} .b-formula{background:#aab2bb;}
+  .ch-detail{color:#555; font-size:.8rem;}
+  .ch-need{color:#8a6d00; font-size:.78rem;}
+
+  /* 연결 현황 매트릭스 */
+  table.conn{border-collapse:collapse; font-size:.8rem; margin-top:6px;}
+  table.conn th, table.conn td{border:1px solid #e8ebef; padding:6px 12px; text-align:center;}
+  table.conn td.lbl{text-align:left; font-weight:600;}
+  .ok{color:#27ae60; font-weight:700;} .no{color:#cfd4da;}
+</style>
+</head>
+<body>
+<div class="app">
+{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner">
+  <h1 style="margin-top:0">효율시트 채널 입력 현황</h1>
+  <p class="subtitle" style="margin-bottom:14px">각 광고 채널이 효율시트에 어떻게 채워지는지 — 자동/수동/필요 항목 한눈에</p>
+
+  <div class="ch-legend">
+    <span><i class="dot d-auto"></i> 자동 (API)</span>
+    <span><i class="dot d-todo"></i> 자동화 가능 (미연동)</span>
+    <span><i class="dot d-manual"></i> 수동 입력</span>
+    <span><i class="dot d-skip"></i> 자동화 부적합</span>
+    <span><i class="dot d-formula"></i> 시트 수식(자동계산)</span>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden">
+    <div class="sheet-wrap">
+      <table class="sheet">
+        <thead>
+          <tr><th style="width:170px">채널</th><th style="width:110px">입력 방식</th><th>설명</th><th style="width:240px">필요한 것</th><th style="width:120px">마지막 수집</th></tr>
+        </thead>
+        <tbody>
+          {% for c in channels %}
+          <tr>
+            <td class="ch-name">{{ c.name }}</td>
+            <td>
+              {% if c.mode=='auto' %}<span class="badge2 b-auto">자동</span>
+              {% elif c.mode=='todo' %}<span class="badge2 b-todo">연동 가능</span>
+              {% elif c.mode=='manual' %}<span class="badge2 b-manual">수동</span>
+              {% elif c.mode=='skip' %}<span class="badge2 b-skip">부적합</span>
+              {% else %}<span class="badge2 b-formula">수식</span>{% endif %}
+              <div style="font-size:.72rem; color:#999; margin-top:3px">{{ c.src }}</div>
+            </td>
+            <td class="ch-detail">{{ c.detail }}</td>
+            <td class="ch-need">{{ c.need }}</td>
+            <td style="font-size:.78rem; color:#666">
+              {% if c.name in last and last[c.name] %}🟢 {{ last[c.name] }}{% elif c.mode=='auto' %}<span style="color:#e67e22">대기</span>{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>매장별 연결 현황</h2>
+    <p class="card-sub">각 매장의 시트/메타/네이버 연결 여부. ✓연결 / 빈칸=미연결</p>
+    <table class="conn">
+      <thead><tr><th>매장</th><th>구글시트</th><th>메타</th><th>네이버 검색광고</th></tr></thead>
+      <tbody>
+      {% for r in conn_rows %}
+      <tr>
+        <td class="lbl">{{ r.label }}</td>
+        <td>{% if r.sheet %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
+        <td>{% if r.meta %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
+        <td>{% if r.naver %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div></div></div>
+</body>
+</html>

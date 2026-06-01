@@ -3172,6 +3172,47 @@ def feedback_page():
     return render_template("feedback.html", threads=db.list_feedback_threads())
 
 
+# 효율시트 채널별 입력 방식 정의 (시트 구조 기반)
+SHEET_CHANNELS = [
+    {"name": "메타 (FB/IG)", "mode": "auto", "src": "Meta Marketing API",
+     "detail": "매일 07:00 자동 입력 (노출/클릭/광고비+VAT/전환/매출)", "need": "토큰 발급 완료"},
+    {"name": "네이버 검색광고", "mode": "auto", "src": "Naver SearchAd API",
+     "detail": "매일 07:10 자동 입력 (노출/클릭/광고비/전환/매출). 광고비 부가세 미포함", "need": "API키·시크릿·CUSTOMER_ID (계정별)"},
+    {"name": "네이버 성과형(GFA)", "mode": "manual", "src": "수기 입력",
+     "detail": "광고주센터(GFA)는 셀프 API 미제공 → 수기 입력 유지", "need": "GFA 마케팅 API 권한(일반광고주 제한)"},
+    {"name": "네이버 쇼핑박스/트렌드픽", "mode": "manual", "src": "수기 입력",
+     "detail": "별도 광고상품, 공식 API 없음", "need": "—"},
+    {"name": "크리테오", "mode": "todo", "src": "Criteo Marketing API",
+     "detail": "API로 자동화 가능 (미연동)", "need": "Criteo OAuth client_id/secret + advertiser ID"},
+    {"name": "카페24 전환매출 (채널별)", "mode": "skip", "src": "수기/멀티채널",
+     "detail": "cafe24 멀티채널은 7일기여·멀티터치라 일별 정확도 낮음 → 자동화 부적합", "need": "—"},
+    {"name": "Total / 카페24 합계", "mode": "formula", "src": "시트 수식",
+     "detail": "채널 합산 자동 계산 (SUM)", "need": "불필요"},
+]
+
+
+@app.route("/admin/sheet_channels")
+@login_required
+def sheet_channels():
+    """효율시트 채널별 입력 현황 — 어디가 자동/수동/필요한지 시트 모양으로."""
+    # 채널별 자동 수집 마지막 시각
+    last = {
+        "메타 (FB/IG)": db.get_setting("meta_last_run", None),
+        "네이버 검색광고": db.get_setting("naver_last_run", None),
+    }
+    # 계정별 연결 현황 (메타/네이버)
+    conn_rows = []
+    for a in db.list_accounts():
+        conn_rows.append({
+            "label": a.get("label") or a["cafe24_id"],
+            "sheet": bool(a.get("spreadsheet_id")),
+            "meta": bool((a.get("meta_account_id") or "").strip()),
+            "naver": bool((a.get("naver_api_key") or "").strip() and (a.get("naver_customer_id") or "").strip()),
+        })
+    return render_template("sheet_channels.html",
+                           channels=SHEET_CHANNELS, last=last, conn_rows=conn_rows, active="admin")
+
+
 @app.route("/feedback/<int:fid>/status", methods=["POST"])
 @login_required
 def feedback_status_form(fid):
