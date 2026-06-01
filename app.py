@@ -768,6 +768,32 @@ def _validate_alert(account_id, label, date, warns):
     }
 
 
+def _build_freshness(selected_ids, today):
+    """대시보드 데이터 신선도 — 각 데이터 종류가 언제 기준/갱신인지."""
+    out = []
+    try:
+        with db.db_conn() as conn:
+            ph = ",".join("?" * len(selected_ids))
+            # cafe24 메트릭 (오늘) 최신 갱신
+            r = conn.execute(
+                f"SELECT MAX(updated_at) FROM metrics WHERE date=? AND account_id IN ({ph})",
+                [today] + selected_ids).fetchone()
+            out.append(("cafe24 매출/방문", "오늘 실시간", r[0][5:16] if r and r[0] else "—"))
+            # 메타 광고
+            r = conn.execute(
+                f"SELECT MAX(date), MAX(updated_at) FROM meta_metrics WHERE account_id IN ({ph})",
+                selected_ids).fetchone()
+            out.append(("메타 광고", f"~{r[0]}" if r and r[0] else "없음", r[1][5:16] if r and r[1] else "—"))
+            # 상품
+            r = conn.execute(
+                f"SELECT MAX(date), MAX(updated_at) FROM product_metrics WHERE account_id IN ({ph})",
+                selected_ids).fetchone()
+            out.append(("상품 분석", f"~{r[0]}" if r and r[0] else "없음", r[1][5:16] if r and r[1] else "—"))
+    except Exception:
+        traceback.print_exc()
+    return out
+
+
 def _heartbeat_job():
     """매시 정각 self-check. 다음 이상치를 잡아서 slack 알림:
     - 디스크 free < 1GB (warn), < 300MB (critical) — 백업 자동 정리도 시도
@@ -2668,6 +2694,7 @@ def dashboard():
         product_periods=product_periods,
         product_dates=product_dates,
         product_collect_date=product_collect_date,
+        freshness=_build_freshness(selected_ids, today),
         product_running=list(_running.keys()),
         meta_status=meta_status,
         ad_eff=ad_eff,
