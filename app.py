@@ -392,11 +392,17 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                     return
             db.upsert_metrics(account_id, scraped_date, metrics)
 
-            # 시간별 metrics
+            # 시간별 metrics — 단, 시간별 팝업이 잘못된 기간(누적/타일)을 반환하는 케이스 방어.
+            # 시간행 합계가 종합매출(오늘값)의 1.5배 초과면 기간 오류로 간주하고 저장 스킵.
             hourly_rows = sheets.extract_hourly_rows(results)
             if hourly_rows:
-                n = db.upsert_metrics_hourly(account_id, scraped_date, hourly_rows)
-                print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
+                hsum = sum((r.get("매출") or 0) for r in hourly_rows)
+                day_sales = metrics.get("매출") or 0
+                if day_sales > 0 and hsum > day_sales * 1.5:
+                    print(f"[{account_id}] {scraped_date} 시간별 합({hsum:,}) > 종합매출({day_sales:,})×1.5 — 기간 오류로 시간별 저장 스킵")
+                else:
+                    n = db.upsert_metrics_hourly(account_id, scraped_date, hourly_rows)
+                    print(f"[{account_id}] {scraped_date} 시간별 {n}행 upsert")
 
             # 상품 분석 (라이브/finalize 세션에서 같이 수집됨) — 항목별 date+period 로 저장.
             # daily: date=실제 데이터 날짜 / 7d: date=수집일.
