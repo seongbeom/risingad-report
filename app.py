@@ -539,8 +539,22 @@ def _daily_finalize_job():
         traceback.print_exc()
 
 
+_live_lock = threading.Lock()  # 라이브 사이클 동시 실행 방지 (chromium 병렬 = OOM 방지)
+
+
 def _live_global_job():
-    """글로벌 라이브 인터벌. 활성 시간대면 모든 계정을 직렬로 오늘 데이터 스크랩 (시트 write 안 함)."""
+    """글로벌 라이브 인터벌. 활성 시간대면 모든 계정을 직렬로 오늘 데이터 스크랩 (시트 write 안 함).
+    부팅 catch-up 과 cron 이 겹쳐도 chromium 1개만 — 전역 락으로 보호."""
+    if not _live_lock.acquire(blocking=False):
+        print("[live] 이미 라이브 사이클 진행중 - 중복 실행 스킵")
+        return
+    try:
+        _live_global_run()
+    finally:
+        _live_lock.release()
+
+
+def _live_global_run():
     s = db.get_live_settings()
     if s["interval_min"] <= 0:
         return
@@ -575,6 +589,38 @@ def _live_global_job():
     if time.monotonic() < cycle_deadline:
         _auto_backfill_missing(today, deadline=cycle_deadline)
     print(f"[live] {today} cycle done free={_free_memory_mb()}MB")
+
+
+def _boot_catchup_job():
+    """서비스 재시작 직후 1회 — 활성 시간대인데 오늘 metrics 최신 갱신이 오래됐으면(>75분)
+    다음 정시를 기다리지 않고 즉시 라이브 1회. 배포/재시작 후 최대 1시간 공백을 자동 복구."""
+    try:
+        s = db.get_live_settings()
+        if s["interval_min"] <= 0:
+            return
+        now = datetime.now()
+        start, end = s["start_hour"], s["end_hour"]
+        active = (start <= now.hour < end) if start <= end else (now.hour >= start or now.hour < end)
+        if not active:
+            print(f"[boot-catchup] {now.hour}시 비활성 — 스킵")
+            return
+        today = now.strftime("%Y-%m-%d")
+        with db.db_conn() as conn:
+            r = conn.execute("SELECT MAX(updated_at) FROM metrics WHERE date=?", (today,)).fetchone()
+        last = r[0] if r and r[0] else None
+        stale_min = None
+        if last:
+            try:
+                stale_min = (now - datetime.strptime(last, "%Y-%m-%d %H:%M:%S")).total_seconds() / 60
+            except Exception:
+                pass
+        if last is None or (stale_min is not None and stale_min > 75):
+            print(f"[boot-catchup] 라이브 공백 {'(오늘 데이터 없음)' if last is None else f'{int(stale_min)}분'} → 즉시 라이브 1회 실행")
+            _live_global_job()
+        else:
+            print(f"[boot-catchup] 최신 {int(stale_min)}분 전 — 충분히 최신, 스킵")
+    except Exception:
+        traceback.print_exc()
 
 
 # (account_id, date) → 자동 백필 시도 시각. 같은 날 같은 계정에 무한 재시도 방지.
@@ -1200,6 +1246,14 @@ def reload_schedules():
                 id="live_global", replace_existing=True,
             )
             print(f"[scheduler] live_global: interval {interval}분 (60의 약수 아님 → restart 시 타이밍 밀림)")
+
+        # 재시작 공백 자동 복구 — 부팅 40초 후 1회 catch-up
+        scheduler.add_job(
+            _boot_catchup_job, "date",
+            run_date=datetime.now() + timedelta(seconds=40),
+            id="boot_catchup", replace_existing=True,
+        )
+        print("[scheduler] boot_catchup: 부팅 +40초 (라이브 공백 시 즉시 1회)")
 
     df = db.get_daily_finalize_settings()
     scheduler.add_job(
