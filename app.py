@@ -1237,7 +1237,7 @@ def login_page():
             if u == valid_u and p == valid_p:
                 session["logged_in"] = True
                 session["username"] = valid_u
-                return redirect(url_for("index"))
+                return redirect(url_for("dashboard"))
         return render_template("login.html", error="아이디 또는 비밀번호가 틀렸습니다.")
     return render_template("login.html")
 
@@ -1251,7 +1251,7 @@ def logout():
 
 # ===== 페이지 라우트 =====
 
-@app.route("/")
+@app.route("/admin")
 @login_required
 def index():
     accounts = db.list_accounts()
@@ -1659,6 +1659,7 @@ def results_page(account_id):
     )
 
 
+@app.route("/")
 @app.route("/dashboard")
 @login_required
 def dashboard():
