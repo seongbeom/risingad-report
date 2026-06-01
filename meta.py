@@ -222,4 +222,27 @@ def write_meta_days(spreadsheet_id, insights):
             written += 1
         if data:
             ws.batch_update(data, value_input_option="USER_ENTERED")  # 탭당 1회만 쓰기
+            # read-back 검증: 가장 최근 날짜 1개만 다시 읽어 내가 쓴 값과 일치하는지 확인.
+            try:
+                last_d = max(days.keys())
+                row = rowmap.get(last_d.replace("-", "/"))
+                if row:
+                    rng = f"{META_COLS['impressions']}{row}:{META_COLS['revenue']}{row}"  # AZ~BG
+                    got = ws.get(rng, value_render_option="UNFORMATTED_VALUE")
+                    flat = got[0] if got else []
+                    # AZ,BA,BB,BC,BD,BE,BF,BG 순서 — 우리가 쓴 건 AZ(0)/BA(1)/BC(3)/BE(5)/BG(7)
+                    def _gi(i):
+                        try:
+                            return int(float(flat[i])) if i < len(flat) and flat[i] != "" else 0
+                        except (ValueError, TypeError):
+                            return 0
+                    exp = days[last_d]
+                    pairs = [("노출", _gi(0), exp["impressions"]), ("클릭", _gi(1), exp["clicks"]),
+                             ("광고비", _gi(3), exp["spend_vat"]), ("전환", _gi(5), exp["purchases"]),
+                             ("매출", _gi(7), exp["revenue"])]
+                    bad = [f"{n}(시트{g}≠API{e})" for n, g, e in pairs if g != e]
+                    if bad:
+                        errors.append(f"{last_d} 검증불일치: {', '.join(bad)}")
+            except Exception as e:
+                errors.append(f"readback err: {repr(e)[:60]}")
     return written, errors
