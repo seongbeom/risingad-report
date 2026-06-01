@@ -3510,10 +3510,11 @@ def _eff_mini_view(ssid, force=False):
                 "name": name, "start": ci, "mode": CHANNEL_MODE.get(name, "manual"),
                 "cols": cols, "metrics": [met[c].strip() for c in cols],
             })
-        # 값이 채워진(B열 날짜) 최근 3일 행
+        # B열 날짜가 오늘 이하인 행 중 최근 3일 (시트엔 월말까지 미리 채워져 미래 빈행 존재)
+        today_slash = datetime.now().strftime("%Y/%m/%d")
         rows = []
         for r in data:
-            if len(r) > 1 and r[1].strip().startswith("2026/"):
+            if len(r) > 1 and r[1].strip().startswith("2026/") and r[1].strip() <= today_slash:
                 rows.append(r)
         rows = rows[-3:]
         out_rows = []
