@@ -768,27 +768,89 @@ def _validate_alert(account_id, label, date, warns):
     }
 
 
+def _label_map():
+    return {a["id"]: (a.get("label") or a["id"]) for a in db.list_accounts()}
+
+
 def _build_freshness(selected_ids, today):
-    """대시보드 데이터 신선도 — 각 데이터 종류가 언제 기준/갱신인지."""
+    """대시보드 데이터 신선도 — 각 데이터 종류별 기준일/갱신시각 + 누락/문제 상세.
+    반환 항목: {name, basis, upd, status(ok|warn|bad), detail(누락 등 설명), missing:[label]}"""
     out = []
+    lbl = _label_map()
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     try:
         with db.db_conn() as conn:
             ph = ",".join("?" * len(selected_ids))
-            # cafe24 메트릭 (오늘) 최신 갱신
-            r = conn.execute(
-                f"SELECT MAX(updated_at) FROM metrics WHERE date=? AND account_id IN ({ph})",
-                [today] + selected_ids).fetchone()
-            out.append(("cafe24 매출/방문", "오늘 실시간", r[0][5:16] if r and r[0] else "—"))
-            # 메타 광고
-            r = conn.execute(
-                f"SELECT MAX(date), MAX(updated_at) FROM meta_metrics WHERE account_id IN ({ph})",
-                selected_ids).fetchone()
-            out.append(("메타 광고", f"~{r[0]}" if r and r[0] else "없음", r[1][5:16] if r and r[1] else "—"))
-            # 상품
+
+            # 1) cafe24 매출/방문 (오늘) — 계정별 오늘 데이터 있나 + 갱신 지연
+            rows = conn.execute(
+                f"SELECT account_id, MAX(updated_at) FROM metrics WHERE date=? AND account_id IN ({ph}) GROUP BY account_id",
+                [today] + selected_ids).fetchall()
+            have = {r[0]: r[1] for r in rows}
+            miss = [lbl.get(a, a) for a in selected_ids if a not in have]
+            last_upd = max([v for v in have.values() if v], default=None)
+            # 갱신 지연: 가장 최신 갱신이 90분 이상 전이면 주의
+            stale = False
+            if last_upd:
+                try:
+                    stale = (datetime.now() - datetime.strptime(last_upd, "%Y-%m-%d %H:%M:%S")).total_seconds() > 5400
+                except Exception:
+                    pass
+            st = "bad" if miss else ("warn" if stale else "ok")
+            det = (f"오늘 데이터 없음: {', '.join(miss)}" if miss else
+                   ("최근 갱신 90분+ 경과 — 라이브 지연 의심" if stale else "전 매장 정상"))
+            out.append({"name": "cafe24 매출/방문", "basis": "오늘 실시간",
+                        "upd": last_upd[5:16] if last_upd else "—", "status": st,
+                        "detail": det, "missing": miss})
+
+            # 2) 메타 광고 (어제 확정 기준) — 연결매장 중 어제 데이터 없는 곳
+            connected = [a["id"] for a in db.list_accounts()
+                         if a["id"] in selected_ids and (a.get("meta_account_id") or "").strip()]
+            if connected:
+                cph = ",".join("?" * len(connected))
+                r = conn.execute(
+                    f"SELECT MAX(date), MAX(updated_at) FROM meta_metrics WHERE account_id IN ({cph})",
+                    connected).fetchone()
+                yhave = {x[0] for x in conn.execute(
+                    f"SELECT DISTINCT account_id FROM meta_metrics WHERE date=? AND account_id IN ({cph})",
+                    [yesterday] + connected).fetchall()}
+                mmiss = [lbl.get(a, a) for a in connected if a not in yhave]
+                st = "bad" if (r and r[0] and r[0] < yesterday) else ("warn" if mmiss else "ok")
+                det = (f"어제 미수집: {', '.join(mmiss)}" if mmiss else
+                       (f"최신 {r[0]} — 어제({yesterday})보다 뒤처짐" if (r and r[0] and r[0] < yesterday) else f"연결 {len(connected)}매장 정상"))
+                out.append({"name": "메타 광고", "basis": f"~{r[0]}" if r and r[0] else "없음",
+                            "upd": r[1][5:16] if r and r[1] else "—", "status": st,
+                            "detail": det, "missing": mmiss})
+            else:
+                out.append({"name": "메타 광고", "basis": "미연결", "upd": "—",
+                            "status": "warn", "detail": "선택 매장 중 메타 광고계정 연결된 곳 없음", "missing": []})
+
+            # 3) 상품 분석 (오늘 daily 기준)
             r = conn.execute(
                 f"SELECT MAX(date), MAX(updated_at) FROM product_metrics WHERE account_id IN ({ph})",
                 selected_ids).fetchone()
-            out.append(("상품 분석", f"~{r[0]}" if r and r[0] else "없음", r[1][5:16] if r and r[1] else "—"))
+            thave = {x[0] for x in conn.execute(
+                f"SELECT DISTINCT account_id FROM product_metrics WHERE date=? AND period='daily' AND account_id IN ({ph})",
+                [today] + selected_ids).fetchall()}
+            pmiss = [lbl.get(a, a) for a in selected_ids if a not in thave]
+            st = "warn" if pmiss else "ok"
+            det = (f"오늘 미수집: {', '.join(pmiss)}" if pmiss else "전 매장 정상")
+            out.append({"name": "상품 분석", "basis": f"~{r[0]}" if r and r[0] else "없음",
+                        "upd": r[1][5:16] if r and r[1] else "—", "status": st,
+                        "detail": det, "missing": pmiss})
+
+            # 4) 시트 입력 (최근 실패/경고)
+            fails = conn.execute(
+                "SELECT account_id, channel, status, detail FROM sheet_fill_log "
+                "WHERE status IN ('fail','warn') AND ts >= datetime('now','localtime','-1 day') ORDER BY id DESC LIMIT 8"
+            ).fetchall()
+            if fails:
+                lines = [f"{lbl.get(f[0], f[0])}: {f[3][:40]}" for f in fails]
+                out.append({"name": "시트 입력", "basis": "최근 24h", "upd": "—",
+                            "status": "bad", "detail": "; ".join(lines), "missing": [lbl.get(f[0], f[0]) for f in fails]})
+            else:
+                out.append({"name": "시트 입력", "basis": "최근 24h", "upd": "—",
+                            "status": "ok", "detail": "실패/경고 없음", "missing": []})
     except Exception:
         traceback.print_exc()
     return out

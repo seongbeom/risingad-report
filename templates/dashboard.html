@@ -110,9 +110,24 @@
     <h1>데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     {% if freshness %}
-    <p style="font-size:0.74rem; color:#999; margin:-4px 0 6px">📡 데이터 신선도:
-        {% for name, basis, upd in freshness %}<span title="마지막 갱신 {{ upd }}" style="cursor:help; border-bottom:1px dotted #ccc; margin-right:10px"><strong style="color:#777">{{ name }}</strong> {{ basis }} <span style="color:#bbb">({{ upd }})</span></span>{% endfor %}
-    </p>
+    {% set fresh_bad = freshness | selectattr('status','in',['bad','warn']) | list %}
+    <div style="margin:-2px 0 8px">
+        <span style="font-size:0.74rem; color:#999; margin-right:8px">📡 데이터 신선도:</span>
+        {% for f in freshness %}
+        <span title="{{ f.detail }}" style="cursor:help; font-size:0.74rem; margin-right:8px; padding:1px 7px; border-radius:8px; background:{% if f.status=='bad' %}#fdecea{% elif f.status=='warn' %}#fff6e6{% else %}#eafaf0{% endif %}; color:{% if f.status=='bad' %}#c0392b{% elif f.status=='warn' %}#b9770e{% else %}#1e8449{% endif %}">
+            {% if f.status=='bad' %}🔴{% elif f.status=='warn' %}🟡{% else %}🟢{% endif %}
+            <strong>{{ f.name }}</strong> {{ f.basis }}{% if f.upd != '—' %} <span style="opacity:0.7">({{ f.upd }})</span>{% endif %}
+        </span>
+        {% endfor %}
+        {% if fresh_bad %}
+        <details style="display:inline-block; vertical-align:top">
+            <summary style="cursor:pointer; font-size:0.74rem; color:#c0392b; display:inline">⚠ 상세 {{ fresh_bad|length }}건</summary>
+            <div style="font-size:0.76rem; color:#555; margin-top:4px; padding:6px 10px; background:#fafafa; border-radius:6px; border-left:3px solid #e74c3c">
+                {% for f in fresh_bad %}<div style="margin:2px 0">{% if f.status=='bad' %}🔴{% else %}🟡{% endif %} <strong>{{ f.name }}</strong> — {{ f.detail }}</div>{% endfor %}
+            </div>
+        </details>
+        {% endif %}
+    </div>
     {% endif %}
     <div class="nav">
         <a href="/">← 관리자</a>
