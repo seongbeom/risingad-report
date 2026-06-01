@@ -1653,29 +1653,37 @@
     items[g.key].forEach(function(it){
       var a=document.createElement('a'); a.href='#'+it.id; a.textContent=it.txt; a.dataset.sid=it.id;
       a.style.cssText='font-size:0.74rem;color:#444;text-decoration:none;padding:3px 9px;border-radius:10px;background:#f3f5f8;border:1px solid transparent';
-      a.onmouseenter=function(){ a.style.background=g.color; a.style.color='#fff'; };
+      a.onmouseenter=function(){ if(a.dataset.cur!=='1'){ a.style.background=g.color; a.style.color='#fff'; } };
       a.onmouseleave=function(){ if(a.dataset.cur!=='1'){a.style.background='#f3f5f8'; a.style.color='#444';} };
+      // 클릭 시: 즉시 그 칩 활성화 + 잠시 스크롤 감지 중단(점프 중 이전 섹션 활성화 방지)
+      a.onclick=function(){ lockUntil = Date.now()+800; setActive(it.id); };
       a._color=g.color; row.appendChild(a);
     });
     wrap.appendChild(row);
   });
   nav.appendChild(wrap);
 
-  // 스크롤 시 현재 보이는 섹션 칩 하이라이트
+  // 칩 하이라이트
   var allChips = wrap.querySelectorAll('a[data-sid]');
+  var lockUntil = 0;
+  function setActive(id){
+    allChips.forEach(function(a){
+      var on = a.dataset.sid===id;
+      a.dataset.cur = on ? '1' : '0';
+      a.style.background = on ? a._color : '#f3f5f8';
+      a.style.color = on ? '#fff' : '#444';
+    });
+  }
   function onScroll(){
-    var y = window.scrollY + 80, best=null, bestTop=-1;
+    if (Date.now() < lockUntil) return;  // 클릭 점프 직후엔 스크롤 감지 무시
+    var y = window.scrollY + (nav.offsetHeight || 60) + 24;  // 퀵네비 높이 보정
+    var best=null, bestTop=-1;
     cards.forEach(function(c){
       if (!c.id) return;
       var top = c.offsetTop;
       if (top <= y && top > bestTop){ bestTop=top; best=c.id; }
     });
-    allChips.forEach(function(a){
-      var on = a.dataset.sid===best;
-      a.dataset.cur = on ? '1' : '0';
-      a.style.background = on ? a._color : '#f3f5f8';
-      a.style.color = on ? '#fff' : '#444';
-    });
+    if (best) setActive(best);
   }
   var tk=null;
   window.addEventListener('scroll', function(){ if(tk) return; tk=setTimeout(function(){tk=null; onScroll();}, 120); });
