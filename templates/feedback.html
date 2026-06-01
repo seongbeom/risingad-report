@@ -33,9 +33,10 @@
   </style>
 </head>
 <body>
-<div class="container">
-  {% set active = '' %}{% include '_topnav.html' %}
-  <h1 style="margin-top:0">💬 피드백 / 요청사항</h1>
+<div class="app">
+{% set active = 'feedback' %}{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner" style="max-width:860px;">
+  <h1 style="margin-top:0">피드백 / 요청사항</h1>
   <p class="subtitle">{% if user %}{{ user }}{% if is_admin %} (admin){% endif %}로 로그인됨{% endif %}</p>
 
   {% if threads %}
@@ -70,7 +71,7 @@
   {% else %}
     <div class="card"><p class="empty">아직 등록된 피드백이 없습니다. 우측 하단의 FAB 버튼으로 의견을 남겨주세요.</p></div>
   {% endif %}
-</div>
+</div></div></div>
 {% include '_feedback_widget.html' %}
 </body>
 </html>

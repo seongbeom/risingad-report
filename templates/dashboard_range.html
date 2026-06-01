@@ -64,9 +64,10 @@
     </style>
 </head>
 <body>
-<div class="container">
-    {% set active = 'range' %}{% include '_topnav.html' %}
-    <h1 style="margin-top:0">📅 기간 분석</h1>
+<div class="app">
+{% set active = 'range' %}{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner container" style="max-width:none; padding:0;">
+    <h1 style="margin-top:0">기간 분석</h1>
     <p class="subtitle">{{ start_date }} ~ {{ end_date }} ({{ range_days }}일) · 직전 {{ range_days }}일 ({{ prev_start }} ~ {{ prev_end }}) 비교 · 모두 숫자 기반</p>
 
     <div class="card">
@@ -378,7 +379,7 @@
     {% if not panels %}
     <div class="card"><p class="card-sub">선택된 계정이 없거나 등록된 계정이 없습니다.</p></div>
     {% endif %}
-</div>
+</div></div></div>
 
 <script>
 document.querySelectorAll('[data-preset]').forEach(btn => {

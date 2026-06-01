@@ -45,9 +45,10 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        {% set active = 'admin' %}{% include '_topnav.html' %}
-        <h1 style="margin-top:0">⚙️ 설정 / 관리</h1>
+<div class="app">
+{% set active = 'admin' %}{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner container" style="max-width:none; padding:0;">
+        <h1 style="margin-top:0">설정 / 관리</h1>
         <p class="subtitle" style="margin-bottom:16px">스크래퍼 · 계정 · 스케줄 관리 · {{ now }}</p>
 
         <!-- 자동 스케줄 현황 -->
@@ -366,7 +367,7 @@
             <p class="empty">실행 기록이 없습니다.</p>
             {% endif %}
         </div>
-    </div>
+    </div></div></div>
 
     <script>
         // 실행 중인 작업이 있으면 주기적으로 새로고침 (단, 피드백 패널 열려있으면 건너뜀)
