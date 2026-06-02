@@ -146,11 +146,17 @@ def fetch_daily(creds, since, until):
                 t["cost"] += int(r.get("salesAmt", 0) or 0)        # 부가세 미포함
                 ccnt_all += int(r.get("ccnt", 0) or 0)
                 conv_amt_all += int(r.get("convAmt", 0) or 0)
-            # 전환수/매출: 구매완료만(보고서) 우선, 보고서 없으면 전체(ccnt) 폴백
+            # 전환수/매출: 구매완료만(보고서) 우선.
             p = purchases.get(ds)
+            today_s = datetime.date.today().strftime("%Y-%m-%d")
             if p is not None:
                 t["conversions"] = p["cnt"]
                 t["revenue"] = p["amt"]
+            elif ds == today_s:
+                # 당일은 구매완료 보고서가 아직 없음(네이버 미생성). 장바구니 섞인 ccnt 를 쓰면
+                # CVR 이 과대 → 전환은 비워두고(집계중) 내일 백필 때 채움. 매출은 그대로(장바구니 금액 0).
+                t["conversions"] = None
+                t["revenue"] = conv_amt_all
             else:
                 t["conversions"] = ccnt_all
                 t["revenue"] = conv_amt_all
@@ -193,11 +199,13 @@ def write_to_sheet(spreadsheet_id, daily):
             if not row:
                 errors.append(f"{d} 행없음")
                 continue
+            # None(당일 구매완료 집계전)은 빈칸으로 기입 — 장바구니 섞인 값 안 보이게
+            conv_v = m["conversions"] if m["conversions"] is not None else ""
             data += [
                 {"range": f"{SHEET_COLS['impressions']}{row}", "values": [[m["impressions"]]]},
                 {"range": f"{SHEET_COLS['clicks']}{row}", "values": [[m["clicks"]]]},
                 {"range": f"{SHEET_COLS['cost']}{row}", "values": [[m["cost"]]]},
-                {"range": f"{SHEET_COLS['conversions']}{row}", "values": [[m["conversions"]]]},
+                {"range": f"{SHEET_COLS['conversions']}{row}", "values": [[conv_v]]},
                 {"range": f"{SHEET_COLS['revenue']}{row}", "values": [[m["revenue"]]]},
             ]
             written += 1

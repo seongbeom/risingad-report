@@ -2788,25 +2788,33 @@ def dashboard():
             if not nm:
                 continue
             imp = nm["impressions"] or 0; clk = nm["clicks"] or 0; cost = nm["cost"] or 0
-            conv = nm["conversions"] or 0; rev = nm["revenue"] or 0
+            rev = nm["revenue"] or 0
+            conv_raw = nm["conversions"]  # 당일 구매완료 집계전이면 None → '집계중' 표시
+            conv = conv_raw or 0
             sales = (by_key.get((aid, d), {}) or {}).get("매출") or 0
             out.append({
                 "label": label_by_id.get(aid, aid), "id": aid,
-                "imp": imp, "clk": clk, "cost": cost, "conv": conv, "rev": rev, "sales": sales,
+                "imp": imp, "clk": clk, "cost": cost, "conv": conv_raw, "rev": rev, "sales": sales,
                 "ctr": round(clk / imp * 100, 2) if imp else None,
                 "cpc": round(cost / clk) if clk else None,
-                "cvr": round(conv / clk * 100, 2) if clk else None,
-                "cpa": round(cost / conv) if conv else None,
+                "cvr": round(conv / clk * 100, 2) if (clk and conv_raw is not None) else None,
+                "cpa": round(cost / conv) if (conv and conv_raw is not None) else None,
                 "roas": round(rev / cost * 100) if cost else None,
                 "broas": round(sales / cost * 100) if cost else None,
             })
             tot["imp"] += imp; tot["clk"] += clk; tot["cost"] += cost
             tot["conv"] += conv; tot["rev"] += rev; tot["sales"] += sales
+            if conv_raw is not None:
+                tot["_any_conv"] = True
         out.sort(key=lambda x: x["cost"], reverse=True)
         tot["ctr"] = round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else None
         tot["cpc"] = round(tot["cost"] / tot["clk"]) if tot["clk"] else None
-        tot["cvr"] = round(tot["conv"] / tot["clk"] * 100, 2) if tot["clk"] else None
-        tot["cpa"] = round(tot["cost"] / tot["conv"]) if tot["conv"] else None
+        # 당일처럼 구매완료 집계전(전 매장 None)이면 전환/CVR/CPA 는 '집계중'(None)
+        if not tot.get("_any_conv"):
+            tot["conv"] = None; tot["cvr"] = None; tot["cpa"] = None
+        else:
+            tot["cvr"] = round(tot["conv"] / tot["clk"] * 100, 2) if tot["clk"] else None
+            tot["cpa"] = round(tot["cost"] / tot["conv"]) if tot["conv"] else None
         tot["roas"] = round(tot["rev"] / tot["cost"] * 100) if tot["cost"] else None
         tot["broas"] = round(tot["sales"] / tot["cost"] * 100) if tot["cost"] else None
         return out, tot

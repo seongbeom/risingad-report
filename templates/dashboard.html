@@ -851,7 +851,7 @@
                 <div class="nv-kpi"><div class="nv-kpi-l">클릭</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.clk) }}</div></div>
                 <div class="nv-kpi"><div class="nv-kpi-l">CTR</div><div class="nv-kpi-v">{% if t.ctr is not none %}{{ t.ctr }}%{% else %}-{% endif %}</div></div>
                 <div class="nv-kpi"><div class="nv-kpi-l">CPC</div><div class="nv-kpi-v">{% if t.cpc is not none %}{{ "{:,.0f}".format(t.cpc) }}{% else %}-{% endif %}</div></div>
-                <div class="nv-kpi"><div class="nv-kpi-l">전환수</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.conv) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">전환수</div><div class="nv-kpi-v">{% if t.conv is not none %}{{ "{:,.0f}".format(t.conv) }}{% else %}<span style="font-size:.72rem;color:#e67e22">집계중</span>{% endif %}</div></div>
                 <div class="nv-kpi"><div class="nv-kpi-l">CPA</div><div class="nv-kpi-v">{% if t.cpa is not none %}{{ "{:,.0f}".format(t.cpa) }}{% else %}-{% endif %}</div></div>
             </div>
             {% if ne.rows %}
@@ -872,7 +872,7 @@
                     <td style="padding:5px 7px;color:#666">{{ "{:,.0f}".format(r.clk) }}</td>
                     <td style="padding:5px 7px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
                     <td style="padding:5px 7px;color:#666">{% if r.cpc is not none %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
-                    <td style="padding:5px 7px;color:#666">{{ "{:,.0f}".format(r.conv) }}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.conv is not none %}{{ "{:,.0f}".format(r.conv) }}{% else %}<span style="color:#e67e22">집계중</span>{% endif %}</td>
                     <td style="padding:5px 7px;color:#666">{% if r.cpa is not none %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
                     <td style="padding:5px 7px">{{ "{:,.0f}".format(r.rev) }}</td>
                     <td style="padding:5px 7px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
@@ -886,7 +886,7 @@
                     <td style="padding:6px 7px">{{ "{:,.0f}".format(t.clk) }}</td>
                     <td style="padding:6px 7px">{% if t.ctr is not none %}{{ t.ctr }}%{% else %}-{% endif %}</td>
                     <td style="padding:6px 7px">{% if t.cpc is not none %}{{ "{:,.0f}".format(t.cpc) }}{% else %}-{% endif %}</td>
-                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.conv) }}</td>
+                    <td style="padding:6px 7px">{% if t.conv is not none %}{{ "{:,.0f}".format(t.conv) }}{% else %}<span style="font-size:.72rem;color:#e67e22">집계중</span>{% endif %}</td>
                     <td style="padding:6px 7px">{% if t.cpa is not none %}{{ "{:,.0f}".format(t.cpa) }}{% else %}-{% endif %}</td>
                     <td style="padding:6px 7px">{{ "{:,.0f}".format(t.rev) }}</td>
                     <td style="padding:6px 7px;color:{% if t.roas and t.roas>=300 %}#27ae60{% elif t.roas and t.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if t.roas is not none %}{{ t.roas }}%{% else %}-{% endif %}</td>
