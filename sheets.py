@@ -189,10 +189,12 @@ def extract_metrics(result):
     return m
 
 
-def validate_metrics(metrics, hourly_rows=None, prev_metrics=None):
+def validate_metrics(metrics, hourly_rows=None, prev_metrics=None, is_partial=False):
     """저장 전 데이터 정합성 교차검증. 논리적으로 안 맞는 값을 잡아냄.
     반환: list of 경고 문자열 (비어있으면 정상).
-    이번 '월초 7일윈도우 첫행' 같은 버그를 사람 눈 없이 당일 잡기 위함."""
+    이번 '월초 7일윈도우 첫행' 같은 버그를 사람 눈 없이 당일 잡기 위함.
+    is_partial=True (오늘 진행중 누적)면 '전일 대비 급변'(하루 총합 비교) 체크는 건너뜀 —
+    아침엔 오늘 누적이 어제 종일보다 작아 무조건 오경보가 나기 때문."""
     warns = []
     sales = metrics.get("매출") or 0
     cnt = metrics.get("구매건수") or 0
@@ -229,7 +231,8 @@ def validate_metrics(metrics, hourly_rows=None, prev_metrics=None):
             warns.append(f"전환율({conv}%) ≠ 구매÷방문({calc:.2f}%)")
 
     # 5) 전일 대비 급변 (10배↑ 또는 1/10↓) — 이번 버그 패턴(9.24M이 실제론 2.4M)
-    if prev_metrics and (prev_metrics.get("매출") or 0) > 0 and sales > 0:
+    #    오늘 진행중(is_partial) 데이터는 하루 총합 비교가 무의미 → 마감된 날에만 검사.
+    if (not is_partial) and prev_metrics and (prev_metrics.get("매출") or 0) > 0 and sales > 0:
         ratio = sales / prev_metrics["매출"]
         if ratio > 8 or ratio < 0.12:
             warns.append(f"매출 전일 대비 {ratio:.1f}배 급변 ({prev_metrics['매출']:,}→{sales:,})")

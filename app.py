@@ -410,7 +410,8 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
             # 자동 교차검증 — 데이터 정합성 깨지면 사람 눈 없이 즉시 플래그.
             try:
                 prev = db.get_metric(account_id, (datetime.strptime(scraped_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"))
-                warns = sheets.validate_metrics(metrics, hourly_rows, prev)
+                is_partial = (scraped_date == datetime.now().strftime("%Y-%m-%d"))  # 오늘=진행중
+                warns = sheets.validate_metrics(metrics, hourly_rows, prev, is_partial=is_partial)
                 if warns:
                     label = account.get("label") or account_id
                     msg = f"[검증] {account_id} {scraped_date}: " + " / ".join(warns)
@@ -422,6 +423,9 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                     if account_id in _validate_warnings:
                         _validate_warnings.pop(account_id, None)
                         print(f"[검증] {account_id} {scraped_date} 정상화 — 경고 해소", flush=True)
+                    # 마감된 날 검증 통과 시 'ok' 로그로 과거 warn 을 덮어 현황 자동 정상화
+                    if not is_partial:
+                        db.add_sheet_log(account_id, "validate", scraped_date, 0, "ok", "정합성 정상")
             except Exception:
                 traceback.print_exc()
 
