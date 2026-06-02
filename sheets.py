@@ -204,11 +204,14 @@ def validate_metrics(metrics, hourly_rows=None, prev_metrics=None, is_partial=Fa
     re_v = metrics.get("재방문") or 0
     conv = metrics.get("전환율")
 
-    # 1) 매출 ≈ 객단가 × 구매건수 (±10%)
+    # 1) 객단가 정합성 — 객단가는 '1인당 매출(구매자 기준)'이라 매출/객단가 = 구매자수.
+    #    구매자수는 1명 이상이고 구매건수(주문수)보다 많을 수 없음 → 역산 구매자수가
+    #    [1, 구매건수] 범위를 벗어나면 객단가가 엉뚱한 값(다른 날 행 등). (구매건수≠구매자수라
+    #    '매출=객단가×구매건수'로 보면 한 구매자가 여러번 주문 시 오경보 — 그래서 범위로 검증)
     if sales > 0 and aov > 0 and cnt > 0:
-        expect = aov * cnt
-        if abs(sales - expect) > expect * 0.12:
-            warns.append(f"매출({sales:,}) ≠ 객단가×구매건수({expect:,}) — 12%+ 오차")
+        buyers = sales / aov
+        if buyers < 0.9 or buyers > cnt * 1.1:
+            warns.append(f"객단가 이상 — 매출/객단가=구매자 {buyers:.1f}명인데 구매건수 {cnt}건 (객단가 {aov:,} 의심)")
 
     # 2) 시간별 합 ≈ 종합매출 (시간별 데이터 있을 때)
     if hourly_rows and sales > 0:
