@@ -952,19 +952,30 @@ def _build_freshness(selected_ids, today):
             have = {r[0]: r[1] for r in rows}
             miss = [lbl.get(a, a) for a in selected_ids if a not in have]
             last_upd = max([v for v in have.values() if v], default=None)
-            # 갱신 지연: 가장 최신 갱신이 90분 이상 전이면 주의
-            stale = False
-            if last_upd:
+            # 매장별 지연 판정 — MAX(최신1개)가 아니라 매장마다 봐서, 사이클이 못 따라온 매장을 잡음.
+            # (한 사이클 ~2시간이라 160분 넘으면 진짜 뒤처진 것)
+            now_dt = datetime.now()
+            stale_list = []
+            for a in selected_ids:
+                u = have.get(a)
+                if not u:
+                    continue
                 try:
-                    stale = (datetime.now() - datetime.strptime(last_upd, "%Y-%m-%d %H:%M:%S")).total_seconds() > 5400
+                    mins = (now_dt - datetime.strptime(u, "%Y-%m-%d %H:%M:%S")).total_seconds() / 60
+                    if mins > 160:
+                        stale_list.append(f"{lbl.get(a, a)}({int(mins)}분)")
                 except Exception:
                     pass
-            st = "bad" if miss else ("warn" if stale else "ok")
-            det = (f"오늘 데이터 없음: {', '.join(miss)}" if miss else
-                   ("최근 갱신 90분+ 경과 — 라이브 지연 의심" if stale else "전 매장 정상"))
+            st = "bad" if miss else ("warn" if stale_list else "ok")
+            if miss:
+                det = f"오늘 데이터 없음: {', '.join(miss)}"
+            elif stale_list:
+                det = f"{len(stale_list)}개 매장 갱신 160분+ 지연 (라이브가 못 따라옴): {', '.join(stale_list)}"
+            else:
+                det = "전 매장 최근 갱신"
             out.append({"name": "cafe24 매출/방문", "basis": "오늘 실시간",
                         "upd": last_upd[5:16] if last_upd else "—", "status": st,
-                        "detail": det, "missing": miss})
+                        "detail": det, "missing": miss, "lines": stale_list})
 
             # 2) 메타 광고 (어제 확정 기준) — 연결매장 중 어제 데이터 없는 곳
             connected = [a["id"] for a in db.list_accounts()
