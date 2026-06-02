@@ -370,9 +370,42 @@ def _ensure_efficiency_sheet(spreadsheet, dt):
     # G33~G63: 광고비 비우기 (사용자가 새 월에 직접 입력)
     new_ws.update("G33:G63", [[""] for _ in range(31)], value_input_option="USER_ENTERED")
 
-    print(f"시트 '{name}' 생성 완료 ('{SOURCE_EFFICIENCY_SHEET}' 복제 + 날짜·광고비 갱신)")
-    print(f"  ⚠ 다른 raw 데이터(노출/클릭 등 채널별 컬럼)는 이전달 값이 남아있을 수 있음 — 직접 정리 필요")
+    # 복제 원본(지난달)의 '입력값'이 일별 데이터 행에 그대로 남으므로 제거 — 수식·헤더는 보존.
+    # (안 지우면 새 월 탭의 미래 날짜에 지난달 숫자가 그대로 보임)
+    _clear_eff_stale_inputs(new_ws)
+
+    print(f"시트 '{name}' 생성 완료 ('{SOURCE_EFFICIENCY_SHEET}' 복제 + 날짜·광고비 갱신 + 잔존 입력값 정리)")
     return new_ws
+
+
+def _col_letter(i):
+    s = ""; i += 1
+    while i:
+        i, r = divmod(i - 1, 26); s = chr(65 + r) + s
+    return s
+
+
+def _clear_eff_stale_inputs(ws):
+    """효율탭 일별 데이터 행(B열=날짜)에서 '리터럴 입력값'만 비움. 수식·헤더·날짜는 보존.
+    클론 직후 지난달 잔존 데이터 제거용. 실패해도 생성 자체엔 영향 없음."""
+    try:
+        valf = ws.get("A33:ZZ70", value_render_option="FORMATTED_VALUE")
+        forf = ws.get("A33:ZZ70", value_render_option="FORMULA")
+        clears = []
+        for ri, vr in enumerate(valf):
+            d = vr[1].strip() if len(vr) > 1 else ""
+            if not re.match(r"20\d\d/\d\d/\d\d", d):
+                continue  # 날짜 행만 (헤더/구분 행은 건너뜀)
+            fr = forf[ri] if ri < len(forf) else []
+            for ci in range(2, len(vr)):  # A·B(날짜) 보존
+                if vr[ci].strip() not in ("", "-") and not (ci < len(fr) and str(fr[ci]).startswith("=")):
+                    clears.append(_col_letter(ci) + str(33 + ri))
+        if clears:
+            ws.batch_update([{"range": c, "values": [[""]]} for c in clears],
+                            value_input_option="USER_ENTERED")
+            print(f"  ↳ 클론 잔존 입력값 {len(clears)}칸 정리")
+    except Exception as e:
+        print(f"  ⚠ 잔존 입력값 정리 실패(생성은 정상): {repr(e)[:60]}")
 
 
 def _ensure_month_sheet(spreadsheet, sheet_name, dt):
