@@ -415,56 +415,52 @@ def set_period_range(frame, page, start_date, end_date):
         return out
 
     def _click_target_date(target_date_str, idx):
-        """캘린더 popup이 열려있다 가정. target_date 가 잡히도록 trial-and-error.
-        - 현재 캘린더에서 target_d 매칭 enabled (outside/disabled 아닌) 셀 찾아 클릭
-        - 클릭 후 idx(0=시작일, 1=종료일) button 텍스트가 target_date 가 됐는지 검증
-        - 안 됐으면 prev 한 번 누르고 재시도. 캘린더 popup이 닫혔으면 button 다시 클릭
-        - 최대 24개월 prev (RDP 헤더 못 읽어도 작동)."""
-        target_d = int(target_date_str[8:10])
-        for attempt in range(24):
-            cand = None
-            for c in frame.query_selector_all("td button"):
-                try:
-                    if not c.is_visible():
-                        continue
-                    if c.evaluate("el => el.textContent?.trim() || ''") != str(target_d):
-                        continue
-                    skip = c.evaluate("""el => {
-                        if (el.disabled) return true;
-                        if (el.getAttribute('aria-disabled') === 'true') return true;
-                        const cls = ' ' + (el.className || '') + ' ';
-                        return cls.includes(' day-outside ')
-                            || cls.includes(' rdp-day_outside ')
-                            || cls.includes(' rdp-day_disabled ');
-                    }""")
-                    if not skip:
-                        cand = c
-                        break
-                except Exception:
-                    continue
-
-            if cand:
-                try:
-                    cand.click()
-                    page.wait_for_timeout(800)
-                except Exception:
-                    pass
-                btns = _date_btns()
-                if len(btns) > idx and btns[idx][0] == target_date_str:
-                    return True
-                # 잘못된 month 였음 → 캘린더 popup 다시 열기
-                if len(btns) > idx:
-                    try:
-                        btns[idx][1].click()
-                        page.wait_for_timeout(1000)
-                    except Exception:
-                        pass
-
-            # target month 아직 안 보임 → prev 한 번
-            prev_btn = frame.locator("button[aria-label='Go to previous month']").first
+        """캘린더 popup이 열려있다 가정. target_date 클릭.
+        달력엔 '이전달/다음달' 버튼이 둘 다 있으므로 — 현재 보이는 달의 1일을 클릭해보고
+        결과 날짜가 목표보다 과거면 '다음달', 미래면 '이전달'로 정확히 이동(보통 0~2번).
+        (기존: 이전달로만 24번 navigate → 목표가 앞달이면 2년 전으로 overshoot + 느림)
+        셀 조회는 1회 evaluate 로 배치(브라우저 왕복 제거)."""
+        target_d = str(int(target_date_str[8:10]))
+        for attempt in range(20):
+            # 현재 뷰의 모든 td button 정보 1회 조회
             try:
-                if prev_btn.count() > 0 and prev_btn.is_visible():
-                    prev_btn.click()
+                infos = frame.eval_on_selector_all("td button", """els => els.map(el => {
+                    const t = (el.textContent || '').trim();
+                    const cls = ' ' + (el.className || '') + ' ';
+                    const bad = el.disabled || el.getAttribute('aria-disabled')==='true'
+                        || cls.includes(' day-outside ') || cls.includes(' rdp-day_outside ') || cls.includes(' rdp-day_disabled ');
+                    const vis = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                    return {t, bad, vis};
+                })""")
+            except Exception:
+                return False
+            cells = frame.query_selector_all("td button")
+            ci = next((i for i, info in enumerate(infos)
+                       if info.get("vis") and not info.get("bad") and info.get("t") == target_d), None)
+            if ci is None or ci >= len(cells):
+                return False
+            try:
+                cells[ci].click()
+                page.wait_for_timeout(500)
+            except Exception:
+                pass
+            btns = _date_btns()
+            if len(btns) <= idx:
+                return False
+            got = btns[idx][0]
+            if got == target_date_str:
+                return True
+            # 달력 다시 열고 방향 맞춰 한 달 이동
+            try:
+                btns[idx][1].click()
+                page.wait_for_timeout(700)
+            except Exception:
+                pass
+            lab = "Go to next month" if got < target_date_str else "Go to previous month"
+            nav = frame.locator(f"button[aria-label='{lab}']").first
+            try:
+                if nav.count() > 0 and nav.is_visible():
+                    nav.click()
                     page.wait_for_timeout(400)
                 else:
                     return False
