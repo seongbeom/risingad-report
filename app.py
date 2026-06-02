@@ -573,6 +573,9 @@ def _live_global_run():
         print(f"[live] {now_h}시는 활성 시간({start}~{end}) 아님 - 스킵")
         return
 
+    # 사이클 시작 전 orphan chromium 청소 — 이전 사이클이 크래시/재시작으로 남긴 좀비가 있으면
+    # 새 chromium 과 2개가 공존해 EPIPE/OOM 유발. 시작 시 깨끗이 비우고 출발.
+    _kill_leftover_chromium()
     today = datetime.now().strftime("%Y-%m-%d")
     accounts = db.list_accounts()
     cycle_deadline = time.monotonic() + max(40 * 60, len(accounts) * 9 * 60)
@@ -596,8 +599,9 @@ def _live_global_run():
 
 
 def _boot_catchup_job():
-    """서비스 재시작 직후 1회 — 활성 시간대인데 오늘 metrics 최신 갱신이 오래됐으면(>75분)
-    다음 정시를 기다리지 않고 즉시 라이브 1회. 배포/재시작 후 최대 1시간 공백을 자동 복구."""
+    """서비스 재시작 직후 1회 — 활성 시간대인데 '오래 안 갱신된 매장'이 있으면 즉시 라이브 1회.
+    MAX 가 아니라 매장별로 봐서, 사이클 중간 크래시(앞 매장만 신선, 뒤 매장 오전값)도 복구.
+    판단: 오늘 데이터 없는 매장이 있거나, 한 사이클(140분) 넘게 안 갱신된 매장이 있으면."""
     try:
         s = db.get_live_settings()
         if s["interval_min"] <= 0:
@@ -609,20 +613,35 @@ def _boot_catchup_job():
             print(f"[boot-catchup] {now.hour}시 비활성 — 스킵")
             return
         today = now.strftime("%Y-%m-%d")
+        all_ids = [a["id"] for a in db.list_accounts()]
+        if not all_ids:
+            return
+        ph = ",".join("?" * len(all_ids))
         with db.db_conn() as conn:
-            r = conn.execute("SELECT MAX(updated_at) FROM metrics WHERE date=?", (today,)).fetchone()
-        last = r[0] if r and r[0] else None
-        stale_min = None
-        if last:
+            rows = conn.execute(
+                f"SELECT account_id, MAX(updated_at) FROM metrics WHERE date=? AND account_id IN ({ph}) GROUP BY account_id",
+                [today] + all_ids).fetchall()
+        have = {aid: u for aid, u in rows}
+        missing = 0
+        stale = 0
+        oldest = 0
+        for aid in all_ids:
+            u = have.get(aid)
+            if not u:
+                missing += 1
+                continue
             try:
-                stale_min = (now - datetime.strptime(last, "%Y-%m-%d %H:%M:%S")).total_seconds() / 60
+                m = (now - datetime.strptime(u, "%Y-%m-%d %H:%M:%S")).total_seconds() / 60
+                oldest = max(oldest, m)
+                if m > 140:  # 한 사이클(약 2시간)을 넘긴 매장 = 진짜 지연
+                    stale += 1
             except Exception:
                 pass
-        if last is None or (stale_min is not None and stale_min > 75):
-            print(f"[boot-catchup] 라이브 공백 {'(오늘 데이터 없음)' if last is None else f'{int(stale_min)}분'} → 즉시 라이브 1회 실행")
+        if missing > 0 or stale > 0:
+            print(f"[boot-catchup] 미수집 {missing}개 / 140분+ 지연 {stale}개 (최고지연 {int(oldest)}분) → 즉시 라이브 1회")
             _live_global_job()
         else:
-            print(f"[boot-catchup] 최신 {int(stale_min)}분 전 — 충분히 최신, 스킵")
+            print(f"[boot-catchup] 전 매장 최근 갱신(최고지연 {int(oldest)}분) — 스킵")
     except Exception:
         traceback.print_exc()
 
