@@ -1822,7 +1822,7 @@ def admin_backfill_recent():
     except ValueError:
         days = 3
     threading.Thread(target=lambda: _backfill_recent_missing(days=days, manual=True), daemon=True).start()
-    return redirect(request.referrer or url_for("dashboard"))
+    return redirect(url_for("dashboard", backfill="started"))
 
 
 @app.route("/accounts/<account_id>/naver", methods=["POST"])

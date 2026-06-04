@@ -187,24 +187,27 @@
     {% endif %}
 
     <!-- 최근 빠진 데이터 백필 -->
-    <div class="card" style="padding:11px 16px; {% if recent_gaps %}background:#fff8ee; border-color:#f0d9b0{% endif %}">
+    {% if request.args.get('backfill') == 'started' %}
+    <div class="card" style="padding:10px 16px; background:#eafaf0; border-color:#bce8cf; font-size:0.85rem; color:#1e8449">
+        ✅ 빠진 데이터 재수집을 시작했습니다 — 몇 분 소요되며 완료되면 자동 반영됩니다.
+    </div>
+    {% endif %}
+    {% if recent_gaps %}
+    <div class="card" style="padding:11px 16px; background:#fff8ee; border-color:#f0d9b0">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px">
             <div style="font-size:0.85rem">
-                {% if recent_gaps %}
                 <strong style="color:#b9770e">⚠ 최근 3일 중 데이터 빠진 곳 {{ recent_gaps|length }}건</strong>
                 <span style="color:#888; font-size:0.78rem; margin-left:6px">
                     {% for g in recent_gaps[:8] %}<span style="display:inline-block; background:#fff; border:1px solid #e8d8b8; border-radius:6px; padding:1px 7px; margin:2px 3px 2px 0">{{ g.label }} {{ g.date[5:] }}</span>{% endfor %}{% if recent_gaps|length > 8 %} 외 {{ recent_gaps|length - 8 }}건{% endif %}
                 </span>
-                {% else %}
-                <strong style="color:#27ae60">✅ 최근 3일 데이터 빠진 곳 없음</strong>
-                {% endif %}
-                <div style="font-size:0.72rem; color:#aaa; margin-top:2px">매일 05:00 자동 백필 + 아래 버튼으로 즉시 재수집 (cafe24 7일 윈도우 내 과거일도 가능)</div>
+                <div style="font-size:0.72rem; color:#aaa; margin-top:2px">매일 05:00 자동으로도 채워지지만, 지금 바로 채우려면 →</div>
             </div>
-            <form method="POST" action="/admin/backfill_recent" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='재수집 시작됨…'">
+            <form method="POST" action="/admin/backfill_recent" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='시작 중…'">
                 <button type="submit" class="btn btn-sm" style="background:#e6a817; color:#fff; white-space:nowrap; cursor:pointer">↻ 빠진 데이터 지금 채우기</button>
             </form>
         </div>
     </div>
+    {% endif %}
 
     <!-- 퀵 네비 (JS 자동 생성) -->
     <div id="quicknav"></div>
