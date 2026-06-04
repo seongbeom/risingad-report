@@ -650,6 +650,57 @@ def _boot_catchup_job():
 _auto_backfill_attempted = {}
 
 
+_recent_backfill_attempted = {}  # (aid, date) -> 시도 횟수 (무한 재시도 방지)
+
+
+def _recent_gaps(days=3):
+    """최근 N일(오늘 제외) 중 metrics 행이 '아예 없는'(한 번도 못 받은) (aid, date) 목록.
+    매출 0 인 날은 실제 수집된 것이라 제외 — 진짜 빠진 것만."""
+    dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, days + 1)]
+    gaps = []
+    for a in db.list_accounts():
+        for d in dates:
+            if not db.get_metric(a["id"], d):
+                gaps.append((a["id"], d))
+    return gaps
+
+
+def _backfill_recent_missing(days=3, manual=False):
+    """최근 N일 중 데이터 행이 없는 (매장,날짜) 재수집 + 시트 기록.
+    finalize 가 특정 매장만 실패해 전날치가 비는 갭을 자동/수동 복구. cafe24 7일 윈도우 내라 과거일 가능.
+    라이브/finalize 와 chromium 충돌 안 나게 _live_lock 으로 보호. 반환: 처리한 (aid,date) 리스트."""
+    if not _live_lock.acquire(blocking=False):
+        print("[recent-backfill] 다른 사이클(라이브/finalize) 진행중 - 스킵")
+        return []
+    done = []
+    try:
+        cap = 5 if manual else 2
+        gaps = [(aid, d) for aid, d in _recent_gaps(days)
+                if _recent_backfill_attempted.get((aid, d), 0) < cap]
+        if not gaps:
+            print("[recent-backfill] 빠진 (매장,날짜) 없음")
+            return []
+        print(f"[recent-backfill] {len(gaps)}건 재수집 시작: {gaps[:12]}")
+        deadline = time.monotonic() + 40 * 60
+        for aid, d in gaps:
+            if time.monotonic() > deadline:
+                print("[recent-backfill] deadline 도달 - 남은 건 다음 회차")
+                break
+            _recent_backfill_attempted[(aid, d)] = _recent_backfill_attempted.get((aid, d), 0) + 1
+            _wait_for_memory(f"recent-backfill {aid} {d}")
+            try:
+                _run_scrape_task(aid, target_date=d, skip_sheet=False)  # 시트에도 기록
+                done.append((aid, d))
+            except Exception:
+                traceback.print_exc()
+            time.sleep(INTER_ACCOUNT_COOLDOWN_SEC)
+        _kill_leftover_chromium()
+        print(f"[recent-backfill] 완료 {len(done)}건")
+    finally:
+        _live_lock.release()
+    return done
+
+
 def _auto_backfill_missing(today, deadline=None):
     """라이브 사이클 끝에 누락 계정 자동 백필 1회.
     기준:
@@ -1332,6 +1383,15 @@ def reload_schedules():
     )
     print(f"[scheduler] db_backup: 매일 04:00 (7일 보관)")
 
+    # 최근일 누락 자동 백필 — 매일 05:00 (finalize 03:00·backup 04:00 끝나고, 라이브 08:00 전).
+    # finalize 가 특정 매장만 실패해 전날치가 빈 경우 자동 복구.
+    scheduler.add_job(
+        lambda: _backfill_recent_missing(days=3), "cron",
+        hour=5, minute=0,
+        id="recent_backfill", replace_existing=True,
+    )
+    print("[scheduler] recent_backfill: 매일 05:00 (최근 3일 빠진 매장 자동 재수집)")
+
     # 상품 분석은 별도 잡 없음 — 메트릭 세션에 piggyback:
     #   라이브(오늘 메트릭) → 오늘 일별 랭킹 / finalize(어제 메트릭) → 전일 일별 + 최근7일 추세
 
@@ -1751,6 +1811,18 @@ def admin_naver_collect():
         days = META_BACKFILL_DAYS
     threading.Thread(target=lambda: _naver_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
+
+
+@app.route("/admin/backfill_recent", methods=["POST"])
+@login_required
+def admin_backfill_recent():
+    """최근 N일(기본 3) 빠진 매장 데이터 수동 재수집 트리거 (백그라운드)."""
+    try:
+        days = int(request.form.get("days", "3"))
+    except ValueError:
+        days = 3
+    threading.Thread(target=lambda: _backfill_recent_missing(days=days, manual=True), daemon=True).start()
+    return redirect(request.referrer or url_for("dashboard"))
 
 
 @app.route("/accounts/<account_id>/naver", methods=["POST"])
@@ -3072,6 +3144,8 @@ def dashboard():
         product_dates=product_dates,
         product_collect_date=product_collect_date,
         freshness=_build_freshness(selected_ids, today),
+        recent_gaps=[{"label": _label_map().get(aid, aid), "date": d}
+                     for aid, d in _recent_gaps(days=3)],
         product_running=list(_running.keys()),
         meta_status=meta_status,
         ad_eff=ad_eff,
