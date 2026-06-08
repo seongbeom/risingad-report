@@ -700,6 +700,96 @@ def scrape_popup_hourly_via_admin(page, context, frame, target_date):
         p.close()
 
 
+def scrape_popup_hourly_visitors(page, context, frame, target_date):
+    """방문자분석 frame '전체 방문자수' 카드 '전체보기' → 팝업 시간 단위 24시간 방문자 추출.
+    호출 전 방문자분석 페이지 navigate + 단일일 기간 설정돼 있어야 함.
+    반환: {hour(int) -> 전체방문수(int)}. (어제 동시각 방문자 비교용)
+    방문자 페이지 전체보기 4개 중 첫번째(전체방문자수) — 컬럼: 일시/전체 방문수/처음 방문/재방문."""
+    try:
+        btn = frame.locator("button:has-text('전체보기')").first
+        with context.expect_page(timeout=20000) as np:
+            btn.click(timeout=15000)
+        p = np.value
+    except Exception as e:
+        print(f"[scrape_popup_hourly_visitors] 전체보기 popup 실패: {e}")
+        return {}
+    try:
+        p.wait_for_load_state("domcontentloaded", timeout=20000)
+        try:
+            p.wait_for_selector("table tbody tr", timeout=15000)
+        except Exception:
+            p.wait_for_timeout(8000)
+        # 단일일 고정 — 팝업 프리셋 버튼(오늘/어제)이 달력보다 안전
+        _today = datetime.now().strftime("%Y-%m-%d")
+        _yest = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        preset = "오늘" if target_date == _today else ("어제" if target_date == _yest else None)
+        if preset:
+            try:
+                pb = p.locator(f"button:has-text('{preset}')").first
+                if pb.count() > 0:
+                    pb.click(timeout=5000)
+                    p.wait_for_timeout(1500)
+            except Exception:
+                pass
+        # 표시 기준 → 시간 단위
+        sel = p.locator("select").first
+        if sel.count() > 0:
+            try:
+                sel.select_option(label="시간 단위", timeout=5000)
+                p.wait_for_timeout(2000)
+            except Exception:
+                pass
+        for txt in ["조회하기", "조회"]:
+            b = p.locator(f"button:has-text('{txt}')").first
+            try:
+                if b.count() > 0 and b.is_visible():
+                    b.click()
+                    break
+            except Exception:
+                continue
+        try:
+            p.wait_for_function(
+                """() => {
+                    for (const t of document.querySelectorAll('table')) {
+                        const hs = Array.from(t.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '');
+                        if (hs.some(h => h.includes('일시') || h.includes('시간')) && t.querySelectorAll('tbody tr').length >= 5) return true;
+                    }
+                    return false;
+                }""",
+                timeout=20000,
+            )
+        except Exception:
+            pass
+        p.wait_for_timeout(2000)
+        # '일시' 헤더 테이블에서 시간별 '전체 방문수' 파싱
+        out = {}
+        for t in p.query_selector_all("table"):
+            headers = t.evaluate("el => Array.from(el.querySelectorAll('thead th')).map(th => th.textContent?.trim() || '')")
+            if not headers or not any(("일시" in h or "시간" in h) for h in headers):
+                continue
+            time_idx = next((i for i, h in enumerate(headers) if "일시" in h or "시간" in h), 0)
+            vis_idx = next((i for i, h in enumerate(headers) if "전체" in h and "방문" in h),
+                           next((i for i, h in enumerate(headers) if "방문수" in h or "방문" in h), 1))
+            rows = t.evaluate("el => Array.from(el.querySelectorAll('tbody tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim() || ''))")
+            for r in rows:
+                if time_idx >= len(r):
+                    continue
+                m = re.search(r"(\d{1,2})\s*시", r[time_idx]) or re.search(r"\b(\d{1,2}):", r[time_idx])
+                if not m:
+                    continue
+                hour = int(m.group(1))
+                if vis_idx < len(r):
+                    try:
+                        out[hour] = int(r[vis_idx].replace(",", "").replace("명", "") or 0)
+                    except (ValueError, TypeError):
+                        pass
+            if out:
+                break
+        return out
+    finally:
+        p.close()
+
+
 def scrape_popup_hourly(context, popup_url, target_date):
     """[deprecated] ca-web URL 직접 navigate 방식. 부운영자 계정에서 인증 토큰 누락으로 401.
     어드민 진입 흐름의 scrape_popup_hourly_via_admin 사용 권장. 백워드 호환용으로 유지."""
@@ -836,6 +926,15 @@ def run_scrape(account, target_date=None):
             if frame:
                 _phase("방문자분석 추출")
                 results["방문자분석"] = scrape_visitors(frame, page, period_fn)
+                # 시간별 방문자 (어제 동시각 비교용) — 오늘 아닌 날(finalize/백필)만. 라이브(오늘)는
+                # 속도 유지 위해 스킵 (어제 동시각 비교는 '어제' 시간별만 있으면 됨).
+                if target_date != datetime.now().strftime("%Y-%m-%d"):
+                    try:
+                        _phase("시간별 방문자")
+                        results["방문자_시간별"] = scrape_popup_hourly_visitors(page, context, frame, target_date)
+                    except Exception as e:
+                        print(f"[visitors hourly] 실패 - 스킵: {repr(e)[:100]}")
+                        results["방문자_시간별"] = {}
 
             # 3. 처음방문vs재방문
             _phase("처음방문vs재방문 진입")

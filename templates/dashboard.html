@@ -203,7 +203,7 @@
                 <div style="font-size:0.72rem; color:#aaa; margin-top:2px">매일 05:00 자동으로도 채워지지만, 지금 바로 채우려면 →</div>
             </div>
             <form method="POST" action="/admin/backfill_recent" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='시작 중…'">
-                <button type="submit" class="btn btn-sm" style="background:#e6a817; color:#fff; white-space:nowrap; cursor:pointer">↻ 빠진 데이터 지금 채우기</button>
+                <button type="submit" style="background:#e6a817; color:#fff; white-space:nowrap; cursor:pointer; border:none; border-radius:7px; padding:7px 14px; font-size:0.82rem; font-weight:600">↻ 빠진 데이터 지금 채우기</button>
             </form>
         </div>
     </div>
@@ -423,7 +423,11 @@
                     </td>
                     <!-- 방문자수 -->
                     <td>{% if r.today.방문자수 %}{{ "{:,.0f}".format(r.today.방문자수) }}{% else %}<span class="dim">—</span>{% endif %}
-                        {% if r.yesterday.방문자수 %}
+                        {% if r.yest_visitors_at_hour is not none %}
+                            <span class="label-sub" style="display:block; color:#aaa">어제 동시각 {{ "{:,.0f}".format(r.yest_visitors_at_hour) }}
+                                {% if r.vs_yest_visitors_at_hour_pct is not none %}<span class="{{ 'up' if r.vs_yest_visitors_at_hour_pct>0 else ('down' if r.vs_yest_visitors_at_hour_pct<0 else 'flat') }}">{{ "%+.0f"|format(r.vs_yest_visitors_at_hour_pct) }}%</span>{% endif %}
+                            </span>
+                        {% elif r.yesterday.방문자수 %}
                             <span class="label-sub" style="display:block; color:#aaa">어제 종일 {{ "{:,.0f}".format(r.yesterday.방문자수) }}</span>
                         {% endif %}
                         {% if r.today.신규방문 is not none or r.today.재방문 is not none %}

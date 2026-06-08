@@ -98,6 +98,7 @@ def init_db():
                 객단가 INTEGER DEFAULT 0,
                 매출액비교 INTEGER DEFAULT 0,
                 매출액증감 INTEGER DEFAULT 0,
+                방문자 INTEGER DEFAULT 0,
                 updated_at TEXT DEFAULT (datetime('now', 'localtime')),
                 PRIMARY KEY (account_id, date, hour),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
@@ -274,6 +275,14 @@ def init_db():
         except Exception:
             pass
 
+        # metrics_hourly.방문자 마이그레이션 (시간별 방문자 — 어제 동시각 비교용)
+        try:
+            mh_cols = [r[1] for r in conn.execute("PRAGMA table_info(metrics_hourly)").fetchall()]
+            if mh_cols and "방문자" not in mh_cols:
+                conn.execute("ALTER TABLE metrics_hourly ADD COLUMN 방문자 INTEGER DEFAULT 0")
+        except Exception:
+            pass
+
         # runs.attempts 마이그레이션 (1회 시도가 기본, 재시도 시 증가)
         run_cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
         if "attempts" not in run_cols:
@@ -373,7 +382,7 @@ def get_metric(account_id, date):
         return dict(r) if r else None
 
 
-HOURLY_COLS = ["매출", "구매건수", "객단가", "매출액비교", "매출액증감"]
+HOURLY_COLS = ["매출", "구매건수", "객단가", "매출액비교", "매출액증감", "방문자"]
 
 
 def upsert_metrics_hourly(account_id, date, hourly_rows):
