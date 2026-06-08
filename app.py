@@ -361,6 +361,7 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
 
             # 카페24 Premium 만료 등으로 sample(데모) 데이터가 반환된 경우는 시트/DB 모두 스킵
             if results.get("_is_sample"):
+                _sample_today[account_id] = scraped_date  # 자동백필이 이 매장 즉시 재시도 안 하게
                 msg = f"[{account_id}] is_sample=True - 카페24 Premium 만료 또는 권한 문제. 시트/DB 입력 스킵"
                 print(msg)
                 label = account.get("label") or account_id
@@ -651,6 +652,7 @@ _auto_backfill_attempted = {}
 
 
 _recent_backfill_attempted = {}  # (aid, date) -> 시도 횟수 (무한 재시도 방지)
+_sample_today = {}  # account_id -> date. Premium 만료(sample) 매장 — 자동백필 즉시 재시도 스킵용
 
 
 def _recent_gaps(days=3):
@@ -716,6 +718,8 @@ def _auto_backfill_missing(today, deadline=None):
         key = (aid, today)
         if _auto_backfill_attempted.get(key, 0) >= 2:  # 하루 계정당 자동 재시도 최대 2회
             continue
+        if _sample_today.get(aid) == today:
+            continue  # Premium 만료(sample) 매장 — 같은 사이클에 재시도해도 또 sample, 시간만 낭비
         m = db.get_metric(aid, today)
         try:
             h_count = db.count_metrics_hourly(aid, today)

@@ -617,7 +617,7 @@ def scrape_popup_hourly_via_admin(page, context, frame, target_date):
     try:
         btn = frame.locator("button:has-text('전체보기')").first
         with context.expect_page(timeout=20000) as new_page_info:
-            btn.click()
+            btn.click(timeout=15000)  # 기본 60초 → 15초 (Premium만료/팝업불가 매장에서 헛대기 줄임)
         p = new_page_info.value
     except Exception as e:
         print(f"[scrape_popup_hourly_via_admin] 전체보기 popup 실패: {e}")
@@ -847,29 +847,36 @@ def run_scrape(account, target_date=None):
             _phase("신규회원 추출")
             results["신규회원"] = scrape_new_members(frame, page, period_fn)
 
-        # 5/6. 매출종합/구매패턴 전체보기 팝업 (구매개수, 처음·재구매 건수)
-        _phase("매출종합 팝업")
-        results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
-        _phase("구매패턴 팝업")
-        results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
-
-        # 7. 시간 단위 매출
-        _phase("시간별 매출")
-        try:
-            if _is_main_admin(account):
-                results["매출종합_시간별"] = scrape_popup_hourly(context, SALES_POPUP_URL, target_date)
-            else:
-                page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(5000)
-                sales_frame = page.frame("adminFrameContent")
-                if sales_frame:
-                    set_period_range(sales_frame, page, target_date, target_date)
-                    results["매출종합_시간별"] = scrape_popup_hourly_via_admin(page, context, sales_frame, target_date)
-                else:
-                    results["매출종합_시간별"] = {}
-        except Exception as e:
-            print(f"[hourly] 실패 - 시간별 스킵: {e}")
+        # 5/6/7. 팝업들(매출종합/구매패턴/시간별) — Premium 만료(sample)면 데이터가 데모라
+        # 의미 없고, 팝업 클릭 타임아웃만 까먹으니 통째로 스킵. (is_sample 은 앞 섹션에서 이미 결정됨)
+        if sample_detector["is_sample"]:
+            print(f"[{aid}] Premium 만료(sample) 감지 → 팝업/시간별 스킵 (시간 절약)", flush=True)
+            results["매출종합_상세"] = {}
+            results["구매패턴_상세"] = {}
             results["매출종합_시간별"] = {}
+        else:
+            _phase("매출종합 팝업")
+            results["매출종합_상세"] = scrape_popup(context, SALES_POPUP_URL, target_date, target_date)
+            _phase("구매패턴 팝업")
+            results["구매패턴_상세"] = scrape_popup(context, PATTERNS_POPUP_URL, target_date, target_date)
+
+            # 7. 시간 단위 매출
+            _phase("시간별 매출")
+            try:
+                if _is_main_admin(account):
+                    results["매출종합_시간별"] = scrape_popup_hourly(context, SALES_POPUP_URL, target_date)
+                else:
+                    page.goto(urls["sales"], wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(5000)
+                    sales_frame = page.frame("adminFrameContent")
+                    if sales_frame:
+                        set_period_range(sales_frame, page, target_date, target_date)
+                        results["매출종합_시간별"] = scrape_popup_hourly_via_admin(page, context, sales_frame, target_date)
+                    else:
+                        results["매출종합_시간별"] = {}
+            except Exception as e:
+                print(f"[hourly] 실패 - 시간별 스킵: {e}")
+                results["매출종합_시간별"] = {}
 
         results["_is_sample"] = sample_detector["is_sample"]
 
