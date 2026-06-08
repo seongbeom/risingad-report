@@ -1,7 +1,7 @@
 {# 팀 메모/피드백 FAB + 슬라이드 패널. base 레이아웃 없는 환경에서 각 페이지 끝에 include #}
 {% if user %}
 <style>
-  .fb-fab { position: fixed; right: 22px; bottom: 22px; z-index: 50; width: 52px; height: 52px;
+  .fb-fab { position: fixed; right: 22px; bottom: 22px; z-index: 690; width: 52px; height: 52px;
     border-radius: 50%; border: none; background: #4a90d9; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
     cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform .15s; }
   .fb-fab:hover { transform: translateY(-2px); }
@@ -10,10 +10,10 @@
     font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 6px; display: none;
     align-items: center; justify-content: center; line-height: 1; }
   .fb-badge.on { display: inline-flex; }
-  .fb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.32); z-index: 60; display: none; }
+  .fb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.32); z-index: 700; display: none; }
   .fb-overlay.open { display: block; }
   .fb-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 400px; max-width: 92vw; background: #fff;
-    z-index: 61; box-shadow: -4px 0 18px rgba(0,0,0,0.18); transform: translateX(110%); transition: transform .25s;
+    z-index: 701; box-shadow: -4px 0 18px rgba(0,0,0,0.18); transform: translateX(110%); transition: transform .25s;
     display: flex; flex-direction: column; }
   .fb-panel.open { transform: translateX(0); }
   .fb-header { padding: 14px 18px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
