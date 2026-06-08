@@ -820,32 +820,40 @@ def run_scrape(account, target_date=None):
             _phase("매출종합분석 추출")
             results["매출종합분석"] = scrape_sales(frame, page, period_fn)
 
-        # 2. 방문자분석
-        _phase("방문자분석 진입")
-        page.goto(urls["visitors"], wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(5000)
-        frame = page.frame("adminFrameContent")
-        if frame:
-            _phase("방문자분석 추출")
-            results["방문자분석"] = scrape_visitors(frame, page, period_fn)
+        # Premium 만료(sample)는 첫 섹션에서 이미 감지됨 → 나머지 섹션(2~4)·팝업·상품 스킵.
+        # (sample 매장은 섹션마다 set_period_range 가 2분씩 걸려 사이클을 끔 — 여기서 끊어 ~1분으로)
+        # return 하지 않고 가드로 감싸 정상 정리(browser.close)·결과저장 흐름은 그대로 탄다.
+        if sample_detector["is_sample"]:
+            print(f"[{aid}] Premium 만료(sample) 조기감지 → 나머지 섹션 스킵 (시간 절약)", flush=True)
+            for k in ("방문자분석", "처음방문vs재방문", "신규회원"):
+                results[k] = {}
+        else:
+            # 2. 방문자분석
+            _phase("방문자분석 진입")
+            page.goto(urls["visitors"], wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+            frame = page.frame("adminFrameContent")
+            if frame:
+                _phase("방문자분석 추출")
+                results["방문자분석"] = scrape_visitors(frame, page, period_fn)
 
-        # 3. 처음방문vs재방문
-        _phase("처음방문vs재방문 진입")
-        page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(5000)
-        frame = page.frame("adminFrameContent")
-        if frame:
-            _phase("처음방문vs재방문 추출")
-            results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page, period_fn)
+            # 3. 처음방문vs재방문
+            _phase("처음방문vs재방문 진입")
+            page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+            frame = page.frame("adminFrameContent")
+            if frame:
+                _phase("처음방문vs재방문 추출")
+                results["처음방문vs재방문"] = scrape_first_vs_repeat(frame, page, period_fn)
 
-        # 4. 신규회원
-        _phase("신규회원 진입")
-        page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(5000)
-        frame = page.frame("adminFrameContent")
-        if frame:
-            _phase("신규회원 추출")
-            results["신규회원"] = scrape_new_members(frame, page, period_fn)
+            # 4. 신규회원
+            _phase("신규회원 진입")
+            page.goto(urls["buyers"], wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+            frame = page.frame("adminFrameContent")
+            if frame:
+                _phase("신규회원 추출")
+                results["신규회원"] = scrape_new_members(frame, page, period_fn)
 
         # 5/6/7. 팝업들(매출종합/구매패턴/시간별) — Premium 만료(sample)면 데이터가 데모라
         # 의미 없고, 팝업 클릭 타임아웃만 까먹으니 통째로 스킵. (is_sample 은 앞 섹션에서 이미 결정됨)
