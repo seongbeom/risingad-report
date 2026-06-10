@@ -402,15 +402,21 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
             vis_hourly = results.get("방문자_시간별") or {}
             if vis_hourly:
                 vis_hourly = {int(h): (v or 0) for h, v in vis_hourly.items()}
-                if hourly_rows:
-                    for r in hourly_rows:
-                        try:
-                            r["방문자"] = vis_hourly.get(int(r.get("hour")), 0)
-                        except (ValueError, TypeError):
-                            pass
-                else:
-                    # 매출 시간별이 없어도 방문자 시간별만으로 행 구성 (방문자 비교는 살림)
-                    hourly_rows = [{"hour": h, "방문자": v} for h, v in sorted(vis_hourly.items())]
+                # 1) 매출 시간 행에 방문자 채우고, 이미 있는 시간대 기록
+                existing_hours = set()
+                for r in (hourly_rows or []):
+                    try:
+                        h = int(r.get("hour"))
+                        r["방문자"] = vis_hourly.get(h, 0)
+                        existing_hours.add(h)
+                    except (ValueError, TypeError):
+                        pass
+                # 2) 매출 없는 시간대 방문자도 행으로 추가 (저빈도 판매 매장 누락 방지)
+                if hourly_rows is None:
+                    hourly_rows = []
+                for h, v in sorted(vis_hourly.items()):
+                    if h not in existing_hours:
+                        hourly_rows.append({"hour": h, "방문자": v})
             if hourly_rows:
                 hsum = sum((r.get("매출") or 0) for r in hourly_rows)
                 day_sales = metrics.get("매출") or 0
@@ -427,6 +433,10 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                 prev = db.get_metric(account_id, (datetime.strptime(scraped_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"))
                 is_partial = (scraped_date == datetime.now().strftime("%Y-%m-%d"))  # 오늘=진행중
                 warns = sheets.validate_metrics(metrics, hourly_rows, prev, is_partial=is_partial)
+                # 매출 표가 사라진 경우(신형 PRO 화면 전환 등) — 팝업으로 대체수집은 되지만 사람이 알 수 있게 경고
+                if metrics.get("_매출표없음"):
+                    src = "팝업으로 대체수집 중" if (metrics.get("매출") or 0) > 0 else "팝업도 0 — 확인 필요"
+                    warns = (warns or []) + [f"매출 표 없음(신형화면 의심) — {src}"]
                 if warns:
                     label = account.get("label") or account_id
                     msg = f"[검증] {account_id} {scraped_date}: " + " / ".join(warns)

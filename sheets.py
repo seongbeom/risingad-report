@@ -116,6 +116,7 @@ def extract_metrics(result):
             missing.append(f"매출종합 row 컬럼 부족 ({row})")
     else:
         missing.append("매출종합 rows 없음")
+        m["_매출표없음"] = True  # 신형(PRO) 화면 등으로 표가 사라진 케이스 — 호출부에서 경고
 
     if sales.get("1인당매출", {}).get("rows"):
         row = _pick_row(sales["1인당매출"]["rows"], target_date)
@@ -165,6 +166,14 @@ def extract_metrics(result):
         target = next((r for r in sd_t1["rows"] if r and r[0] == target_date), sd_t1["rows"][0])
         if target and len(target) >= 4:
             m["구매개수"] = parse_number(target[3])
+        # 매출종합 표가 비었을 때(신형 PRO 화면 등) 팝업값으로 매출/구매건수 대체.
+        # 팝업도 동일한 '결제완료' 기준이라 다른 매장과 수치 일관성 유지.
+        # 팝업 컬럼: [일시, 구매자수, 구매건수, 구매개수, 매출액, 비교값, 증감]
+        if m.get("매출") is None and target and len(target) >= 5:
+            m["매출"] = parse_number(target[4])
+            m["구매건수"] = parse_number(target[2])
+            missing[:] = [x for x in missing if "매출종합 rows 없음" not in x]
+            missing.append("매출종합 표 없음→팝업 대체수집(신형화면 의심)")
 
     # 구매패턴_상세 팝업 → 처음구매 건수, 재구매 건수
     pd_ = result.get("구매패턴_상세") or {}
