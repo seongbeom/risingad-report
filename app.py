@@ -435,8 +435,12 @@ def _run_scrape_task(account_id, target_date=None, skip_sheet=False):
                 warns = sheets.validate_metrics(metrics, hourly_rows, prev, is_partial=is_partial)
                 # 매출 표가 사라진 경우(신형 PRO 화면 전환 등) — 팝업으로 대체수집은 되지만 사람이 알 수 있게 경고
                 if metrics.get("_매출표없음"):
-                    src = "팝업으로 대체수집 중" if (metrics.get("매출") or 0) > 0 else "팝업도 0 — 확인 필요"
-                    warns = (warns or []) + [f"매출 표 없음(신형화면 의심) — {src}"]
+                    if metrics.get("매출") is None:
+                        # 표도 팝업도 값을 못 줌 = 진짜 수집 실패
+                        warns = (warns or []) + ["매출 표·팝업 모두 수집 실패 — 확인 필요"]
+                    else:
+                        # 표는 없지만 팝업으로 정상 대체수집됨(값 0이어도 정상 가능) — 정보성 안내
+                        warns = (warns or []) + ["매출 표 없음(신형화면 의심) — 팝업으로 대체수집 중"]
                 if warns:
                     label = account.get("label") or account_id
                     msg = f"[검증] {account_id} {scraped_date}: " + " / ".join(warns)
