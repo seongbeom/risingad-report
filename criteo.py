@@ -209,16 +209,48 @@ def mark_session_dead(reason=""):
 
 
 # ===== 시트 쓰기 (효율 탭 크리테오 칸) =====
-# TODO: 효율시트의 크리테오 블록 컬럼 확정 필요 (메타=AZ.., 네이버=KH.. 처럼)
-#   확정되면 아래 채우고 write_to_sheet 활성화.
-CRITEO_COLS = {"impressions": "", "clicks": "", "cost": "", "conversions": "", "revenue": ""}
+# 매장마다 채널 컬럼 위치가 달라(예: dazs01은 GI가 모비온) → '크리테오' 라벨을 시트에서
+# 동적 탐색해서 노출/클릭/광고비/전환/매출 컬럼을 자동 결정. (메타처럼 하드코딩하면 오기입)
+CHANNEL_LABEL = "크리테오"
+# 지표 라벨(부분일치) → 우리 키. 채널 블록 내 첫 매칭 컬럼 사용.
+_METRIC_SUBS = [("노출", "impressions"), ("클릭수", "clicks"), ("광고비", "cost"),
+                ("전환", "conversions"), ("매출", "revenue")]
+
+
+def _criteo_cols(ws):
+    """시트에서 '크리테오' 블록의 {impressions,clicks,cost,conversions,revenue} 컬럼 letter 탐색.
+    헤더 영역(채널 라벨행 + 바로 아래 지표행) 기준. 없으면 None."""
+    from gspread.utils import rowcol_to_a1
+    grid = ws.get("A28:OZ34")  # 헤더 영역(일별성과 채널/지표 라벨)
+    ch_row = None
+    for ri, row in enumerate(grid):
+        if any((c or "").strip() == CHANNEL_LABEL for c in row):
+            ch_row = ri
+            break
+    if ch_row is None:
+        return None
+    ch = grid[ch_row]
+    cri_c = next(i for i, c in enumerate(ch) if (c or "").strip() == CHANNEL_LABEL)
+    nxt = len(ch)
+    for i in range(cri_c + 1, len(ch)):
+        if (ch[i] or "").strip():  # 다음 채널 라벨 → 블록 끝
+            nxt = i
+            break
+    met = grid[ch_row + 1] if ch_row + 1 < len(grid) else []
+    cols = {}
+    for i in range(cri_c, min(nxt, len(met))):
+        label = (met[i] or "").strip()
+        for sub, key in _METRIC_SUBS:
+            if key not in cols and sub in label:
+                cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
+    if not all(k in cols for _, k in _METRIC_SUBS):
+        return None
+    return cols
 
 
 def write_to_sheet(spreadsheet_id, daily):
-    """효율탭 크리테오 칸에 일자별 기입 (메타/네이버 write 와 동일 구조).
+    """효율탭 크리테오 칸에 일자별 기입 (메타/네이버 write 와 동일 구조, 단 컬럼은 동적 탐색).
     daily: {date: metrics}. 반환 (written, [errors])."""
-    if not all(CRITEO_COLS.values()):
-        return 0, ["CRITEO_COLS 미설정 — 효율시트 크리테오 컬럼 확정 후 활성화"]
     import sheets
     from collections import defaultdict
     import datetime as _dt
@@ -238,6 +270,10 @@ def write_to_sheet(spreadsheet_id, daily):
             except Exception as ce:
                 errors.append(f"{eff_name} 자동생성 실패: {repr(ce)[:50]}")
                 continue
+        cols = _criteo_cols(ws)
+        if not cols:
+            errors.append(f"{eff_name} '크리테오' 컬럼 못 찾음 — 스킵")
+            continue
         col_b = ws.col_values(2)
         rowmap = {(v or "").strip(): i for i, v in enumerate(col_b, start=1)}
         data = []
@@ -246,8 +282,8 @@ def write_to_sheet(spreadsheet_id, daily):
             if not row:
                 errors.append(f"{d} 행없음")
                 continue
-            for key, col in CRITEO_COLS.items():
-                data.append({"range": f"{col}{row}", "values": [[m[key]]]})
+            for key in ("impressions", "clicks", "cost", "conversions", "revenue"):
+                data.append({"range": f"{cols[key]}{row}", "values": [[m[key]]]})
             written += 1
         if data:
             ws.batch_update(data, value_input_option="USER_ENTERED")
