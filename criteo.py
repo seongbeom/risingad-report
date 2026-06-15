@@ -163,6 +163,44 @@ def fetch_daily(advertiser_id, since, until):
     return out
 
 
+# ===== 크롤 세션 상태/경고 (criteo_login.py 가 저장한 메타 기반) =====
+SESSION_FILE = Path(__file__).parent / "data" / "criteo_session.json"
+SESSION_META = Path(__file__).parent / "data" / "criteo_session_meta.json"
+WARN_DAYS = 7  # 만료 N일 전부터 경고
+
+
+def session_status():
+    """크롤 세션 상태. 반환 {ok, days_left, refreshed_at, severity, message}.
+    severity: ok / warn / critical (없음/만료)."""
+    import datetime
+    if not SESSION_FILE.exists() or not SESSION_META.exists():
+        return {"ok": False, "days_left": None, "refreshed_at": None,
+                "severity": "critical",
+                "message": "크리테오 세션 없음 — 최초 로그인 필요(criteo_login)"}
+    meta = json.loads(SESSION_META.read_text())
+    refreshed = datetime.date.fromisoformat(meta["refreshed_at"])
+    valid = int(meta.get("valid_days", 30))
+    days_left = (refreshed + datetime.timedelta(days=valid) - datetime.date.today()).days
+    if days_left <= 0:
+        sev, msg = "critical", f"크리테오 세션 만료(추정) — 재로그인 필요 (갱신일 {refreshed})"
+    elif days_left <= WARN_DAYS:
+        sev, msg = "warn", f"크리테오 세션 {days_left}일 뒤 만료 — 여유 있을 때 재로그인 권장"
+    else:
+        sev, msg = "ok", f"크리테오 세션 정상 ({days_left}일 남음)"
+    return {"ok": days_left > 0, "days_left": days_left,
+            "refreshed_at": meta["refreshed_at"], "severity": sev, "message": msg}
+
+
+def mark_session_dead(reason=""):
+    """크롤 중 로그인 페이지로 튕겼을 때 호출 — 메타를 만료 처리해 다음 상태체크가 경고."""
+    import datetime
+    SESSION_META.parent.mkdir(parents=True, exist_ok=True)
+    SESSION_META.write_text(json.dumps({
+        "refreshed_at": (datetime.date.today() - datetime.timedelta(days=999)).isoformat(),
+        "valid_days": 30, "dead_reason": reason,
+    }, ensure_ascii=False, indent=2))
+
+
 # ===== 시트 쓰기 (효율 탭 크리테오 칸) =====
 # TODO: 효율시트의 크리테오 블록 컬럼 확정 필요 (메타=AZ.., 네이버=KH.. 처럼)
 #   확정되면 아래 채우고 write_to_sheet 활성화.

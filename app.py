@@ -19,6 +19,7 @@ import scraper
 import sheets
 import meta
 import naver
+import criteo
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -53,6 +54,19 @@ def slack_notify(text, severity="info", webhook_url=None):
             traceback.print_exc()
 
     threading.Thread(target=_send, daemon=True).start()
+
+
+def _criteo_session_check_job():
+    """크리테오 크롤 세션 만료 임박/만료 시 Slack 경고 (여유있게 미리)."""
+    try:
+        st = criteo.session_status()
+        print(f"[criteo] session check: {st['message']}", flush=True)
+        if st["severity"] in ("warn", "critical"):
+            slack_notify(st["message"] + " → 크리테오_세션갱신.command 더블클릭",
+                         severity=st["severity"])
+    except Exception:
+        traceback.print_exc()
+
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cafe24-scraper-secret-key-change-me")
@@ -1446,6 +1460,14 @@ def reload_schedules():
         id="naver_collect", replace_existing=True,
     )
     print(f"[scheduler] naver_collect: 매일 07:10 (최근 {META_BACKFILL_DAYS}일)")
+
+    # 크리테오 크롤 세션 만료 체크 — 매일 09:00 (만료 7일 전부터 Slack 경고)
+    scheduler.add_job(
+        _criteo_session_check_job, "cron",
+        hour=9, minute=0,
+        id="criteo_session_check", replace_existing=True,
+    )
+    print("[scheduler] criteo_session_check: 매일 09:00 (만료 7일 전 경고)")
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
