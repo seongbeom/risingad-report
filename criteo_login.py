@@ -96,7 +96,12 @@ def main():
     exp = datetime.date.today() + datetime.timedelta(days=SESSION_VALID_DAYS)
     print(f"\n✅ 세션 저장 완료 → {SESSION.name}")
     print(f"   다음 갱신 권장일: {exp.isoformat()} (약 {SESSION_VALID_DAYS}일 뒤)")
-    _upload()
+    # 테스트 단계: 기본은 로컬 저장만. 운영 전환 시 CRITEO_UPLOAD=1 로 EC2 업로드.
+    import os
+    if os.environ.get("CRITEO_UPLOAD") == "1" or "--upload" in sys.argv:
+        _upload()
+    else:
+        print("   (로컬 저장만 — EC2 업로드는 운영 전환 후 CRITEO_UPLOAD=1)")
     print("\n끝났습니다. 이 창은 닫아도 됩니다.")
 
 

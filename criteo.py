@@ -21,9 +21,13 @@ CONSENT = "https://consent.criteo.com"
 VERSION = "2026-01"
 CURRENCY = "KRW"
 
-# 전환/매출 어트리뷰션 윈도우: post-click+post-view 30일 (광고주 KPI 합의되면 변경)
-CONV_METRIC = "SalesAllPc30d"
-REV_METRIC = "RevenueGeneratedAllPc30d"
+# 전환/매출 어트리뷰션: 그들의 '전일보고서' 기준 = 클릭 후 7일(post-click 7day).
+# (영상 분석: 디스플레이수/클릭수/비용/매출(클릭후1일·7일)/ROAS 컬럼 사용)
+CONV_METRIC = "SalesPc7d"          # 전환수(클릭후 7일)
+REV_METRIC = "RevenueGeneratedPc7d"  # 전환매출(클릭후 7일)
+CONV_METRIC_1D = "SalesPc1d"
+REV_METRIC_1D = "RevenueGeneratedPc1d"
+TIMEZONE = "Asia/Seoul"  # 전일보고서 타임존과 일치
 
 TOKEN_FILE = Path(__file__).parent / "data" / "criteo_token.json"
 
@@ -138,10 +142,11 @@ def fetch_daily(advertiser_id, since, until):
         "startDate": f"{since}T00:00:00.000Z",
         "endDate": f"{until}T00:00:00.000Z",
         "format": "json",
-        "timezone": "UTC",
+        "timezone": TIMEZONE,
         "currency": CURRENCY,
         "dimensions": ["AdvertiserId", "Day"],
-        "metrics": ["Displays", "Clicks", "AdvertiserCost", CONV_METRIC, REV_METRIC],
+        "metrics": ["Displays", "Clicks", "AdvertiserCost",
+                    CONV_METRIC, REV_METRIC, CONV_METRIC_1D, REV_METRIC_1D],
     }
     res = _api("POST", "/statistics/report", body)
     out = {}
@@ -157,8 +162,10 @@ def fetch_daily(advertiser_id, since, until):
             "impressions": int(float(r.get("Displays", 0) or 0)),
             "clicks": int(float(r.get("Clicks", 0) or 0)),
             "cost": round(float(r.get("AdvertiserCost", 0) or 0)),
-            "conversions": int(float(r.get(CONV_METRIC, 0) or 0)),
-            "revenue": round(float(r.get(REV_METRIC, 0) or 0)),
+            "conversions": int(float(r.get(CONV_METRIC, 0) or 0)),       # 클릭후 7일
+            "revenue": round(float(r.get(REV_METRIC, 0) or 0)),           # 클릭후 7일
+            "conversions_1d": int(float(r.get(CONV_METRIC_1D, 0) or 0)),
+            "revenue_1d": round(float(r.get(REV_METRIC_1D, 0) or 0)),
         }
     return out
 
