@@ -962,6 +962,59 @@ def _naver_collect_job(days=META_BACKFILL_DAYS):
     print(f"[naver] done — 성공 {ok_acct} / 실패 {len(fail)}")
 
 
+CRITEO_BACKFILL_DAYS = 7  # 클릭후7일 어트리뷰션 보정 위해 최근 7일 재수집
+
+
+def _criteo_collect_job(days=CRITEO_BACKFILL_DAYS):
+    """크리테오 성과 수집(세션 크롤) → 효율시트 크리테오칸 기입 + DB.
+    JWT 1회 확보 후 advertiser 루프. chromium 쓰므로 _live_lock 으로 cafe24 와 직렬화."""
+    accounts = [a for a in db.list_accounts() if (a.get("criteo_advertiser_id") or "").strip()]
+    if not accounts:
+        print("[criteo] 대상 계정 없음")
+        return
+    if not _live_lock.acquire(timeout=600):  # cafe24 스크래핑 끝날 때까지 최대 10분 대기
+        print("[criteo] _live_lock 획득 실패 — 다음 차수로 스킵")
+        return
+    try:
+        advs = [a["criteo_advertiser_id"] for a in accounts]
+        print(f"[criteo] 최근 {days}일 {len(accounts)}계정 시작")
+        try:
+            data = criteo.fetch_all_crawl(advs, days=days)
+        except Exception as e:
+            print(f"[criteo] 수집 실패: {repr(e)[:160]}")
+            slack_notify(f"크리테오 수집 실패: {repr(e)[:120]} → 세션 재로그인 확인", severity="warn")
+            return
+        ok_acct, fail = 0, []
+        for a in accounts:
+            aid = a["id"]
+            lbl = a.get("label") or aid
+            ssid = a.get("spreadsheet_id") or ""
+            daily = data.get(str(a["criteo_advertiser_id"]))
+            if not daily:
+                continue
+            try:
+                for d, m in daily.items():
+                    try:
+                        db.upsert_criteo_metric(aid, d, m)
+                    except Exception:
+                        traceback.print_exc()
+                wrote, errs = (0, [])
+                if ssid:
+                    wrote, errs = _retry_sheet_write(criteo.write_to_sheet, ssid, daily)
+                db.set_setting(f"criteo_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
+                db.add_sheet_log(aid, "criteo", f"최근{days}일", wrote,
+                                 "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+                print(f"[criteo] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
+                ok_acct += 1
+            except Exception as e:
+                fail.append(lbl)
+                print(f"[criteo] {lbl} 실패: {repr(e)[:160]}")
+        db.set_setting("criteo_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+        print(f"[criteo] done — 성공 {ok_acct} / 실패 {len(fail)}")
+    finally:
+        _live_lock.release()
+
+
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -1460,6 +1513,15 @@ def reload_schedules():
         id="naver_collect", replace_existing=True,
     )
     print(f"[scheduler] naver_collect: 매일 07:10 (최근 {META_BACKFILL_DAYS}일)")
+
+    # 크리테오 성과 수집(세션 크롤) — 매일 06:40 (chromium 쓰므로 _live_lock 으로 cafe24 와 직렬화)
+    scheduler.add_job(
+        _criteo_collect_job, "cron",
+        hour=6, minute=40,
+        id="criteo_collect", replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    print(f"[scheduler] criteo_collect: 매일 06:40 (최근 {CRITEO_BACKFILL_DAYS}일, 크롤)")
 
     # 크리테오 크롤 세션 만료 체크 — 매일 09:00 (만료 7일 전부터 Slack 경고)
     scheduler.add_job(

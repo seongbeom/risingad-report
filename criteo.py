@@ -170,6 +170,85 @@ def fetch_daily(advertiser_id, since, until):
     return out
 
 
+# ===== 크롤 기반 수집 (Authorization Code consent 막힘 → 세션 크롤로 내부 API 호출) =====
+# 검증: datasets/report 가 currency=KRW + dimensions=day + metrics 로 일별 성과 반환.
+#   displays→노출 clicks→클릭 cost→광고비(KRW) sales_pcnd→전환(클릭후) revenue_nd→매출(KRW)
+COCKPIT_DASH = "mc-cockpit-multi-account"
+REPORT_ENDPOINT = (f"https://marketing.criteo.com/modules/analytics/dashboards/"
+                   f"{COCKPIT_DASH}/api/datasets/report")
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+DATA_TZ = "Asia/Seoul"
+REPORT_METRICS = "displays,clicks,cost,sales_pcnd,revenue_nd"
+
+
+def _range_preset(days):
+    return "LAST_7_DAYS" if days <= 7 else ("LAST_30_DAYS" if days <= 30 else "LAST_90_DAYS")
+
+
+def _parse_report(payload):
+    """datasets/report json → {date: metrics}. day=null(합계행) 제외."""
+    out = {}
+    for v in payload.get("values", []):
+        day = v.get("day")
+        if not day:
+            continue
+        out[str(day)[:10]] = {
+            "impressions": int(float(v.get("displays_current", 0) or 0)),
+            "clicks": int(float(v.get("clicks_current", 0) or 0)),
+            "cost": round(float(v.get("cost_current", 0) or 0)),
+            "conversions": int(float(v.get("sales_pcnd_current", 0) or 0)),
+            "revenue": round(float(v.get("revenue_nd_current", 0) or 0)),
+        }
+    return out
+
+
+def fetch_all_crawl(advertiser_ids, days=7, session_path=None):
+    """세션으로 JWT 확보 후 advertiser별 일별 성과 수집(크롤).
+    반환 {advertiser_id(str): {date: metrics}}. 세션 만료 시 mark_session_dead + 예외."""
+    import urllib.parse
+    from playwright.sync_api import sync_playwright
+    sp = session_path or str(SESSION_FILE)
+    if not Path(sp).exists():
+        mark_session_dead("세션 파일 없음")
+        raise RuntimeError("criteo_session.json 없음 — criteo_login 필요")
+    advertiser_ids = [str(a) for a in advertiser_ids]
+    preset = _range_preset(days)
+    out = {}
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        ctx = b.new_context(storage_state=sp, user_agent=UA,
+                            viewport={"width": 1400, "height": 950})
+        page = ctx.new_page()
+        jwt = {"v": None}
+        page.on("request", lambda r: jwt.update(v=r.headers.get("authorization"))
+                if ("/api/datasets/" in r.url and r.headers.get("authorization")) else None)
+        page.goto(f"https://marketing.criteo.com/analytics/dashboards/{COCKPIT_DASH}/"
+                  f"?advertiserId={advertiser_ids[0]}", wait_until="networkidle", timeout=60000)
+        page.wait_for_timeout(6000)
+        # 로그인 페이지로 튕겼거나 JWT 못 얻으면 세션 만료
+        if "login" in page.url or "okta" in page.url or not jwt["v"]:
+            b.close()
+            mark_session_dead(f"JWT 실패 url={page.url[:60]}")
+            raise RuntimeError("크리테오 세션 만료 — 재로그인 필요(criteo_login)")
+        for adv in advertiser_ids:
+            params = {"clientIds": adv, "currency": CURRENCY,
+                      "dateRange": f"ko,{DATA_TZ},1,{preset},PREVIOUS_PERIOD",
+                      "granularity": "DAY", "dimensions": "day",
+                      "metrics": REPORT_METRICS, "version": "default"}
+            try:
+                resp = ctx.request.get(REPORT_ENDPOINT + "?" + urllib.parse.urlencode(params),
+                                       headers={"authorization": jwt["v"], "accept": "application/json"})
+                if resp.status == 200:
+                    out[adv] = _parse_report(json.loads(resp.text()))
+                else:
+                    print(f"[criteo] adv {adv} status {resp.status}", flush=True)
+            except Exception as e:
+                print(f"[criteo] adv {adv} 실패: {repr(e)[:80]}", flush=True)
+        b.close()
+    return out
+
+
 # ===== 크롤 세션 상태/경고 (criteo_login.py 가 저장한 메타 기반) =====
 SESSION_FILE = Path(__file__).parent / "data" / "criteo_session.json"
 SESSION_META = Path(__file__).parent / "data" / "criteo_session_meta.json"
