@@ -20,6 +20,7 @@ import sheets
 import meta
 import naver
 import criteo
+import gfa
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -1742,6 +1743,10 @@ def index():
         acct_status=acct_status,
         sched_rows=sched_rows,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        session_statuses=[
+            {"name": "크리테오", "tool": "크리테오_세션갱신.command", **criteo.session_status()},
+            {"name": "네이버 성과형(GFA)", "tool": "네이버성과형_세션갱신.command", **gfa.session_status()},
+        ],
     )
 
 

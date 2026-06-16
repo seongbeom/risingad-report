@@ -51,6 +51,33 @@
         <h1 style="margin-top:0">설정 / 관리</h1>
         <p class="subtitle" style="margin-bottom:16px">스크래퍼 · 계정 · 스케줄 관리 · {{ now }}</p>
 
+        <!-- 연동 세션(로그인) 상태 — 만료 시 데이터 수집 끊김. 월 1회 .command 더블클릭 갱신 -->
+        {% if session_statuses %}
+        <div class="card" style="border:1px solid #f0d9b0; background:#fffdf6">
+            <h2 style="border-bottom:none; padding-bottom:0">🔐 연동 세션 상태 <span style="font-size:0.72rem; color:#999; font-weight:normal">(만료되면 수집 끊김 — 월 1회 갱신 필수)</span></h2>
+            <table style="width:100%; font-size:0.82rem; border-collapse:collapse; margin-top:6px">
+                <thead><tr style="text-align:left; color:#888; font-size:0.74rem">
+                    <th style="padding:4px 8px">채널</th><th>상태</th><th>마지막 갱신</th><th>갱신 방법</th>
+                </tr></thead>
+                <tbody>
+                {% for s in session_statuses %}
+                    <tr style="border-top:1px solid #f0e8d0">
+                        <td style="padding:5px 8px; font-weight:600">{{ s.name }}</td>
+                        <td>
+                            {% if s.severity == 'ok' %}<span style="background:#27ae60;color:#fff;padding:1px 7px;border-radius:8px">✅ 정상 {{ s.days_left }}일 남음</span>
+                            {% elif s.severity == 'warn' %}<span style="background:#f0ad4e;color:#fff;padding:1px 7px;border-radius:8px">⚠️ {{ s.days_left }}일 후 만료 — 갱신 권장</span>
+                            {% else %}<span style="background:#e74c3c;color:#fff;padding:1px 7px;border-radius:8px">🔴 만료/없음 — 갱신 필요</span>{% endif %}
+                        </td>
+                        <td style="color:#777">{{ s.refreshed_at or '-' }}</td>
+                        <td style="color:#555"><code style="font-size:0.76rem">{{ s.tool }}</code> 더블클릭</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <p class="card-sub" style="margin:6px 0 0; font-size:0.72rem; color:#aaa">크리테오·네이버 성과형은 로그인 세션으로 수집. 만료 7일 전부터 Slack 경고도 발송됨.</p>
+        </div>
+        {% endif %}
+
         <!-- 자동 스케줄 현황 -->
         <div class="card" style="background:#f8fbff; border:1px solid #d6e6f5">
             <h2 style="border-bottom:none; padding-bottom:0">⏱ 자동 수집 스케줄</h2>
