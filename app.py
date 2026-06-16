@@ -1761,13 +1761,17 @@ def index():
         "live_global": ("🔴 라이브 스크랩", f"활성시간 매시간 (오늘 매트릭+상품)", None),
         "daily_finalize": ("📋 일일 정리", "매일 03:00 (어제 확정+시트+상품)", None),
         "meta_collect": ("📣 메타 광고 수집", f"매일 07:00 (최근 {META_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("meta_last_run", None)),
+        "naver_collect": ("🟢 네이버 검색광고 수집", f"매일 07:10 (최근 {META_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("naver_last_run", None)),
+        "criteo_collect": ("🟠 크리테오 수집", f"매일 06:40 (최근 {CRITEO_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("criteo_last_run", None)),
+        "gfa_collect": ("🟢 네이버 성과형(GFA) 수집", f"매일 06:50 (최근 {GFA_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("gfa_last_run", None)),
         "db_backup": ("💾 DB 백업", "매일 04:00", None),
         "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
     }
     sched_rows = []
     try:
         jobs = {j.id: j for j in scheduler.get_jobs()}
-        for jid in ["live_global", "daily_finalize", "meta_collect", "db_backup", "daily_restart"]:
+        for jid in ["live_global", "daily_finalize", "meta_collect", "naver_collect",
+                    "criteo_collect", "gfa_collect", "db_backup", "daily_restart"]:
             if jid not in _sched_info:
                 continue
             name, desc, last = _sched_info[jid]
@@ -1812,6 +1816,8 @@ def index():
                     "fail_err": fail_err,
                     "fail_kind": fail_kind,
                     "meta_last": db.get_setting(f"meta_last_{aid}", None),
+                    "criteo_last": db.get_setting(f"criteo_last_{aid}", None),
+                    "gfa_last": db.get_setting(f"gfa_last_{aid}", None),
                 }
     except Exception:
         traceback.print_exc()
@@ -3195,6 +3201,65 @@ def dashboard():
         naver_trend.append({"date": d[5:], "cost": cost, "rev": rev, "clk": clk,
                             "roas": round(rev / cost * 100) if cost else None})
 
+    # ===== 크리테오 · 네이버 성과형(GFA) — 네이버검색과 동일 스키마(imp/clk/cost/conv/rev) =====
+    def _build_simple_eff(src_by_key, d):
+        out = []
+        tot = {"imp": 0, "clk": 0, "cost": 0, "conv": 0, "rev": 0, "sales": 0}
+        for aid in selected_ids:
+            m = src_by_key.get((aid, d))
+            if not m:
+                continue
+            imp = m["impressions"] or 0; clk = m["clicks"] or 0; cost = m["cost"] or 0
+            rev = m["revenue"] or 0; conv = m["conversions"] or 0
+            sales = (by_key.get((aid, d), {}) or {}).get("매출") or 0
+            out.append({
+                "label": label_by_id.get(aid, aid), "id": aid,
+                "imp": imp, "clk": clk, "cost": cost, "conv": conv, "rev": rev, "sales": sales,
+                "ctr": round(clk / imp * 100, 2) if imp else None,
+                "cpc": round(cost / clk) if clk else None,
+                "cpa": round(cost / conv) if conv else None,
+                "roas": round(rev / cost * 100) if cost else None,
+                "broas": round(sales / cost * 100) if cost else None,
+            })
+            tot["imp"] += imp; tot["clk"] += clk; tot["cost"] += cost
+            tot["conv"] += conv; tot["rev"] += rev; tot["sales"] += sales
+        out.sort(key=lambda x: x["cost"], reverse=True)
+        tot["ctr"] = round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else None
+        tot["cpc"] = round(tot["cost"] / tot["clk"]) if tot["clk"] else None
+        tot["cpa"] = round(tot["cost"] / tot["conv"]) if tot["conv"] else None
+        tot["roas"] = round(tot["rev"] / tot["cost"] * 100) if tot["cost"] else None
+        tot["broas"] = round(tot["sales"] / tot["cost"] * 100) if tot["cost"] else None
+        return out, tot
+
+    def _eff_bundle(src_by_key, connected_n):
+        y, yt = _build_simple_eff(src_by_key, yesterday)
+        t, tt = _build_simple_eff(src_by_key, today)
+        return {"yesterday": {"date": yesterday, "rows": y, "tot": yt},
+                "today": {"date": today, "rows": t, "tot": tt},
+                "connected": connected_n, "has_data": bool(y or t)}
+
+    def _simple_trend(src_by_key):
+        tr = []
+        for d in trend_dates:
+            cost = sum((src_by_key.get((aid, d), {}) or {}).get("cost") or 0 for aid in selected_ids)
+            rev = sum((src_by_key.get((aid, d), {}) or {}).get("revenue") or 0 for aid in selected_ids)
+            clk = sum((src_by_key.get((aid, d), {}) or {}).get("clicks") or 0 for aid in selected_ids)
+            tr.append({"date": d[5:], "cost": cost, "rev": rev, "clk": clk,
+                       "roas": round(rev / cost * 100) if cost else None})
+        return tr
+
+    _window_start = (now - timedelta(days=8)).strftime("%Y-%m-%d")
+    criteo_by_key = {(r["account_id"], r["date"]): r for r in
+                     db.list_criteo_metrics(account_ids=selected_ids, start_date=_window_start, end_date=today)}
+    gfa_by_key = {(r["account_id"], r["date"]): r for r in
+                  db.list_gfa_metrics(account_ids=selected_ids, start_date=_window_start, end_date=today)}
+    criteo_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and (a.get("criteo_advertiser_id") or "").strip())
+    gfa_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and (a.get("naver_gfa_account_no") or "").strip())
+    criteo_eff = _eff_bundle(criteo_by_key, criteo_conn)
+    gfa_eff = _eff_bundle(gfa_by_key, gfa_conn)
+    criteo_trend = _simple_trend(criteo_by_key)
+    gfa_trend = _simple_trend(gfa_by_key)
+
     # 매장별 월 매출목표 vs 이번달 누적(MTD) 달성률
     month_start_s = now.replace(day=1).strftime("%Y-%m-%d")
     days_in_month = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
@@ -3415,6 +3480,10 @@ def dashboard():
         ad_summary=ad_summary,
         naver_eff=naver_eff,
         naver_trend=naver_trend,
+        criteo_eff=criteo_eff,
+        criteo_trend=criteo_trend,
+        gfa_eff=gfa_eff,
+        gfa_trend=gfa_trend,
         goals=goals,
         goal_month=now.month,
         now=now.strftime("%H:%M"),

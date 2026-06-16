@@ -146,6 +146,18 @@
                                     <span style="color:#999">시트</span>
                                     {% if st.last_sheet %}{{ st.last_sheet[5:16] }}{% elif not a.spreadsheet_id %}<span style="color:#aaa">미설정</span>{% else %}<span style="color:#aaa">-</span>{% endif %}
                                 </div>
+                                {% if a.criteo_advertiser_id %}
+                                <div title="크리테오 마지막 수집/시트기입">
+                                    <span style="color:#f76b1c">🟠크리테오</span>
+                                    {% if st.criteo_last %}{{ st.criteo_last[5:16] }}{% else %}<span style="color:#aaa">대기</span>{% endif %}
+                                </div>
+                                {% endif %}
+                                {% if a.naver_gfa_account_no %}
+                                <div title="네이버 성과형 마지막 수집/시트기입">
+                                    <span style="color:#2e7d32">🟢성과형</span>
+                                    {% if st.gfa_last %}{{ st.gfa_last[5:16] }}{% else %}<span style="color:#aaa">대기(권한)</span>{% endif %}
+                                </div>
+                                {% endif %}
                                 {% if st.fail_at %}
                                 <div title="{{ st.fail_err }}" style="margin-top:2px">
                                     {% if st.fail_kind == 'premium' %}<span style="background:#c0392b;color:#fff;padding:0 4px;border-radius:6px">🔴 Premium</span>

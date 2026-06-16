@@ -765,7 +765,19 @@ def upsert_gfa_metric(account_id, date, m):
 
 
 def list_naver_metrics(account_ids=None, start_date=None, end_date=None):
-    sql = "SELECT * FROM naver_metrics WHERE 1=1"
+    return _list_simple_metrics("naver_metrics", account_ids, start_date, end_date)
+
+
+def list_criteo_metrics(account_ids=None, start_date=None, end_date=None):
+    return _list_simple_metrics("criteo_metrics", account_ids, start_date, end_date)
+
+
+def list_gfa_metrics(account_ids=None, start_date=None, end_date=None):
+    return _list_simple_metrics("gfa_metrics", account_ids, start_date, end_date)
+
+
+def _list_simple_metrics(table, account_ids=None, start_date=None, end_date=None):
+    sql = f"SELECT * FROM {table} WHERE 1=1"  # table 은 내부 상수만 전달 (사용자 입력 아님)
     params = []
     if account_ids:
         sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"

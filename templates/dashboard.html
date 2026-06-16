@@ -955,6 +955,125 @@
     </script>
     {% endif %}
 
+    {# ===== 크리테오 · 네이버 성과형(GFA) 공통 카드 매크로 (네이버검색 카드와 동일 구조) ===== #}
+    {% macro channel_card(chid, badge_html, accent, eff, trend, quicknav, sub, note) %}
+    {% if eff and eff.has_data %}
+    <div class="card">
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+            <span style="display:inline-flex;align-items:center;gap:6px">{{ badge_html|safe }}</span>
+            <span style="font-size:0.78rem;color:#888;font-weight:400">{{ sub }}</span>
+            <span class="quicknav-target" style="display:none">{{ quicknav }}</span>
+        </h2>
+        {% set ch_keys = [] %}
+        {% if eff.today.rows %}{% set _ = ch_keys.append(('today','오늘')) %}{% endif %}
+        {% set _ = ch_keys.append(('yesterday','어제')) %}
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+            {% for k,lbl in ch_keys %}
+            <button type="button" class="ch-tab" data-chid="{{ chid }}" data-k="{{ k }}" onclick="switchChTab('{{ chid }}','{{ k }}')"
+                style="padding:4px 14px;border:1px solid #ddd;background:#fff;border-radius:14px;cursor:pointer;font-size:0.8rem">{{ lbl }} ({{ eff[k].date[5:] }})</button>
+            {% endfor %}
+        </div>
+        {% for k,lbl in ch_keys %}
+        {% set ne = eff[k] %}
+        <div class="ch-pane" data-chid="{{ chid }}" data-k="{{ k }}" style="{% if not loop.first %}display:none{% endif %}">
+            {% set t = ne.tot %}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px">
+                <div class="nv-kpi"><div class="nv-kpi-l">광고비</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.cost) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">광고매출</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.rev) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">ROAS</div><div class="nv-kpi-v" style="color:{% if t.roas and t.roas>=300 %}#27ae60{% elif t.roas and t.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if t.roas is not none %}{{ t.roas }}%{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">클릭</div><div class="nv-kpi-v">{{ "{:,.0f}".format(t.clk) }}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">CTR</div><div class="nv-kpi-v">{% if t.ctr is not none %}{{ t.ctr }}%{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">CPC</div><div class="nv-kpi-v">{% if t.cpc is not none %}{{ "{:,.0f}".format(t.cpc) }}{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">전환수</div><div class="nv-kpi-v">{% if t.conv is not none %}{{ "{:,.0f}".format(t.conv) }}{% else %}-{% endif %}</div></div>
+                <div class="nv-kpi"><div class="nv-kpi-l">CPA</div><div class="nv-kpi-v">{% if t.cpa is not none %}{{ "{:,.0f}".format(t.cpa) }}{% else %}-{% endif %}</div></div>
+            </div>
+            {% if ne.rows %}
+            <div style="overflow-x:auto">
+            <table class="num" style="width:100%;font-size:0.8rem;border-collapse:collapse;min-width:720px">
+                <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
+                    <th style="text-align:left;padding:5px 7px">매장</th>
+                    <th style="padding:5px 7px">광고비</th><th style="padding:5px 7px">노출</th><th style="padding:5px 7px">클릭</th>
+                    <th style="padding:5px 7px">CTR</th><th style="padding:5px 7px">CPC</th>
+                    <th style="padding:5px 7px">전환</th><th style="padding:5px 7px">CPA</th>
+                    <th style="padding:5px 7px">광고매출</th><th style="padding:5px 7px">ROAS</th></tr></thead>
+                <tbody>
+                {% for r in ne.rows %}
+                <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                    <td style="text-align:left;padding:5px 7px;font-weight:600">{{ r.label }}</td>
+                    <td style="padding:5px 7px">{{ "{:,.0f}".format(r.cost) }}</td>
+                    <td style="padding:5px 7px;color:#888">{{ "{:,.0f}".format(r.imp) }}</td>
+                    <td style="padding:5px 7px;color:#666">{{ "{:,.0f}".format(r.clk) }}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.cpc is not none %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.conv is not none %}{{ "{:,.0f}".format(r.conv) }}{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px;color:#666">{% if r.cpa is not none %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
+                    <td style="padding:5px 7px">{{ "{:,.0f}".format(r.rev) }}</td>
+                    <td style="padding:5px 7px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot><tr style="text-align:right;border-top:2px solid #eee;font-weight:700;background:#fafcff">
+                    <td style="text-align:left;padding:6px 7px">합계</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.cost) }}</td>
+                    <td style="padding:6px 7px;color:#888">{{ "{:,.0f}".format(t.imp) }}</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.clk) }}</td>
+                    <td style="padding:6px 7px">{% if t.ctr is not none %}{{ t.ctr }}%{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{% if t.cpc is not none %}{{ "{:,.0f}".format(t.cpc) }}{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{% if t.conv is not none %}{{ "{:,.0f}".format(t.conv) }}{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{% if t.cpa is not none %}{{ "{:,.0f}".format(t.cpa) }}{% else %}-{% endif %}</td>
+                    <td style="padding:6px 7px">{{ "{:,.0f}".format(t.rev) }}</td>
+                    <td style="padding:6px 7px;color:{% if t.roas and t.roas>=300 %}#27ae60{% elif t.roas and t.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if t.roas is not none %}{{ t.roas }}%{% else %}-{% endif %}</td>
+                </tr></tfoot>
+            </table>
+            </div>
+            {% else %}<p style="color:#999;font-size:0.82rem">{{ ne.date }} 수집 데이터 없음</p>{% endif %}
+        </div>
+        {% endfor %}
+        {% if trend %}
+        <h3 style="font-size:0.86rem;margin:16px 0 6px;color:#555">📈 최근 8일 추세 (광고비/광고매출/ROAS)</h3>
+        <table class="num" style="width:100%;font-size:0.78rem;border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888"><th style="text-align:left;padding:3px 6px">날짜</th>
+                <th style="padding:3px 6px">광고비</th><th style="padding:3px 6px">광고매출</th><th style="padding:3px 6px">클릭</th><th style="padding:3px 6px">ROAS</th><th style="padding:3px 6px;width:35%">　</th></tr></thead>
+            <tbody>
+            {% set cmax = (trend | map(attribute='roas') | select('!=', none) | list | max) or 100 %}
+            {% for d in trend %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:3px 6px">{{ d.date }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.cost) }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.rev) }}</td>
+                <td style="padding:3px 6px;color:#888">{{ "{:,.0f}".format(d.clk) }}</td>
+                <td style="padding:3px 6px;font-weight:700;color:{% if d.roas and d.roas>=300 %}#27ae60{% elif d.roas and d.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if d.roas is not none %}{{ d.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 6px"><div style="background:#f0f0f0;border-radius:3px;height:11px"><div style="background:{{ accent }};height:11px;border-radius:3px;width:{{ ((d.roas or 0)/cmax*100)|round }}%"></div></div></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% if note %}<p style="font-size:0.72rem;color:#aaa;margin:10px 0 0">{{ note }}</p>{% endif %}
+    </div>
+    {% endif %}
+    {% endmacro %}
+
+    {{ channel_card('criteo',
+        '<span style="width:18px;height:18px;border-radius:5px;background:#f76b1c;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.62rem">C</span> 크리테오',
+        '#f76b1c', criteo_eff, criteo_trend, '크리테오',
+        '세션 연동 ' ~ criteo_eff.connected ~ '개 매장 · 클릭후7일 어트리뷰션',
+        '전환/매출은 클릭후 7일 기준(criteo sales_pc7d/revenue_pc7d). ROAS=광고매출/광고비.') }}
+
+    {{ channel_card('gfa',
+        '<span style="width:18px;height:18px;border-radius:5px;background:#2e7d32;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.62rem">N</span> 네이버 성과형(GFA)',
+        '#2e7d32', gfa_eff, gfa_trend, '성과형',
+        '세션 연동 ' ~ gfa_eff.connected ~ '개 매장 · 개별 광고계정 보고서',
+        '전환=구매완료수, 매출=구매완료 전환매출액. 관리계정 합산이 아닌 개별계정 기준. ROAS=광고매출/광고비.') }}
+
+    <script>
+    function switchChTab(chid, k){
+        document.querySelectorAll('.ch-pane[data-chid="'+chid+'"]').forEach(function(p){ p.style.display = p.getAttribute('data-k')===k ? '' : 'none'; });
+        document.querySelectorAll('.ch-tab[data-chid="'+chid+'"]').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-k')===k); });
+    }
+    (function(){ var seen={}; document.querySelectorAll('.ch-tab').forEach(function(b){ var id=b.getAttribute('data-chid'); if(!seen[id]){ b.classList.add('active'); seen[id]=1; } }); })();
+    </script>
+
     <!-- 메타 광고 → 시트 자동입력 현황 -->
     <div class="card">
         <h2>📣 메타 광고 → 시트 자동입력
