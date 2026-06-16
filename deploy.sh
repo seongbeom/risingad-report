@@ -8,7 +8,8 @@
 set -e
 
 KEY=~/cafe24_migration/cafe24-new-key.pem
-HOST=ubuntu@52.79.112.252
+SERVER_HOST=52.79.112.252
+HOST=ubuntu@$SERVER_HOST
 REMOTE_DIR=/opt/cafe24
 SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=12"
 
@@ -23,7 +24,19 @@ fi
 echo "▶ git push origin master"
 git push origin master
 
-# 3) 서버에서 pull + restart
+# 3) 라이브 스크랩이 계정 처리 중이면 빈틈까지 잠깐 대기 (계정 도중 kill → 좀비 chromium/EPIPE 방지)
+#    최대 GRACE_MAX 초 대기, 그 안에 idle 못 잡으면 그냥 진행.
+GRACE_MAX=${GRACE_MAX:-150}
+echo "▶ 라이브 idle 대기 (최대 ${GRACE_MAX}s — 계정 처리 중이면 빈틈까지)"
+waited=0
+while [ "$waited" -lt "$GRACE_MAX" ]; do
+  running=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(len(json.load(sys.stdin).get('running_now',[])))" 2>/dev/null || echo "?")
+  if [ "$running" = "0" ]; then echo "  idle 확인 — 재시작 진행"; break; fi
+  echo "  스크랩 진행 중(running=$running) — 5s 대기 (${waited}/${GRACE_MAX}s)"
+  sleep 5; waited=$((waited+5))
+done
+
+# 4) 서버에서 pull + restart
 echo "▶ 서버 배포 (pull + restart)"
 ssh $SSH_OPTS -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only && sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
 

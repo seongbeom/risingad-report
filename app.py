@@ -602,6 +602,20 @@ def _live_global_job():
         _live_lock.release()
 
 
+def _order_by_staleness(accounts, today):
+    """가장 오래 안 갱신된(또는 오늘 한 번도 안 들어온) 매장부터 정렬.
+    배포/크래시로 사이클이 중간에 끊겨도 늘 제일 뒤처진 매장부터 채워 → 특정 매장 굶주림(starvation) 방지.
+    오늘 metrics updated_at 이 없으면 '' → 최우선, 있으면 오래된 시각 순."""
+    try:
+        with db.db_conn() as conn:
+            upd = {aid: (ts or "") for aid, ts in conn.execute(
+                "SELECT account_id, MAX(updated_at) FROM metrics WHERE date=? GROUP BY account_id", (today,))}
+        return sorted(accounts, key=lambda a: upd.get(a["id"], ""))
+    except Exception:
+        traceback.print_exc()
+        return accounts
+
+
 def _live_global_run():
     s = db.get_live_settings()
     if s["interval_min"] <= 0:
@@ -621,9 +635,9 @@ def _live_global_run():
     # 새 chromium 과 2개가 공존해 EPIPE/OOM 유발. 시작 시 깨끗이 비우고 출발.
     _kill_leftover_chromium()
     today = datetime.now().strftime("%Y-%m-%d")
-    accounts = db.list_accounts()
+    accounts = _order_by_staleness(db.list_accounts(), today)
     cycle_deadline = time.monotonic() + max(40 * 60, len(accounts) * 9 * 60)
-    print(f"[live] {today} {len(accounts)}계정 시작 free={_free_memory_mb()}MB deadline={int((cycle_deadline-time.monotonic())/60)}분")
+    print(f"[live] {today} {len(accounts)}계정 시작(오래된순) free={_free_memory_mb()}MB deadline={int((cycle_deadline-time.monotonic())/60)}분")
     for i, a in enumerate(accounts):
         if time.monotonic() > cycle_deadline:
             print(f"[live] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
