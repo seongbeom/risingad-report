@@ -179,7 +179,9 @@ REPORT_ENDPOINT = (f"https://marketing.criteo.com/modules/analytics/dashboards/"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 DATA_TZ = "Asia/Seoul"
-REPORT_METRICS = "displays,clicks,cost,sales_pcnd,revenue_nd"
+# 전일보고서 "7 days click" 과 일치 검증: sales_pc7d=33, revenue_pc7d=1,657,910 (Arielstyle 06-14).
+# (sales_pcnd/revenue_nd 는 더 넓은 윈도우라 값이 큼 → 사용 금지)
+REPORT_METRICS = "displays,clicks,cost,sales_pc7d,revenue_pc7d"
 
 
 def _range_preset(days):
@@ -197,8 +199,8 @@ def _parse_report(payload):
             "impressions": int(float(v.get("displays_current", 0) or 0)),
             "clicks": int(float(v.get("clicks_current", 0) or 0)),
             "cost": round(float(v.get("cost_current", 0) or 0)),
-            "conversions": int(float(v.get("sales_pcnd_current", 0) or 0)),
-            "revenue": round(float(v.get("revenue_nd_current", 0) or 0)),
+            "conversions": int(float(v.get("sales_pc7d_current", 0) or 0)),    # 클릭후 7일
+            "revenue": round(float(v.get("revenue_pc7d_current", 0) or 0)),    # 클릭후 7일
         }
     return out
 
