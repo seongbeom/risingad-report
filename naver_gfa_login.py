@@ -30,11 +30,17 @@ SESSION_VALID_DAYS = 30
 
 
 def _logged_in(page):
-    """ads.naver.com 진입 + nid 로그인 화면 아님 → 로그인 완료."""
+    """실제 로그인 완료 = 네이버 인증쿠키(NID_AUT/NID_SES) 존재 + ads.naver.com 본문.
+    (랜딩페이지 ads.naver.com/?redirectUrl=.. 는 미로그인이라 제외)"""
     u = (page.url or "").lower()
-    if "nid.naver.com" in u or "/login" in u or "about:blank" in u:
+    if "nid.naver.com" in u or "about:blank" in u:
         return False
-    return "ads.naver.com" in u
+    try:
+        names = {c["name"].lower() for c in page.context.cookies()}
+    except Exception:
+        return False
+    # 인증쿠키가 있고 로그인 페이지가 아니면 완료 (랜딩 redirectUrl 이어도 쿠키 있으면 OK)
+    return "nid_aut" in names or "nid_ses" in names
 
 
 def _upload():
