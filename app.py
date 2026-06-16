@@ -1096,14 +1096,13 @@ _GUARD_CHANNELS = [
 def _session_guard_payload():
     """각 크롤 채널 세션 상태 + '갱신 요청' 플래그. 웹 패널·맥 도우미 공용.
     세션이 요청일 이후 갱신됐으면 요청 플래그 자동 해제."""
-    import datetime as _dt
-    today = _dt.date.today().isoformat()
     out = []
     for key, name, login_py, cmd, upload_env in _GUARD_CHANNELS:
         st = (criteo.session_status() if key == "criteo" else gfa.session_status())
         requested = db.get_setting(f"{key}_refresh_requested", "") or ""
-        # 요청 이후 세션이 갱신됐으면(=오늘 갱신) 플래그 해제
-        if requested and st.get("refreshed_at") and st["refreshed_at"] >= today:
+        # 요청한 날짜보다 '이후'에 세션이 갱신됐으면 = 요청이 처리된 것 → 플래그 해제.
+        # (같은 날 재로그인은 날짜로 구분 불가 → 도우미 ack 로 해제됨)
+        if requested and st.get("refreshed_at") and st["refreshed_at"] > requested[:10]:
             db.set_setting(f"{key}_refresh_requested", "")
             requested = ""
         out.append({
