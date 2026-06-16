@@ -48,3 +48,141 @@ def mark_session_dead(reason=""):
         "refreshed_at": (datetime.date.today() - datetime.timedelta(days=999)).isoformat(),
         "valid_days": 30, "dead_reason": reason,
     }, ensure_ascii=False, indent=2))
+
+
+# ===== 수집 (개별 광고계정 stats API) =====
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+STATS_URL = "https://ads.naver.com/apis/stats/v1/adAccounts/{no}/stats/reportPerformance"
+
+
+def fetch_all(account_nos, days=7, session_path=None):
+    """각 광고계정 × 최근 days일(오늘 제외) 일별 성과. 반환 {account_no(str): {date: metrics}}.
+    metrics: impressions/clicks/cost/conversions(구매완료수)/revenue(구매완료전환매출액).
+    세션 만료 시 mark_session_dead + 예외."""
+    import urllib.parse
+    from playwright.sync_api import sync_playwright
+    sp = session_path or str(SESSION_FILE)
+    if not Path(sp).exists():
+        mark_session_dead("세션 파일 없음")
+        raise RuntimeError("naver_gfa_session.json 없음 — 네이버성과형 로그인 필요")
+    account_nos = [str(a) for a in account_nos]
+    daydates = [(datetime.date.today() - datetime.timedelta(days=i)).isoformat()
+                for i in range(1, days + 1)]  # 어제부터 N일 (GFA 보고서는 오늘 제외)
+    out = {}
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        ctx = b.new_context(storage_state=sp, user_agent=UA)
+        pg = ctx.new_page()
+        pg.goto("https://ads.naver.com/", wait_until="domcontentloaded", timeout=40000)
+        pg.wait_for_timeout(2500)
+        if "nid.naver" in pg.url or "/login" in pg.url.lower():
+            b.close()
+            mark_session_dead(f"로그인 튕김 url={pg.url[:50]}")
+            raise RuntimeError("네이버 성과형 세션 만료 — 재로그인 필요(네이버성과형_세션갱신.command)")
+        xsrf = next((c["value"] for c in ctx.cookies() if c["name"].upper() == "XSRF-TOKEN"), "")
+        for no in account_nos:
+            hdr = {"x-xsrf-token": xsrf, "accept": "application/json",
+                   "referer": f"https://ads.naver.com/manage/ad-accounts/{no}/da/report/performance"}
+            daily = {}
+            for d in daydates:
+                url = (STATS_URL.format(no=no) +
+                       f"?startDate={d}&endDate={d}&reportAdUnit=AD_ACCOUNT"
+                       f"&reportFilterListString=[]&pageNumber=1&pageSize=10")
+                try:
+                    resp = ctx.request.get(url, headers=hdr)
+                    if resp.status != 200:
+                        continue
+                    lst = json.loads(resp.text()).get("reportPerformanceDetailResponseList") or []
+                    if not lst:
+                        continue
+                    r = lst[0]
+                    daily[d] = {
+                        "impressions": int(float(r.get("impCount", 0) or 0)),
+                        "clicks": int(float(r.get("clickCount", 0) or 0)),
+                        "cost": round(float(r.get("sales", 0) or 0)),
+                        "conversions": int(float(r.get("purchaseConvCount", 0) or 0)),
+                        "revenue": round(float(r.get("purchaseConvSales", 0) or 0)),
+                    }
+                except Exception as e:
+                    print(f"[gfa] {no} {d} 실패: {repr(e)[:80]}", flush=True)
+            out[no] = daily
+        b.close()
+    return out
+
+
+# ===== 시트 쓰기 (효율탭 '네이버성과형' 블록, 매장마다 위치 달라 동적 탐색) =====
+_METRIC_SUBS = [("노출", "impressions"), ("클릭수", "clicks"), ("광고비", "cost"),
+                ("전환", "conversions"), ("매출", "revenue")]
+
+
+def _gfa_cols(ws):
+    """'네이버성과형' 블록의 {impressions,clicks,cost,conversions,revenue} 컬럼 letter. 없으면 None.
+    (Z=쇼핑박스PC, AJ=쇼핑박스MO 와 헷갈리지 않게 라벨 정확히 '네이버성과형' 매칭)"""
+    from gspread.utils import rowcol_to_a1
+    grid = ws.get("A28:OZ34")
+    ch_row = None
+    for ri, row in enumerate(grid):
+        if any((c or "").strip() == CHANNEL_LABEL for c in row):
+            ch_row = ri
+            break
+    if ch_row is None:
+        return None
+    ch = grid[ch_row]
+    c0 = next(i for i, c in enumerate(ch) if (c or "").strip() == CHANNEL_LABEL)
+    nxt = len(ch)
+    for i in range(c0 + 1, len(ch)):
+        if (ch[i] or "").strip():
+            nxt = i
+            break
+    met = grid[ch_row + 1] if ch_row + 1 < len(grid) else []
+    cols = {}
+    for i in range(c0, min(nxt, len(met))):
+        label = (met[i] or "").strip()
+        for sub, key in _METRIC_SUBS:
+            if key not in cols and sub in label:
+                cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
+    if not all(k in cols for _, k in _METRIC_SUBS):
+        return None
+    return cols
+
+
+def write_to_sheet(spreadsheet_id, daily):
+    """효율탭 네이버성과형 칸에 일자별 기입 (크리테오와 동일 구조, 컬럼 동적탐색)."""
+    import sheets
+    from collections import defaultdict
+    import datetime as _dt
+    gc = sheets.get_client()
+    sh = gc.open_by_key(sheets.clean_spreadsheet_id(spreadsheet_id))
+    by_tab = defaultdict(dict)
+    for d, m in daily.items():
+        by_tab[sheets.efficiency_sheet_name(d)][d] = m
+    written, errors = 0, []
+    for eff_name, days in by_tab.items():
+        try:
+            ws = sh.worksheet(eff_name)
+        except Exception:
+            try:
+                _d = _dt.datetime.strptime(next(iter(days)), "%Y-%m-%d")
+                ws = sheets._ensure_efficiency_sheet(sh, _d)
+            except Exception as ce:
+                errors.append(f"{eff_name} 자동생성 실패: {repr(ce)[:50]}")
+                continue
+        cols = _gfa_cols(ws)
+        if not cols:
+            errors.append(f"{eff_name} '네이버성과형' 컬럼 못 찾음 — 스킵")
+            continue
+        col_b = ws.col_values(2)
+        rowmap = {(v or "").strip(): i for i, v in enumerate(col_b, start=1)}
+        data = []
+        for d, m in days.items():
+            row = rowmap.get(d.replace("-", "/"))
+            if not row:
+                errors.append(f"{d} 행없음")
+                continue
+            for key in ("impressions", "clicks", "cost", "conversions", "revenue"):
+                data.append({"range": f"{cols[key]}{row}", "values": [[m[key]]]})
+            written += 1
+        if data:
+            ws.batch_update(data, value_input_option="USER_ENTERED")
+    return written, errors

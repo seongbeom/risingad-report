@@ -193,6 +193,21 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_criteo_metrics_date ON criteo_metrics(date);
 
+            -- 네이버 성과형(GFA) 디스플레이 일별 성과 (세션 크롤 수집)
+            CREATE TABLE IF NOT EXISTS gfa_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                cost INTEGER DEFAULT 0,
+                conversions INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_gfa_metrics_date ON gfa_metrics(date);
+
             -- 메타 캠페인별 일별 성과 (캠페인 분해 뷰용)
             CREATE TABLE IF NOT EXISTS meta_campaign_metrics (
                 account_id TEXT NOT NULL,
@@ -280,6 +295,9 @@ def init_db():
         # 크리테오 advertiser ID (세션 크롤 수집 대상 지정)
         if "criteo_advertiser_id" not in cols:
             conn.execute("ALTER TABLE accounts ADD COLUMN criteo_advertiser_id TEXT DEFAULT ''")
+        # 네이버 성과형(GFA) 광고계정 번호 (세션 크롤 수집 대상 지정)
+        if "naver_gfa_account_no" not in cols:
+            conn.execute("ALTER TABLE accounts ADD COLUMN naver_gfa_account_no TEXT DEFAULT ''")
 
         # meta_metrics 추가지표 컬럼 마이그레이션
         try:
@@ -716,6 +734,27 @@ def upsert_criteo_metric(account_id, date, m):
     with db_conn() as conn:
         conn.execute(
             """INSERT INTO criteo_metrics (account_id,date,impressions,clicks,cost,conversions,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date) DO UPDATE SET
+                 impressions=excluded.impressions, clicks=excluded.clicks, cost=excluded.cost,
+                 conversions=excluded.conversions, revenue=excluded.revenue, updated_at=excluded.updated_at""",
+            (account_id, date, m.get("impressions", 0), m.get("clicks", 0), m.get("cost", 0),
+             m.get("conversions", 0), m.get("revenue", 0)),
+        )
+
+
+def update_naver_gfa_account_no(account_id, gfa_account_no):
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE accounts SET naver_gfa_account_no=? WHERE id=?",
+            (str(gfa_account_no), account_id),
+        )
+
+
+def upsert_gfa_metric(account_id, date, m):
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO gfa_metrics (account_id,date,impressions,clicks,cost,conversions,revenue,updated_at)
                VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
                ON CONFLICT(account_id,date) DO UPDATE SET
                  impressions=excluded.impressions, clicks=excluded.clicks, cost=excluded.cost,

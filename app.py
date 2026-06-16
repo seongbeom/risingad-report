@@ -1016,6 +1016,73 @@ def _criteo_collect_job(days=CRITEO_BACKFILL_DAYS):
         _live_lock.release()
 
 
+GFA_BACKFILL_DAYS = 7  # 최근 7일 재수집 (전환/매출 후속 보정 대비)
+
+
+def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
+    """네이버 성과형(GFA) 성과 수집(세션 크롤) → 효율시트 네이버성과형칸 기입 + DB.
+    개별 광고계정 stats API 호출. chromium 쓰므로 _live_lock 으로 cafe24 와 직렬화.
+    권한 미승인 계정은 빈 응답 → 자동 스킵."""
+    accounts = [a for a in db.list_accounts() if (a.get("naver_gfa_account_no") or "").strip()]
+    if not accounts:
+        print("[gfa] 대상 계정 없음")
+        return
+    if not _live_lock.acquire(timeout=600):  # cafe24 스크래핑 끝날 때까지 최대 10분 대기
+        print("[gfa] _live_lock 획득 실패 — 다음 차수로 스킵")
+        return
+    try:
+        nos = [a["naver_gfa_account_no"] for a in accounts]
+        print(f"[gfa] 최근 {days}일 {len(accounts)}계정 시작")
+        try:
+            data = gfa.fetch_all(nos, days=days)
+        except Exception as e:
+            print(f"[gfa] 수집 실패: {repr(e)[:160]}")
+            slack_notify(f"네이버 성과형 수집 실패: {repr(e)[:120]} → 세션 재로그인 확인", severity="warn")
+            return
+        ok_acct, skipped, fail = 0, [], []
+        for a in accounts:
+            aid = a["id"]
+            lbl = a.get("label") or aid
+            ssid = a.get("spreadsheet_id") or ""
+            daily = data.get(str(a["naver_gfa_account_no"]))
+            if not daily:
+                skipped.append(lbl)  # 권한 미승인 or 데이터 없음
+                continue
+            try:
+                for d, m in daily.items():
+                    try:
+                        db.upsert_gfa_metric(aid, d, m)
+                    except Exception:
+                        traceback.print_exc()
+                wrote, errs = (0, [])
+                if ssid:
+                    wrote, errs = _retry_sheet_write(gfa.write_to_sheet, ssid, daily)
+                db.set_setting(f"gfa_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
+                db.add_sheet_log(aid, "gfa", f"최근{days}일", wrote,
+                                 "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+                print(f"[gfa] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
+                ok_acct += 1
+            except Exception as e:
+                fail.append(lbl)
+                print(f"[gfa] {lbl} 실패: {repr(e)[:160]}")
+        db.set_setting("gfa_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+        print(f"[gfa] done — 성공 {ok_acct} / 스킵 {len(skipped)} / 실패 {len(fail)}")
+    finally:
+        _live_lock.release()
+
+
+def _gfa_session_check_job():
+    """네이버 성과형 크롤 세션 만료 임박/만료 시 Slack 경고."""
+    try:
+        st = gfa.session_status()
+        print(f"[gfa] session check: {st['message']}", flush=True)
+        if st["severity"] in ("warn", "critical"):
+            slack_notify(st["message"] + " → 네이버성과형_세션갱신.command 더블클릭",
+                         severity=st["severity"])
+    except Exception:
+        traceback.print_exc()
+
+
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -1532,6 +1599,23 @@ def reload_schedules():
     )
     print("[scheduler] criteo_session_check: 매일 09:00 (만료 7일 전 경고)")
 
+    # 네이버 성과형(GFA) 성과 수집(세션 크롤) — 매일 06:50 (chromium → _live_lock 으로 직렬화)
+    scheduler.add_job(
+        _gfa_collect_job, "cron",
+        hour=6, minute=50,
+        id="gfa_collect", replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    print(f"[scheduler] gfa_collect: 매일 06:50 (최근 {GFA_BACKFILL_DAYS}일, 크롤)")
+
+    # 네이버 성과형 크롤 세션 만료 체크 — 매일 09:05 (만료 7일 전부터 Slack 경고)
+    scheduler.add_job(
+        _gfa_session_check_job, "cron",
+        hour=9, minute=5,
+        id="gfa_session_check", replace_existing=True,
+    )
+    print("[scheduler] gfa_session_check: 매일 09:05 (만료 7일 전 경고)")
+
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
     scheduler.add_job(
@@ -1980,6 +2064,26 @@ def admin_criteo_collect():
     except ValueError:
         days = CRITEO_BACKFILL_DAYS
     threading.Thread(target=lambda: _criteo_collect_job(days=days), daemon=True).start()
+    return jsonify({"ok": True, "days": days})
+
+
+@app.route("/accounts/<account_id>/gfa", methods=["POST"])
+@login_required
+def update_gfa_route(account_id):
+    db.update_naver_gfa_account_no(account_id, request.form.get("naver_gfa_account_no", "").strip())
+    return redirect(request.referrer or url_for("index"))
+
+
+@app.route("/admin/gfa_collect", methods=["POST"])
+def admin_gfa_collect():
+    """localhost 전용 네이버 성과형 수집 수동 트리거. body: days(선택)."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        days = int(request.form.get("days", str(GFA_BACKFILL_DAYS)))
+    except ValueError:
+        days = GFA_BACKFILL_DAYS
+    threading.Thread(target=lambda: _gfa_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
 
 

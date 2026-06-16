@@ -132,6 +132,7 @@
                             <div>{% if a.meta_account_id %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 메타</div>
                             <div>{% if has_naver %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 네이버</div>
                             <div>{% if a.criteo_advertiser_id %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 크리테오</div>
+                            <div>{% if a.naver_gfa_account_no %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 네이버성과형</div>
                             <div style="font-size:0.68rem; color:#aaa; margin-top:1px">설정은 <b>수정</b>에서 ▸</div>
                         </td>
                         <td style="font-size:0.7rem;line-height:1.45;white-space:nowrap">
@@ -238,6 +239,13 @@
                                     <input name="criteo_advertiser_id" value="{{ a.criteo_advertiser_id or '' }}" placeholder="숫자 (예: 92451)" style="width:160px; font-size:0.74rem">
                                 </div>
                                 <button class="btn btn-sm" type="submit" style="background:#f76b1c;color:#fff">크리테오 저장</button>
+                            </form>
+                            <form method="POST" action="/accounts/{{ a.id }}/gfa" class="form-row" style="margin:8px 0 0; padding-top:8px; border-top:1px dashed #b8d0a0">
+                                <div class="form-group">
+                                    <label>🟢 네이버 성과형(GFA) 광고계정 번호 (세션 크롤)</label>
+                                    <input name="naver_gfa_account_no" value="{{ a.naver_gfa_account_no or '' }}" placeholder="숫자 (예: 2406226)" style="width:160px; font-size:0.74rem">
+                                </div>
+                                <button class="btn btn-sm" type="submit" style="background:#2e7d32;color:#fff">네이버성과형 저장</button>
                             </form>
                         </td>
                     </tr>
