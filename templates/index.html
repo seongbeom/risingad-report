@@ -57,7 +57,7 @@
             <h2 style="border-bottom:none; padding-bottom:0">🔐 연동 세션 상태 <span style="font-size:0.72rem; color:#999; font-weight:normal">(만료되면 수집 끊김 — 월 1회 갱신 필수)</span></h2>
             <table style="width:100%; font-size:0.82rem; border-collapse:collapse; margin-top:6px">
                 <thead><tr style="text-align:left; color:#888; font-size:0.74rem">
-                    <th style="padding:4px 8px">채널</th><th>상태</th><th>마지막 갱신</th><th>갱신 방법</th>
+                    <th style="padding:4px 8px">채널</th><th>상태</th><th>마지막 갱신</th><th>갱신</th>
                 </tr></thead>
                 <tbody>
                 {% for s in session_statuses %}
@@ -69,12 +69,23 @@
                             {% else %}<span style="background:#e74c3c;color:#fff;padding:1px 7px;border-radius:8px">🔴 만료/없음 — 갱신 필요</span>{% endif %}
                         </td>
                         <td style="color:#777">{{ s.refreshed_at or '-' }}</td>
-                        <td style="color:#555"><code style="font-size:0.76rem">{{ s.tool }}</code> 더블클릭</td>
+                        <td>
+                            {% if s.requested %}
+                                <span style="background:#4a90d9;color:#fff;padding:2px 8px;border-radius:8px;font-size:0.74rem">🔄 요청됨 — 맥에서 로그인 창 대기</span>
+                                <div style="font-size:0.68rem;color:#aaa;margin-top:2px">{{ s.requested_at }} · 맥 도우미가 곧 띄웁니다</div>
+                            {% else %}
+                                <form method="POST" action="/admin/request_session_refresh" style="display:inline">
+                                    <input type="hidden" name="channel" value="{{ s.key }}">
+                                    <button class="btn btn-sm" type="submit" style="background:#4a90d9;color:#fff;font-size:0.74rem">🔄 갱신 요청</button>
+                                </form>
+                                <div style="font-size:0.68rem;color:#aaa;margin-top:2px">또는 <code style="font-size:0.72rem">{{ s.tool }}</code> 직접 더블클릭</div>
+                            {% endif %}
+                        </td>
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
-            <p class="card-sub" style="margin:6px 0 0; font-size:0.72rem; color:#aaa">크리테오·네이버 성과형은 로그인 세션으로 수집. 만료 7일 전부터 Slack 경고도 발송됨.</p>
+            <p class="card-sub" style="margin:6px 0 0; font-size:0.72rem; color:#aaa">'🔄 갱신 요청'을 누르면 맥 백그라운드 도우미가 감지해 로그인 창을 자동으로 띄웁니다(미설치 시 .command 직접 더블클릭). 만료 7일 전부터 Slack·맥 알림 발송.</p>
         </div>
         {% endif %}
 

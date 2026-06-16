@@ -1083,6 +1083,38 @@ def _gfa_session_check_job():
         traceback.print_exc()
 
 
+# ===== 세션 갱신 도우미 (웹 '갱신 요청' 버튼 ↔ 맥 백그라운드 도우미) =====
+GUARD_TOKEN = os.environ.get("GUARD_TOKEN", "")  # 맥 도우미 인증용 (.env)
+
+# 채널키 → (표시명, 로그인스크립트, .command, status함수)
+_GUARD_CHANNELS = [
+    ("criteo", "크리테오", "criteo_login.py", "크리테오_세션갱신.command", "CRITEO_UPLOAD"),
+    ("gfa", "네이버 성과형(GFA)", "naver_gfa_login.py", "네이버성과형_세션갱신.command", "GFA_UPLOAD"),
+]
+
+
+def _session_guard_payload():
+    """각 크롤 채널 세션 상태 + '갱신 요청' 플래그. 웹 패널·맥 도우미 공용.
+    세션이 요청일 이후 갱신됐으면 요청 플래그 자동 해제."""
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    out = []
+    for key, name, login_py, cmd, upload_env in _GUARD_CHANNELS:
+        st = (criteo.session_status() if key == "criteo" else gfa.session_status())
+        requested = db.get_setting(f"{key}_refresh_requested", "") or ""
+        # 요청 이후 세션이 갱신됐으면(=오늘 갱신) 플래그 해제
+        if requested and st.get("refreshed_at") and st["refreshed_at"] >= today:
+            db.set_setting(f"{key}_refresh_requested", "")
+            requested = ""
+        out.append({
+            "key": key, "name": name, "command": cmd, "login_py": login_py, "upload_env": upload_env,
+            "severity": st.get("severity"), "days_left": st.get("days_left"),
+            "refreshed_at": st.get("refreshed_at"), "message": st.get("message"),
+            "requested": bool(requested), "requested_at": requested,
+        })
+    return out
+
+
 
 
 def _disk_free_mb(path="/opt/cafe24"):
@@ -1858,10 +1890,7 @@ def index():
         acct_status=acct_status,
         sched_rows=sched_rows,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
-        session_statuses=[
-            {"name": "크리테오", "tool": "크리테오_세션갱신.command", **criteo.session_status()},
-            {"name": "네이버 성과형(GFA)", "tool": "네이버성과형_세션갱신.command", **gfa.session_status()},
-        ],
+        session_statuses=[{**p, "tool": p["command"]} for p in _session_guard_payload()],
     )
 
 
@@ -2116,6 +2145,44 @@ def admin_gfa_collect():
         days = GFA_BACKFILL_DAYS
     threading.Thread(target=lambda: _gfa_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
+
+
+@app.route("/admin/request_session_refresh", methods=["POST"])
+@login_required
+def request_session_refresh():
+    """웹 '🔄 갱신 요청' 버튼 — 맥 백그라운드 도우미가 감지해 로그인 창을 띄움."""
+    import datetime as _dt
+    ch = (request.form.get("channel") or "").strip()
+    if ch not in {c[0] for c in _GUARD_CHANNELS}:
+        return jsonify({"error": "unknown channel"}), 400
+    db.set_setting(f"{ch}_refresh_requested", _dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    name = next(c[1] for c in _GUARD_CHANNELS if c[0] == ch)
+    slack_notify(f"🔄 {name} 세션 갱신 요청됨 — 맥 도우미가 곧 로그인 창을 띄웁니다.", severity="info")
+    return redirect(request.referrer or url_for("index"))
+
+
+def _guard_token_ok():
+    return GUARD_TOKEN and (request.args.get("token") or request.headers.get("X-Guard-Token")) == GUARD_TOKEN
+
+
+@app.route("/api/session_guard", methods=["GET"])
+def api_session_guard():
+    """맥 백그라운드 도우미가 폴링하는 상태 엔드포인트 (token 인증)."""
+    if not _guard_token_ok():
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify({"channels": _session_guard_payload()})
+
+
+@app.route("/api/session_guard/ack", methods=["POST"])
+def api_session_guard_ack():
+    """맥 도우미가 로그인 창을 띄운 뒤 요청 플래그 해제 (재실행 방지)."""
+    if not _guard_token_ok():
+        return jsonify({"error": "forbidden"}), 403
+    ch = (request.form.get("channel") or request.args.get("channel") or "").strip()
+    if ch not in {c[0] for c in _GUARD_CHANNELS}:
+        return jsonify({"error": "unknown channel"}), 400
+    db.set_setting(f"{ch}_refresh_requested", "")
+    return jsonify({"ok": True})
 
 
 @app.route("/settings/target_roas", methods=["POST"])
