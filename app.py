@@ -4,6 +4,7 @@ import functools
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -133,6 +134,11 @@ scheduler.start()
 _running = {}  # account_id -> run_id
 _run_lock = threading.Lock()  # 수동 실행과 스케줄 잡이 동시에 안 돌도록
 
+# 프로세스 시작 시각 (graceful reload 후 새 프로세스인지 deploy.sh 가 확인)
+_PROC_STARTED = datetime.now().isoformat()
+# graceful reload 요청 플래그 (배포가 /admin/request_reload 로 세움 → 안전지점에서 os.execv)
+_pending_reload = {"at": None}
+
 
 SCRAPE_MAX_ATTEMPTS = 3  # 1차 + 재시도 2회 (reCAPTCHA 풀이 운에 의존하기 때문)
 SCRAPE_RETRY_DELAY_SEC = 15
@@ -248,6 +254,39 @@ def _self_restart_service(reason):
         )
     except Exception:
         traceback.print_exc()
+
+
+def _graceful_reexec(reason=""):
+    """현재 프로세스를 새 코드로 자가 재적재(os.execv). systemctl restart 와 달리 PID 유지.
+    안전지점(스크랩 중이 아닐 때, 또는 계정과 계정 사이)에서만 호출할 것.
+    chromium/scheduler 정리 후 같은 인자로 재실행 → git pull 된 새 app.py 가 로드됨."""
+    print(f"[reload] graceful 자가 리로드: {reason}", flush=True)
+    _pending_reload["at"] = None
+    try:
+        _kill_leftover_chromium()
+    except Exception:
+        traceback.print_exc()
+    try:
+        scheduler.shutdown(wait=False)
+    except Exception:
+        pass
+    sys.stdout.flush(); sys.stderr.flush()
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+def _reload_check_job():
+    """매분 — reload 요청이 있고 라이브 스크랩이 안 돌고 있으면(idle) 즉시 자가 리로드.
+    스크랩 중이면 _live_global_run 이 계정 경계에서 처리하므로 여기선 건너뜀."""
+    if not _pending_reload["at"]:
+        return
+    if _running:  # 스크랩 진행 중 → 계정 경계에서 리로드 (여기선 대기)
+        return
+    if _live_lock.acquire(blocking=False):
+        # 락 잡았다 = 라이브 사이클 안 돎 → 안전하게 리로드
+        try:
+            _graceful_reexec("idle reload 요청")
+        finally:
+            _live_lock.release()
 
 
 class HangTimeout(TimeoutError):
@@ -639,6 +678,10 @@ def _live_global_run():
     cycle_deadline = time.monotonic() + max(40 * 60, len(accounts) * 9 * 60)
     print(f"[live] {today} {len(accounts)}계정 시작(오래된순) free={_free_memory_mb()}MB deadline={int((cycle_deadline-time.monotonic())/60)}분")
     for i, a in enumerate(accounts):
+        if _pending_reload["at"]:
+            # 배포 reload 요청 → 계정 경계에서 깨끗이 끊고 새 코드로 자가 리로드
+            print(f"[live] reload 요청 감지 — {i}계정 처리 후 리로드 (남은 건 새 코드가 stalest-first 로 이어감)", flush=True)
+            _graceful_reexec("라이브 계정 경계")
         if time.monotonic() > cycle_deadline:
             print(f"[live] cycle deadline 초과 - 남은 {len(accounts)-i}계정 스킵")
             break
@@ -654,6 +697,8 @@ def _live_global_run():
     if time.monotonic() < cycle_deadline:
         _auto_backfill_missing(today, deadline=cycle_deadline)
     print(f"[live] {today} cycle done free={_free_memory_mb()}MB")
+    if _pending_reload["at"]:
+        _graceful_reexec("라이브 사이클 종료 후")
 
 
 def _boot_catchup_job():
@@ -1711,6 +1756,15 @@ def reload_schedules():
     )
     print(f"[scheduler] heartbeat: 매시 정각 self-check")
 
+    # graceful reload 체크 — 매분, idle 일 때 reload 요청 있으면 자가 리로드
+    scheduler.add_job(
+        _reload_check_job, "interval",
+        seconds=30,
+        id="reload_check", replace_existing=True,
+        max_instances=1, misfire_grace_time=20,
+    )
+    print("[scheduler] reload_check: 30초마다 (idle 시 graceful 리로드)")
+
     # 서버 시작 시점이 활성 시간이고 오늘 라이브가 한 번도 안 돌았으면
     # 30초 뒤 1회 강제 트리거. service restart 가 라이브 누락으로 이어지지 않게.
     if live["interval_min"] > 0:
@@ -1953,6 +2007,8 @@ def healthz():
         return jsonify({
             "ok": True,
             "now": datetime.now().isoformat(),
+            "started_at": _PROC_STARTED,
+            "pending_reload": bool(_pending_reload["at"]),
             "scheduler_jobs": [j.id for j in scheduler.get_jobs()],
             "today_accounts_with_data": ran_today,
             "total_accounts": total_accounts,
@@ -2164,6 +2220,17 @@ def admin_gfa_collect():
         days = GFA_BACKFILL_DAYS
     threading.Thread(target=lambda: _gfa_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
+
+
+@app.route("/admin/request_reload", methods=["POST"])
+def admin_request_reload():
+    """localhost 전용 — 배포(deploy.sh)가 git pull 후 호출. 안전지점에서 새 코드로 자가 리로드.
+    systemctl restart 와 달리 진행 중인 스크랩을 죽이지 않고 계정 경계/idle 에서 reload."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    _pending_reload["at"] = datetime.now().isoformat()
+    print(f"[reload] reload 요청 접수 — 스크랩 진행중={bool(_running)} (안전지점에서 리로드)", flush=True)
+    return jsonify({"ok": True, "scraping": bool(_running), "started_at": _PROC_STARTED})
 
 
 @app.route("/admin/request_session_refresh", methods=["POST"])

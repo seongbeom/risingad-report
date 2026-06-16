@@ -24,23 +24,34 @@ fi
 echo "▶ git push origin master"
 git push origin master
 
-# 3) 라이브 스크랩이 계정 처리 중이면 빈틈까지 잠깐 대기 (계정 도중 kill → 좀비 chromium/EPIPE 방지)
-#    최대 GRACE_MAX 초 대기, 그 안에 idle 못 잡으면 그냥 진행.
-GRACE_MAX=${GRACE_MAX:-150}
-echo "▶ 라이브 idle 대기 (최대 ${GRACE_MAX}s — 계정 처리 중이면 빈틈까지)"
-waited=0
-while [ "$waited" -lt "$GRACE_MAX" ]; do
-  running=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(len(json.load(sys.stdin).get('running_now',[])))" 2>/dev/null || echo "?")
-  if [ "$running" = "0" ]; then echo "  idle 확인 — 재시작 진행"; break; fi
-  echo "  스크랩 진행 중(running=$running) — 5s 대기 (${waited}/${GRACE_MAX}s)"
-  sleep 5; waited=$((waited+5))
+# 3) 서버에서 pull + graceful reload (systemctl restart 안 함 → 진행 중인 스크랩 안 죽임)
+#    배포 코드를 새로 올리되, 라이브 스크랩은 계정 경계/idle 에서 스스로 os.execv 로 재적재.
+echo "▶ 배포 전 프로세스 시작시각 기록"
+BEFORE=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('started_at',''))" 2>/dev/null || echo "")
+echo "  현재 started_at=$BEFORE"
+
+echo "▶ 서버 git pull + 문법검사 + reload 요청"
+ssh $SSH_OPTS -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only && \
+  ./venv/bin/python3 -c 'import ast;ast.parse(open(\"app.py\").read())' && \
+  curl -s -X POST http://127.0.0.1:9090/admin/request_reload || { echo '문법오류 or reload요청 실패 — 배포 중단'; exit 1; }"
+
+# 4) reload 완료 대기 — started_at 이 바뀌면 새 코드로 재적재 성공. 최대 RELOAD_MAX 초.
+RELOAD_MAX=${RELOAD_MAX:-360}
+echo "▶ graceful reload 대기 (최대 ${RELOAD_MAX}s — 스크랩 중이면 계정 끝나고 리로드)"
+waited=0; ok=0
+while [ "$waited" -lt "$RELOAD_MAX" ]; do
+  NOW=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('started_at',''))" 2>/dev/null || echo "")
+  if [ -n "$NOW" ] && [ "$NOW" != "$BEFORE" ]; then echo "  ✅ 새 코드 적재됨 (started_at=$NOW)"; ok=1; break; fi
+  sleep 10; waited=$((waited+10)); echo "  대기중... (${waited}/${RELOAD_MAX}s)"
 done
 
-# 4) 서버에서 pull + restart
-echo "▶ 서버 배포 (pull + restart)"
-ssh $SSH_OPTS -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only && sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
+# 5) 그래도 안 바뀌면(프로세스 wedged) 최후수단 systemctl restart
+if [ "$ok" != "1" ]; then
+  echo "⚠️ reload 미확인 — 최후수단 systemctl restart"
+  ssh $SSH_OPTS -i "$KEY" "$HOST" "sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
+fi
 
-# 4) healthcheck
+# 6) healthcheck
 echo "▶ /healthz 확인"
 ssh $SSH_OPTS -i "$KEY" "$HOST" "curl -s http://127.0.0.1:9090/healthz | python3 -m json.tool || echo 'healthz 응답 없음'"
 
