@@ -3285,6 +3285,26 @@ def dashboard():
     criteo_trend = _simple_trend(criteo_by_key)
     gfa_trend = _simple_trend(gfa_by_key)
 
+    # ===== 전 채널 한눈 요약 카드 (어제 기준) — 광고비/광고매출/ROAS/전환 =====
+    def _sumrow(name, color, cost, rev, conv, connected):
+        cost = cost or 0; rev = rev or 0
+        return {"name": name, "color": color, "cost": cost, "rev": rev, "conv": conv,
+                "roas": round(rev / cost * 100) if cost else None, "connected": connected}
+    _mt = ad_eff["yesterday"]["tot"]; _nt = naver_eff["yesterday"]["tot"]
+    _ct = criteo_eff["yesterday"]["tot"]; _gt = gfa_eff["yesterday"]["tot"]
+    _cs_rows = [
+        _sumrow("메타", "#1877f2", _mt.get("spend"), _mt.get("ad_rev"), _mt.get("purch"), None),
+        _sumrow("네이버 검색", "#03c75a", _nt.get("cost"), _nt.get("rev"), _nt.get("conv"), naver_eff["connected"]),
+        _sumrow("크리테오", "#f76b1c", _ct.get("cost"), _ct.get("rev"), _ct.get("conv"), criteo_eff["connected"]),
+        _sumrow("네이버 성과형", "#2e7d32", _gt.get("cost"), _gt.get("rev"), _gt.get("conv"), gfa_eff["connected"]),
+    ]
+    _cs_tc = sum(r["cost"] for r in _cs_rows); _cs_tr = sum(r["rev"] for r in _cs_rows)
+    channel_summary = {
+        "date": yesterday, "rows": _cs_rows,
+        "tot": {"cost": _cs_tc, "rev": _cs_tr, "roas": round(_cs_tr / _cs_tc * 100) if _cs_tc else None},
+        "has_data": _cs_tc > 0 or _cs_tr > 0,
+    }
+
     # 매장별 월 매출목표 vs 이번달 누적(MTD) 달성률
     month_start_s = now.replace(day=1).strftime("%Y-%m-%d")
     days_in_month = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
@@ -3375,6 +3395,21 @@ def dashboard():
             if a2p < 20:
                 ad_insights.append({"kind": "funnel", "label": r["label"],
                     "msg": f"장바구니→구매 {a2p:.0f}% 낮음 → 결제/상세페이지 이탈 점검"})
+    # 메타 외 채널(네이버검색·크리테오·GFA)도 증액/감액 인사이트 (목표 ROAS 대비)
+    def _channel_insights(eff_rows, ch_label):
+        for r in eff_rows:
+            if r.get("roas") is None or (r.get("cost") or 0) <= 0:
+                continue
+            if r["roas"] >= target_roas * 1.4:
+                ad_insights.append({"kind": "up", "label": f"{r['label']} · {ch_label}",
+                    "msg": f"{ch_label} ROAS {r['roas']}% (목표 {target_roas}% 크게 상회) → 광고비 증액 검토 (현재 {r['cost']:,}원)"})
+            elif r["roas"] < target_roas:
+                ad_insights.append({"kind": "down", "label": f"{r['label']} · {ch_label}",
+                    "msg": f"{ch_label} ROAS {r['roas']}% < 목표 {target_roas}% → 소재/타겟 점검 또는 감액"})
+    _channel_insights(ne_y, "네이버검색")
+    _channel_insights(criteo_eff["yesterday"]["rows"], "크리테오")
+    _channel_insights(gfa_eff["yesterday"]["rows"], "네이버성과형")
+
     # 정렬: 기회(up) 먼저, 그다음 경고
     _order = {"up": 0, "down": 1, "fatigue": 2, "funnel": 3}
     ad_insights.sort(key=lambda x: _order.get(x["kind"], 9))
@@ -3530,6 +3565,7 @@ def dashboard():
         criteo_trend=criteo_trend,
         gfa_eff=gfa_eff,
         gfa_trend=gfa_trend,
+        channel_summary=channel_summary,
         goals=goals,
         goal_month=now.month,
         now=now.strftime("%H:%M"),

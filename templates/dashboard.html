@@ -186,6 +186,45 @@
     </div>
     {% endif %}
 
+    <!-- 전 채널 광고 요약 (어제 기준) -->
+    {% if channel_summary and channel_summary.has_data %}
+    <div class="card">
+        <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">📊 광고 채널 요약
+            <span style="font-size:0.76rem;color:#888;font-weight:400">{{ channel_summary.date[5:] }} (어제) · 광고비/광고매출/ROAS</span>
+        </h2>
+        <div style="overflow-x:auto">
+        <table class="num" style="width:100%;font-size:0.84rem;border-collapse:collapse;min-width:560px">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
+                <th style="text-align:left;padding:6px 8px">채널</th>
+                <th style="padding:6px 8px">광고비</th><th style="padding:6px 8px">광고매출</th>
+                <th style="padding:6px 8px">ROAS</th><th style="padding:6px 8px">전환</th>
+                <th style="padding:6px 8px">매출비중</th></tr></thead>
+            <tbody>
+            {% for r in channel_summary.rows %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:6px 8px;font-weight:600">
+                    <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:{{ r.color }};margin-right:6px"></span>{{ r.name }}{% if r.connected is not none %}<span style="color:#aaa;font-weight:400;font-size:0.72rem"> {{ r.connected }}곳</span>{% endif %}</td>
+                <td style="padding:6px 8px">{{ "{:,.0f}".format(r.cost) }}</td>
+                <td style="padding:6px 8px">{{ "{:,.0f}".format(r.rev) }}</td>
+                <td style="padding:6px 8px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.conv is not none %}{{ "{:,.0f}".format(r.conv) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#888">{% if channel_summary.tot.rev %}{{ (r.rev / channel_summary.tot.rev * 100)|round }}%{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot><tr style="text-align:right;border-top:2px solid #eee;font-weight:700;background:#fafcff">
+                <td style="text-align:left;padding:7px 8px">전체 합계</td>
+                <td style="padding:7px 8px">{{ "{:,.0f}".format(channel_summary.tot.cost) }}</td>
+                <td style="padding:7px 8px">{{ "{:,.0f}".format(channel_summary.tot.rev) }}</td>
+                <td style="padding:7px 8px;color:{% if channel_summary.tot.roas and channel_summary.tot.roas>=300 %}#27ae60{% elif channel_summary.tot.roas and channel_summary.tot.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if channel_summary.tot.roas is not none %}{{ channel_summary.tot.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
+            </tr></tfoot>
+        </table>
+        </div>
+        <p style="font-size:0.72rem;color:#aaa;margin:8px 0 0">메타는 부가세 포함 광고비, 네이버/크리테오/성과형은 부가세 미포함. ROAS=광고매출/광고비.</p>
+    </div>
+    {% endif %}
+
     <!-- 최근 빠진 데이터 백필 -->
     {% if request.args.get('backfill') == 'started' %}
     <div class="card" style="padding:10px 16px; background:#eafaf0; border-color:#bce8cf; font-size:0.85rem; color:#1e8449">
