@@ -1383,6 +1383,31 @@ def _heartbeat_job():
             except Exception:
                 traceback.print_exc()
 
+        # 5b) 광고 크롤 채널(크리테오·GFA) 수집 끊김 감지 (09시 이후 — collect 06:40/06:50 후).
+        # 세션이 30일 추정 만료 전에 조용히 끊기는 케이스(비번변경·신뢰브라우저만료·IP차단)를 잡는다.
+        # 최근 7일 수집되던 채널인데 오늘 갱신(updated_at)된 매장이 0 → 수집 파이프 끊김.
+        if now.hour >= 9:
+            week_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+            for tbl, label, cmd in [
+                ("criteo_metrics", "크리테오", "크리테오_세션갱신.command"),
+                ("gfa_metrics", "네이버 성과형(GFA)", "네이버성과형_세션갱신.command")]:
+                try:
+                    with db.db_conn() as conn:
+                        n_recent = conn.execute(
+                            f"SELECT COUNT(DISTINCT account_id) FROM {tbl} WHERE date >= ?", (week_ago,)).fetchone()[0]
+                        n_today = conn.execute(
+                            f"SELECT COUNT(DISTINCT account_id) FROM {tbl} WHERE date(updated_at)=?", (today,)).fetchone()[0]
+                    if n_recent > 0 and n_today == 0:
+                        _heartbeat_alert(
+                            f"{tbl}_collect_gap_{today}",
+                            f"⚠️ {label} 수집 끊김: 최근 {n_recent}개 매장 수집되다 오늘 0개 갱신. "
+                            f"세션 만료/차단 의심 → {cmd} 더블클릭 재로그인 점검.",
+                            severity="warn",
+                        )
+                        problems.append(f"{tbl}_collect_gap")
+                except Exception:
+                    traceback.print_exc()
+
         # 6) per-account "오늘 막힘" 감지 (14시 이후).
         # 어제 매출>0 이던 활성 매장인데 오늘 데이터가 없으면(행없음 or 매출0+시간별0) → 그 계정만 콕 집어 알림.
         # rosy001 처럼 특정 계정이 하루종일 hang 하는 케이스를 사람이 바로 인지하도록.
@@ -3308,6 +3333,27 @@ def dashboard():
             ad_alerts.append({"label": r["label"], "msg": f"광고 피로도 높음: 빈도 {r['freq']} (같은 사람 반복 노출)"})
         if r["dep"] is not None and r["dep"] >= 60:
             ad_alerts.append({"label": r["label"], "msg": f"광고 의존도 높음: {r['dep']}% (매출 대부분이 광고)"})
+
+    # 메타 외 채널(네이버검색·크리테오·GFA)도 ROAS 급락 감지 — 어제 vs 직전 7일평균 -30%↓
+    def _roas_drop_alerts(eff_rows, src_by_key, ch_label):
+        for r in eff_rows:
+            aid = r["id"]
+            if r.get("roas") is None or (r.get("cost") or 0) <= 0:
+                continue
+            prev = []
+            for i in range(2, 9):
+                d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+                m = src_by_key.get((aid, d))
+                if m and (m["cost"] or 0) > 0:
+                    prev.append((m["revenue"] or 0) / m["cost"] * 100)
+            avg = sum(prev) / len(prev) if prev else None
+            if avg and avg > 0 and r["roas"] < avg * 0.7:
+                ad_alerts.append({"label": f"{r['label']} · {ch_label}",
+                                  "msg": f"{ch_label} ROAS 급락: {r['roas']}% (7일평균 {avg:.0f}% 대비 -30%↓)"})
+
+    _roas_drop_alerts(ne_y, naver_by_key, "네이버검색")
+    _roas_drop_alerts(criteo_eff["yesterday"]["rows"], criteo_by_key, "크리테오")
+    _roas_drop_alerts(gfa_eff["yesterday"]["rows"], gfa_by_key, "네이버성과형")
 
     # 실행 제안(자동 인사이트) — 어제 기준 + 목표 ROAS 대비
     target_roas = int(db.get_setting("target_roas", "300") or 300)
