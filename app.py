@@ -1958,6 +1958,26 @@ def update_naver_route(account_id):
     return redirect(request.referrer or url_for("index"))
 
 
+@app.route("/accounts/<account_id>/criteo", methods=["POST"])
+@login_required
+def update_criteo_route(account_id):
+    db.update_criteo_advertiser_id(account_id, request.form.get("criteo_advertiser_id", "").strip())
+    return redirect(request.referrer or url_for("index"))
+
+
+@app.route("/admin/criteo_collect", methods=["POST"])
+def admin_criteo_collect():
+    """localhost 전용 크리테오 수집 수동 트리거. body: days(선택)."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        days = int(request.form.get("days", str(CRITEO_BACKFILL_DAYS)))
+    except ValueError:
+        days = CRITEO_BACKFILL_DAYS
+    threading.Thread(target=lambda: _criteo_collect_job(days=days), daemon=True).start()
+    return jsonify({"ok": True, "days": days})
+
+
 @app.route("/settings/target_roas", methods=["POST"])
 @login_required
 def set_target_roas():
