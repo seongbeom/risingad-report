@@ -194,9 +194,9 @@
 
   <div class="card">
     <h2>매장별 연결 현황</h2>
-    <p class="card-sub">각 매장의 시트/메타/네이버 연결 여부. ✓연결 / 미연결. <b>키 입력·설정은 <a href="/admin" style="color:#4a90d9">설정 / 관리</a> 페이지</b>에서.</p>
+    <p class="card-sub">각 매장의 시트/메타/네이버검색/크리테오/네이버성과형 연결 여부. ✓연결 / 미연결. <b>키 입력·설정은 <a href="/admin" style="color:#4a90d9">설정 / 관리</a> 페이지</b>에서.</p>
     <table class="conn">
-      <thead><tr><th>매장</th><th>구글시트</th><th>메타</th><th>네이버 검색광고</th></tr></thead>
+      <thead><tr><th>매장</th><th>구글시트</th><th>메타</th><th>네이버 검색광고</th><th>🟠크리테오</th><th>🟢네이버성과형</th></tr></thead>
       <tbody>
       {% for r in conn_rows %}
       <tr>
@@ -204,6 +204,8 @@
         <td>{% if r.sheet %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
         <td>{% if r.meta %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
         <td>{% if r.naver %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
+        <td>{% if r.criteo %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
+        <td>{% if r.gfa %}<span class="ok">✓</span>{% else %}<span class="no">·</span>{% endif %}</td>
       </tr>
       {% endfor %}
       </tbody>

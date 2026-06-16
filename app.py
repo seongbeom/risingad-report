@@ -3832,11 +3832,13 @@ SHEET_TARGETS = [
      "way": "api", "status": "live", "last_key": "naver_last_run",
      "need": "나머지 매장 API키·시크릿·CUSTOMER_ID (계정관리에서 입력)"},
 
-    # ── 효율탭: 공식 API 있음 → 연동하면 자동화 (지금은 수기) ──
+    # ── 효율탭: 세션 크롤로 자동 작동 중 ──
     {"tab": "크리테오", "group": "효율탭 광고채널", "what": "크리테오",
-     "fields": "광고비·매출",
-     "way": "api", "status": "manual", "last_key": None,
-     "need": "Criteo OAuth client_id/secret + advertiser ID 발급"},
+     "fields": "노출·클릭·광고비·전환·매출 (클릭후7일)",
+     "way": "crawler", "status": "live", "last_key": "criteo_last_run",
+     "need": "—  (세션 크롤 가동 중, 월 1회 재로그인 / advertiser ID 입력 매장만)"},
+
+    # ── 효율탭: 공식 API 있음 → 연동하면 자동화 (지금은 수기) ──
     {"tab": "구글", "group": "효율탭 광고채널", "what": "구글 광고",
      "fields": "노출·클릭·광고비·전환·매출",
      "way": "api", "status": "manual", "last_key": None,
@@ -3858,11 +3860,12 @@ SHEET_TARGETS = [
      "way": "api", "status": "manual", "last_key": None,
      "need": "카카오모먼트 API 키"},
 
-    # ── 효율탭: 공식 API 없음/제한 → 크롤러로 가능 ──
     {"tab": "네이버 성과형(GFA)", "group": "효율탭 광고채널", "what": "네이버 디스플레이",
-     "fields": "노출·클릭·광고비·전환·매출",
-     "way": "crawler", "status": "manual", "last_key": None,
-     "need": "공식 API 제한 → GFA 광고관리자 로그인 크롤러 구축 필요"},
+     "fields": "노출·클릭·광고비·전환(구매완료)·매출(구매완료전환매출액)",
+     "way": "crawler", "status": "live", "last_key": "gfa_last_run",
+     "need": "—  (세션 크롤 가동 중, 권한 승인된 매장만 / 월 1회 재로그인)"},
+
+    # ── 효율탭: 공식 API 없음/제한 → 크롤러로 가능 ──
     {"tab": "네이버 쇼핑박스 PC", "group": "효율탭 광고채널", "what": "쇼핑박스 PC",
      "fields": "노출·클릭·광고비·전환·매출",
      "way": "crawler", "status": "manual", "last_key": None,
@@ -4053,6 +4056,8 @@ def sheet_channels():
             "sheet": bool(a.get("spreadsheet_id")),
             "meta": bool((a.get("meta_account_id") or "").strip()),
             "naver": bool((a.get("naver_api_key") or "").strip() and (a.get("naver_customer_id") or "").strip()),
+            "criteo": bool((a.get("criteo_advertiser_id") or "").strip()),
+            "gfa": bool((a.get("naver_gfa_account_no") or "").strip()),
             "naver_api_key": a.get("naver_api_key") or "",
             "naver_secret": a.get("naver_secret") or "",
             "naver_customer_id": a.get("naver_customer_id") or "",
