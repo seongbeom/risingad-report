@@ -57,7 +57,7 @@
             <h2 style="border-bottom:none; padding-bottom:0">🔐 연동 세션 상태 <span style="font-size:0.72rem; color:#999; font-weight:normal">(만료되면 수집 끊김 — 월 1회 갱신 필수)</span></h2>
             <table style="width:100%; font-size:0.82rem; border-collapse:collapse; margin-top:6px">
                 <thead><tr style="text-align:left; color:#888; font-size:0.74rem">
-                    <th style="padding:4px 8px">채널</th><th>상태</th><th>마지막 갱신</th><th>갱신</th>
+                    <th style="padding:4px 8px">채널</th><th>상태</th><th>마지막 갱신</th><th>만료 예정일</th><th>갱신</th>
                 </tr></thead>
                 <tbody>
                 {% for s in session_statuses %}
@@ -69,6 +69,9 @@
                             {% else %}<span style="background:#e74c3c;color:#fff;padding:1px 7px;border-radius:8px">🔴 만료/없음 — 갱신 필요</span>{% endif %}
                         </td>
                         <td style="color:#777">{{ s.refreshed_at or '-' }}</td>
+                        <td style="font-weight:600; color:{% if s.severity=='ok' %}#555{% elif s.severity=='warn' %}#b9770e{% else %}#c0392b{% endif %}">
+                            {% if s.expires_at %}{{ s.expires_at }}{% if s.days_left is not none %} <span style="font-weight:400; color:#999">({{ s.days_left }}일)</span>{% endif %}{% else %}-{% endif %}
+                        </td>
                         <td>
                             {% if s.requested %}
                                 <span style="background:#4a90d9;color:#fff;padding:2px 8px;border-radius:8px;font-size:0.74rem">🔄 요청됨 — 맥에서 로그인 창 대기</span>

@@ -1107,9 +1107,13 @@ def _session_guard_payload():
         if requested and st.get("refreshed_at") and st["refreshed_at"] > requested[:10]:
             db.set_setting(f"{key}_refresh_requested", "")
             requested = ""
+        # 만료 예정일 = 오늘 + 남은일수 (미리 갱신할 수 있게 명시)
+        import datetime as _dt
+        dl = st.get("days_left")
+        expires_at = (_dt.date.today() + _dt.timedelta(days=dl)).isoformat() if dl is not None else None
         out.append({
             "key": key, "name": name, "command": cmd, "login_py": login_py, "upload_env": upload_env,
-            "severity": st.get("severity"), "days_left": st.get("days_left"),
+            "severity": st.get("severity"), "days_left": dl, "expires_at": expires_at,
             "refreshed_at": st.get("refreshed_at"), "message": st.get("message"),
             "requested": bool(requested), "requested_at": requested,
         })
