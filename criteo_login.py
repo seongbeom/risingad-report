@@ -29,12 +29,16 @@ START_URL = "https://marketing.criteo.com/"
 SESSION_VALID_DAYS = 30
 
 
+AUTH_MARKERS = ("login.criteo", "okta", "/authorize", "/oauth2", "signin", "/login")
+
+
 def _logged_in(page):
-    """대시보드 진입 여부 — 로그인/okta 화면이 아니고 marketing.criteo.com 본문이면 True."""
-    u = page.url
-    if any(x in u for x in ("login.criteo", "okta", "/authorize", "/login")):
+    """로그인 완료 여부 — 인증(okta/login) 페이지가 아니고 criteo 앱 호스트에 있으면 True."""
+    u = (page.url or "").lower()
+    if any(x in u for x in AUTH_MARKERS):
         return False
-    return "marketing.criteo.com" in u or "criteo.com/account" in u
+    # 인증 페이지만 아니면 criteo.com 어느 앱 화면이든 로그인된 것으로 간주
+    return "criteo.com" in u and "about:blank" not in u
 
 
 def _upload():
@@ -74,14 +78,19 @@ def main():
         # 로그인 완료까지 대기 (최대 6분 폴링)
         import time
         deadline = time.time() + 360
+        last = None
         while time.time() < deadline:
+            cur = page.url
+            if cur != last:
+                print(f"  현재 위치: {cur}")
+                last = cur
             if _logged_in(page):
-                page.wait_for_timeout(2500)  # 대시보드 데이터 로드 여유
+                page.wait_for_timeout(2000)
                 if _logged_in(page):
                     break
             time.sleep(2)
         else:
-            print("❌ 6분 내 로그인 감지 실패. 다시 시도해주세요.")
+            print("❌ 6분 내 로그인 감지 실패. 현재 위치:", page.url)
             ctx.close()
             sys.exit(1)
 

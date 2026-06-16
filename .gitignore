@@ -10,3 +10,6 @@ screenshot_*.png
 data/
 *.pyc
 *.db
+
+.DS_Store
+docs/크리테오_검증표.txt
