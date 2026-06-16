@@ -1009,6 +1009,7 @@ def _criteo_collect_job(days=CRITEO_BACKFILL_DAYS):
                 ok_acct += 1
             except Exception as e:
                 fail.append(lbl)
+                db.add_sheet_log(aid, "criteo", f"최근{days}일", 0, "fail", repr(e)[:280])
                 print(f"[criteo] {lbl} 실패: {repr(e)[:160]}")
         db.set_setting("criteo_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
         print(f"[criteo] done — 성공 {ok_acct} / 실패 {len(fail)}")
@@ -1064,6 +1065,7 @@ def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
                 ok_acct += 1
             except Exception as e:
                 fail.append(lbl)
+                db.add_sheet_log(aid, "gfa", f"최근{days}일", 0, "fail", repr(e)[:280])
                 print(f"[gfa] {lbl} 실패: {repr(e)[:160]}")
         db.set_setting("gfa_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
         print(f"[gfa] done — 성공 {ok_acct} / 스킵 {len(skipped)} / 실패 {len(fail)}")
@@ -2170,6 +2172,22 @@ def api_session_guard():
     if not _guard_token_ok():
         return jsonify({"error": "forbidden"}), 403
     return jsonify({"channels": _session_guard_payload()})
+
+
+@app.route("/api/session_guard/wait", methods=["GET"])
+def api_session_guard_wait():
+    """롱폴링 — 갱신 요청이 들어오는 즉시 응답(최대 ~25초 대기 후 타임아웃).
+    맥 도우미가 이걸 계속 열어두면 버튼 클릭 → 1초 내 로그인 창이 뜬다."""
+    if not _guard_token_ok():
+        return jsonify({"error": "forbidden"}), 403
+    import time as _t
+    deadline = _t.time() + 25
+    while _t.time() < deadline:
+        payload = _session_guard_payload()
+        if any(c["requested"] for c in payload):
+            return jsonify({"channels": payload, "pending": True})
+        _t.sleep(1.0)
+    return jsonify({"channels": _session_guard_payload(), "pending": False})
 
 
 @app.route("/api/session_guard/ack", methods=["POST"])

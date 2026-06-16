@@ -37,8 +37,9 @@ cat > "$PLIST" <<PLISTEOF
     <string>$REPO/session_guard.py</string>
   </array>
   <key>WorkingDirectory</key><string>$REPO</string>
-  <key>StartInterval</key><integer>600</integer>
+  <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$REPO/data/guard.log</string>
   <key>StandardErrorPath</key><string>$REPO/data/guard.log</string>
 </dict>
@@ -51,8 +52,8 @@ launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load -w "$PLIST"
 echo "✅ 백그라운드 도우미 가동 시작 (10분마다 점검, 재부팅해도 유지)"
 echo
-echo "테스트: 지금 한 번 실행해봅니다 ↓"
-"$PY" "$REPO/session_guard.py" || true
+echo "테스트: 지금 한 번 점검해봅니다 ↓"
+"$PY" "$REPO/session_guard.py" --once || true
 echo
 echo "끝났습니다. 이 창은 닫아도 됩니다. (제거하려면 세션도우미_제거.command)"
 read -r _
