@@ -3483,23 +3483,62 @@ def dashboard():
     criteo_trend = _simple_trend(criteo_by_key)
     gfa_trend = _simple_trend(gfa_by_key)
 
-    # ===== 전 채널 한눈 요약 카드 (어제 기준) — 광고비/광고매출/ROAS/전환 =====
-    def _sumrow(name, color, cost, rev, conv, connected):
-        cost = cost or 0; rev = rev or 0
-        return {"name": name, "color": color, "cost": cost, "rev": rev, "conv": conv,
-                "roas": round(rev / cost * 100) if cost else None, "connected": connected}
+    # ===== 전 채널 한눈 요약 — 어제 + 통합(블렌디드) + 전주동요일 대비 + MTD =====
     _mt = ad_eff["yesterday"]["tot"]; _nt = naver_eff["yesterday"]["tot"]
     _ct = criteo_eff["yesterday"]["tot"]; _gt = gfa_eff["yesterday"]["tot"]
-    _cs_rows = [
-        _sumrow("메타", "#1877f2", _mt.get("spend"), _mt.get("ad_rev"), _mt.get("purch"), None),
-        _sumrow("네이버 검색", "#03c75a", _nt.get("cost"), _nt.get("rev"), _nt.get("conv"), naver_eff["connected"]),
-        _sumrow("크리테오", "#f76b1c", _ct.get("cost"), _ct.get("rev"), _ct.get("conv"), criteo_eff["connected"]),
-        _sumrow("네이버 성과형", "#2e7d32", _gt.get("cost"), _gt.get("rev"), _gt.get("conv"), gfa_eff["connected"]),
+
+    def _ch_daysum(src, ck, rk, d):
+        c = sum((src.get((aid, d), {}) or {}).get(ck) or 0 for aid in selected_ids)
+        r = sum((src.get((aid, d), {}) or {}).get(rk) or 0 for aid in selected_ids)
+        return c, r
+
+    def _pct_delta(cur, prev):
+        return round((cur - prev) / prev * 100) if prev else None
+
+    # 채널: (표시명, 색, by_key, 광고비필드, 매출필드, 연동수, 어제전환)
+    _CH = [
+        ("메타", "#1877f2", meta_by_key, "spend_vat", "revenue", None, _mt.get("purch")),
+        ("네이버 검색", "#03c75a", naver_by_key, "cost", "revenue", naver_eff["connected"], _nt.get("conv")),
+        ("크리테오", "#f76b1c", criteo_by_key, "cost", "revenue", criteo_eff["connected"], _ct.get("conv")),
+        ("네이버 성과형", "#2e7d32", gfa_by_key, "cost", "revenue", gfa_eff["connected"], _gt.get("conv")),
     ]
+    _mstart = now.replace(day=1).strftime("%Y-%m-%d")
+    _mtd_fn = {"메타": db.list_meta_metrics, "네이버 검색": db.list_naver_metrics,
+               "크리테오": db.list_criteo_metrics, "네이버 성과형": db.list_gfa_metrics}
+    _cs_rows = []
+    for name, color, src, ck, rk, conn, conv in _CH:
+        cy, ry = _ch_daysum(src, ck, rk, yesterday)
+        cw, rw = _ch_daysum(src, ck, rk, last_week_same)
+        mrows = _mtd_fn[name](account_ids=selected_ids, start_date=_mstart, end_date=today)
+        mc = sum(r.get(ck) or 0 for r in mrows); mr = sum(r.get(rk) or 0 for r in mrows)
+        _cs_rows.append({
+            "name": name, "color": color, "cost": cy, "rev": ry, "conv": conv,
+            "roas": round(ry / cy * 100) if cy else None, "connected": conn,
+            "wow_cost": _pct_delta(cy, cw), "wow_rev": _pct_delta(ry, rw),
+            "mtd_cost": mc, "mtd_rev": mr, "mtd_roas": round(mr / mc * 100) if mc else None,
+        })
     _cs_tc = sum(r["cost"] for r in _cs_rows); _cs_tr = sum(r["rev"] for r in _cs_rows)
+    _cs_tc_w = sum(_ch_daysum(s, ck, rk, last_week_same)[0] for _, _, s, ck, rk, _, _ in _CH)
+    _mtd_tc = sum(r["mtd_cost"] for r in _cs_rows); _mtd_tr = sum(r["mtd_rev"] for r in _cs_rows)
+    # 매장 전체매출(블렌디드 분모) — 광고매출 합산은 채널 중복집계라, 통합지표는 매장 실매출 기준
+    _srev_y = sum((by_key.get((aid, yesterday), {}) or {}).get("매출") or 0 for aid in selected_ids)
+    _srev_w = sum((by_key.get((aid, last_week_same), {}) or {}).get("매출") or 0 for aid in selected_ids)
+    _srev_m = sum((m.get("매출") or 0) for m in db.list_metrics(start_date=_mstart, end_date=today)
+                  if m["account_id"] in selected_ids)
     channel_summary = {
-        "date": yesterday, "rows": _cs_rows,
-        "tot": {"cost": _cs_tc, "rev": _cs_tr, "roas": round(_cs_tr / _cs_tc * 100) if _cs_tc else None},
+        "date": yesterday, "last_week": last_week_same, "rows": _cs_rows,
+        "tot": {"cost": _cs_tc, "rev": _cs_tr, "roas": round(_cs_tr / _cs_tc * 100) if _cs_tc else None,
+                "wow_cost": _pct_delta(_cs_tc, _cs_tc_w)},
+        # 통합(블렌디드): 전체 광고비 ÷ 전체 매장 실매출
+        "blended": {
+            "ad_spend": _cs_tc, "store_rev": _srev_y,
+            "broas": round(_srev_y / _cs_tc * 100) if _cs_tc else None,
+            "dep": round(_cs_tc / _srev_y * 100, 1) if _srev_y else None,
+            "broas_w": round(_srev_w / _cs_tc_w * 100) if _cs_tc_w else None,
+        },
+        "mtd": {"cost": _mtd_tc, "rev": _mtd_tr, "store_rev": _srev_m,
+                "broas": round(_srev_m / _mtd_tc * 100) if _mtd_tc else None,
+                "dep": round(_mtd_tc / _srev_m * 100, 1) if _srev_m else None},
         "has_data": _cs_tc > 0 or _cs_tr > 0,
     }
 
