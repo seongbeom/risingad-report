@@ -45,10 +45,23 @@ while [ "$waited" -lt "$RELOAD_MAX" ]; do
   sleep 10; waited=$((waited+10)); echo "  대기중... (${waited}/${RELOAD_MAX}s)"
 done
 
-# 5) 그래도 안 바뀌면(프로세스 wedged) 최후수단 systemctl restart
+# 5) 그래도 안 바뀌면(프로세스 wedged) 최후수단 systemctl restart.
+#    단, 스크랩 진행 중이면 절대 안 끊음 — idle 빈틈까지 기다렸다 restart (graceful 실패 시 안전망).
 if [ "$ok" != "1" ]; then
-  echo "⚠️ reload 미확인 — 최후수단 systemctl restart"
-  ssh $SSH_OPTS -i "$KEY" "$HOST" "sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
+  echo "⚠️ reload 미확인 — idle 대기 후 최후수단 systemctl restart (스크랩 중이면 끊지 않음)"
+  fb=0
+  while [ "$fb" -lt 180 ]; do
+    run=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(len(json.load(sys.stdin).get('running_now',[])))" 2>/dev/null || echo "?")
+    # 대기 중 graceful 이 뒤늦게 적재됐을 수도 → started_at 재확인
+    NOW=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('started_at',''))" 2>/dev/null || echo "")
+    if [ -n "$NOW" ] && [ "$NOW" != "$BEFORE" ]; then echo "  ✅ 뒤늦게 graceful 적재 확인 — restart 불필요"; ok=1; break; fi
+    if [ "$run" = "0" ]; then
+      echo "  idle 확인 → systemctl restart"
+      ssh $SSH_OPTS -i "$KEY" "$HOST" "sudo systemctl restart cafe24 && sleep 3 && sudo systemctl is-active cafe24"
+      ok=1; break
+    fi
+    echo "  스크랩 중(running=$run) — 끊지 않고 대기 (${fb}/180s)"; sleep 15; fb=$((fb+15))
+  done
 fi
 
 # 6) healthcheck
