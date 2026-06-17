@@ -186,6 +186,62 @@
     </div>
     {% endif %}
 
+    <!-- ===== 고정 요약띠 + 탭 (큰그림 IA) ===== -->
+    <style>
+      #dash-header { position:sticky; top:0; z-index:600; background:rgba(255,255,255,.97); backdrop-filter:blur(6px); margin:0 0 14px; border-bottom:1px solid #eaeaea; }
+      #dash-kpis { display:flex; gap:10px; flex-wrap:wrap; padding:10px 2px 8px; }
+      .ds-kpi { flex:1 1 140px; min-width:140px; background:#f7f9fc; border:1px solid #eef2f7; border-radius:10px; padding:7px 13px; }
+      .ds-kpi .l { font-size:.71rem; color:#8a93a0; margin-bottom:1px; }
+      .ds-kpi .v { font-size:1.18rem; font-weight:800; color:#222; line-height:1.15; }
+      #dash-tabs { display:flex; gap:6px; flex-wrap:wrap; padding:0 2px 9px; }
+      .dash-tab { font-size:.9rem; font-weight:700; color:#5a6573; background:#eef1f5; border:none; border-radius:16px; padding:6px 17px; cursor:pointer; transition:.12s; }
+      .dash-tab:hover { background:#dfe5ec; }
+      .dash-tab.active { background:#2c3e50; color:#fff; }
+      .dash-hidden { display:none !important; }
+    </style>
+    <div id="dash-header">
+        <div id="dash-kpis">
+            <div class="ds-kpi"><div class="l">오늘 매출 (지금까지)</div><div class="v">{{ "{:,.0f}".format(mega.today_sales) }}<span style="font-size:.8rem;font-weight:600;color:#888">원</span>
+                {% if mega.vs_yest_at_hour_pct is not none %}<span style="font-size:.72rem;color:{% if mega.vs_yest_at_hour_pct>0 %}#27ae60{% elif mega.vs_yest_at_hour_pct<0 %}#e74c3c{% else %}#999{% endif %}">{% if mega.vs_yest_at_hour_pct>0 %}▲{% elif mega.vs_yest_at_hour_pct<0 %}▼{% endif %}{{ "%.0f"|format(mega.vs_yest_at_hour_pct|abs) }}%</span>{% endif %}</div></div>
+            {% if channel_summary and channel_summary.has_data %}
+            <div class="ds-kpi"><div class="l">통합 ROAS (블렌디드)</div><div class="v" style="color:{% if channel_summary.blended.broas and channel_summary.blended.broas>=400 %}#27ae60{% elif channel_summary.blended.broas and channel_summary.blended.broas<200 %}#e74c3c{% else %}#e67e22{% endif %}">{% if channel_summary.blended.broas is not none %}{{ channel_summary.blended.broas }}%{% else %}-{% endif %}</div></div>
+            <div class="ds-kpi"><div class="l">광고 의존도</div><div class="v">{% if channel_summary.blended.dep is not none %}{{ channel_summary.blended.dep }}%{% else %}-{% endif %}</div></div>
+            {% endif %}
+            <div class="ds-kpi"><div class="l">알람</div><div class="v" style="color:{% if (alerts|length + ad_alerts|length + (validate_warnings|length))>0 %}#e74c3c{% else %}#27ae60{% endif %}">{{ alerts|length + ad_alerts|length + (validate_warnings|length) }}건</div></div>
+        </div>
+        <div id="dash-tabs">
+            <button class="dash-tab active" data-tab="overview" onclick="switchDashTab('overview')">📊 종합</button>
+            <button class="dash-tab" data-tab="ads" onclick="switchDashTab('ads')">📣 광고</button>
+            <button class="dash-tab" data-tab="stores" onclick="switchDashTab('stores')">🏬 매장</button>
+            <button class="dash-tab" data-tab="ops" onclick="switchDashTab('ops')">⚙️ 운영</button>
+        </div>
+    </div>
+    <script>
+    (function(){
+      function tabFor(t){
+        if(/시트 자동입력|운영 상태|CapSolver|스케줄/.test(t)) return 'ops';
+        if(/채널 요약|오늘 누적|시간별 누적 매출|매출목표|이상 매장|알람/.test(t)) return 'overview';
+        if(/광고 효율|주간 \/ 월간|실행 제안|퍼널|캠페인별|소재|ROAS 추세|최근 8일 추세|크리테오|성과형|네이버 검색/.test(t)) return 'ads';
+        if(/상품 분석|전환 깔때기|효율 랭킹|신규 vs 재구매|매장별|요일별|최근 9일 매출|시간대 평균/.test(t)) return 'stores';
+        return 'overview';
+      }
+      function cards(){ return document.querySelectorAll('#dash-header ~ .card'); }
+      window.switchDashTab = function(tab){
+        cards().forEach(function(c){ c.classList.toggle('dash-hidden', c.getAttribute('data-dtab')!==tab); });
+        document.querySelectorAll('.dash-tab').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-tab')===tab); });
+        try{ localStorage.setItem('dashTab', tab); }catch(e){}
+      };
+      document.addEventListener('DOMContentLoaded', function(){
+        cards().forEach(function(c){
+          var h=c.querySelector('h2,h3'); c.setAttribute('data-dtab', tabFor(h?h.textContent:''));
+        });
+        var qn=document.getElementById('quicknav'); if(qn) qn.style.display='none';  // 탭이 대체
+        var saved='overview'; try{ saved=localStorage.getItem('dashTab')||'overview'; }catch(e){}
+        window.switchDashTab(saved);
+      });
+    })();
+    </script>
+
     <!-- 전 채널 광고 요약 + 통합(블렌디드) + 전주대비 + MTD -->
     {% if channel_summary and channel_summary.has_data %}
     {% macro wow(d) %}{% if d is not none %}<span style="font-size:.7rem;color:{% if d>0 %}#27ae60{% elif d<0 %}#e74c3c{% else %}#999{% endif %}">{% if d>0 %}▲{% elif d<0 %}▼{% endif %}{{ d|abs }}%</span>{% endif %}{% endmacro %}
