@@ -1136,9 +1136,25 @@ def _set_product_period(af, page, target_date, _phase=lambda n: None):
     import re as _re3
     _y, _m, d = [int(x) for x in target_date.split("-")]
     _phase(f"기간 세팅 {target_date}")
-    date_btns = af.locator("button").filter(has_text=_re3.compile(r"\d{4}-\d{2}-\d{2}"))
+    date_btns = af.locator("button").filter(has_text=_re3.compile(r"\d{4}[-./]\d{2}[-./]\d{2}"))
     n = date_btns.count()
     if n < 1:
+        # cafe24 UI 변경 추정 — 실제 DOM 덤프해서 새 셀렉터 파악 (다음 사이클 로그)
+        try:
+            url = af.url
+            btns = af.locator("button"); bc = btns.count()
+            btxt = [t.strip()[:30] for t in btns.all_inner_texts()[:30] if t.strip()]
+            inps = af.locator("input"); ic = inps.count()
+            ival = [(inps.nth(i).get_attribute("value"), inps.nth(i).get_attribute("placeholder"),
+                     inps.nth(i).get_attribute("type")) for i in range(min(ic, 20))]
+            # 날짜패턴 들어간 아무 요소
+            datey = af.locator("*").filter(has_text=_re3.compile(r"\d{4}[-./]\d{2}[-./]\d{2}")).count()
+            print(f"[product-diag] 날짜버튼0 url={url}", flush=True)
+            print(f"[product-diag] buttons({bc}): {btxt}", flush=True)
+            print(f"[product-diag] inputs({ic}): {ival}", flush=True)
+            print(f"[product-diag] 날짜패턴 요소수={datey}", flush=True)
+        except Exception as _de:
+            print(f"[product-diag] 덤프실패: {repr(_de)[:80]}", flush=True)
         raise RuntimeError("날짜 버튼 못 찾음 (기간 변경 불가)")
     for idx in range(min(n, 2)):  # 시작일, 종료일 둘 다 같은 날로
         date_btns.nth(idx).click(timeout=5000)
