@@ -1132,6 +1132,22 @@ def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
         _live_lock.release()
 
 
+HEALTHCHECK_PING_URL = os.environ.get("HEALTHCHECK_PING_URL", "")  # 외부 데드맨 스위치 (healthchecks.io 등)
+
+
+def _deadman_ping_job():
+    """외부 데드맨 스위치에 '나 살아있음' 핑. 이 잡이 도는 것 자체가 프로세스+스케줄러 생존 증거.
+    프로세스가 죽거나 스케줄러가 hang 하면 핑이 끊겨 → 외부 서비스가 사용자에게 알림.
+    (앱 내부 Slack 은 앱이 죽으면 못 보내므로, 앱의 '죽음'은 외부에서만 감지 가능.)"""
+    if not HEALTHCHECK_PING_URL:
+        return
+    try:
+        import urllib.request
+        urllib.request.urlopen(HEALTHCHECK_PING_URL, timeout=10).read()
+    except Exception as e:
+        print(f"[deadman] 핑 실패: {repr(e)[:80]}", flush=True)
+
+
 def _gfa_session_check_job():
     """네이버 성과형 크롤 세션 만료 임박/만료 시 Slack 경고."""
     try:
@@ -1479,14 +1495,16 @@ def _heartbeat_job():
             except Exception:
                 traceback.print_exc()
 
-        # 5b) 광고 크롤 채널(크리테오·GFA) 수집 끊김 감지 (09시 이후 — collect 06:40/06:50 후).
-        # 세션이 30일 추정 만료 전에 조용히 끊기는 케이스(비번변경·신뢰브라우저만료·IP차단)를 잡는다.
+        # 5b) 광고 채널 수집 끊김 감지 (10시 이후 — meta 07:00/naver 07:10/criteo 06:40/gfa 06:50 후).
+        # 토큰·세션이 조용히 만료/차단되는 케이스를 잡는다.
         # 최근 7일 수집되던 채널인데 오늘 갱신(updated_at)된 매장이 0 → 수집 파이프 끊김.
-        if now.hour >= 9:
+        if now.hour >= 10:
             week_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-            for tbl, label, cmd in [
-                ("criteo_metrics", "크리테오", "크리테오_세션갱신.command"),
-                ("gfa_metrics", "네이버 성과형(GFA)", "네이버성과형_세션갱신.command")]:
+            for tbl, label, remedy in [
+                ("meta_metrics", "메타 광고", "Meta 광고관리자 액세스토큰 만료 의심 → 토큰 갱신 필요"),
+                ("naver_metrics", "네이버 검색광고", "네이버 검색광고 API키/시크릿/CUSTOMER_ID 확인"),
+                ("criteo_metrics", "크리테오", "세션 만료/차단 → 크리테오_세션갱신.command 더블클릭 재로그인"),
+                ("gfa_metrics", "네이버 성과형(GFA)", "세션 만료/차단 → 네이버성과형_세션갱신.command 더블클릭 재로그인")]:
                 try:
                     with db.db_conn() as conn:
                         n_recent = conn.execute(
@@ -1496,8 +1514,7 @@ def _heartbeat_job():
                     if n_recent > 0 and n_today == 0:
                         _heartbeat_alert(
                             f"{tbl}_collect_gap_{today}",
-                            f"⚠️ {label} 수집 끊김: 최근 {n_recent}개 매장 수집되다 오늘 0개 갱신. "
-                            f"세션 만료/차단 의심 → {cmd} 더블클릭 재로그인 점검.",
+                            f"⚠️ {label} 수집 끊김: 최근 {n_recent}개 매장 수집되다 오늘 0개 갱신. {remedy}",
                             severity="warn",
                         )
                         problems.append(f"{tbl}_collect_gap")
@@ -1764,6 +1781,18 @@ def reload_schedules():
         max_instances=1, misfire_grace_time=20,
     )
     print("[scheduler] reload_check: 30초마다 (idle 시 graceful 리로드)")
+
+    # 외부 데드맨 스위치 핑 — 5분마다. 프로세스/스케줄러 죽으면 핑 끊겨 외부서비스가 알림.
+    if HEALTHCHECK_PING_URL:
+        scheduler.add_job(
+            _deadman_ping_job, "interval",
+            minutes=5,
+            id="deadman_ping", replace_existing=True,
+            max_instances=1, misfire_grace_time=60,
+        )
+        print("[scheduler] deadman_ping: 5분마다 (외부 생존 핑)")
+    else:
+        print("[scheduler] deadman_ping: 비활성 (HEALTHCHECK_PING_URL 미설정)")
 
     # 서버 시작 시점이 활성 시간이고 오늘 라이브가 한 번도 안 돌았으면
     # 30초 뒤 1회 강제 트리거. service restart 가 라이브 누락으로 이어지지 않게.
