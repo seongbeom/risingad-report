@@ -1132,36 +1132,38 @@ def _click_calendar_cell(af, page, target_day):
 
 def _set_product_period(af, page, target_date, _phase=lambda n: None):
     """by-product 페이지 기간을 target_date~target_date (단일일) 로 세팅 후 조회.
-    target_date: 'YYYY-MM-DD'. 날짜 버튼 2개(시작/종료) → 달력 → 일자 클릭 → 조회."""
+    target_date: 'YYYY-MM-DD'.
+    cafe24 변경(2026-06): 날짜가 button→input(placeholder 'YYYY-MM-DD', 시작/종료 2개).
+    → 입력칸에 직접 target_date 타이핑(달력은 클릭해도 안 열림). 구버전 달력은 폴백 유지."""
     import re as _re3
     _y, _m, d = [int(x) for x in target_date.split("-")]
     _phase(f"기간 세팅 {target_date}")
-    date_btns = af.locator("button").filter(has_text=_re3.compile(r"\d{4}[-./]\d{2}[-./]\d{2}"))
-    n = date_btns.count()
+    date_inputs = af.locator("input[placeholder='YYYY-MM-DD']")
+    n = date_inputs.count()
+    if n < 1:  # placeholder 안 잡히면 페이지 input 전체 (by-product 엔 날짜 input뿐)
+        date_inputs = af.locator("input")
+        n = date_inputs.count()
     if n < 1:
-        # cafe24 UI 변경 추정 — 실제 DOM 덤프해서 새 셀렉터 파악 (다음 사이클 로그)
+        # 또 바뀌었을 때 대비 — DOM 덤프 (다음 점검용)
         try:
-            url = af.url
             btns = af.locator("button"); bc = btns.count()
             btxt = [t.strip()[:30] for t in btns.all_inner_texts()[:30] if t.strip()]
-            inps = af.locator("input"); ic = inps.count()
-            ival = [(inps.nth(i).get_attribute("value"), inps.nth(i).get_attribute("placeholder"),
-                     inps.nth(i).get_attribute("type")) for i in range(min(ic, 20))]
-            # 날짜패턴 들어간 아무 요소
-            datey = af.locator("*").filter(has_text=_re3.compile(r"\d{4}[-./]\d{2}[-./]\d{2}")).count()
-            print(f"[product-diag] 날짜버튼0 url={url}", flush=True)
-            print(f"[product-diag] buttons({bc}): {btxt}", flush=True)
-            print(f"[product-diag] inputs({ic}): {ival}", flush=True)
-            print(f"[product-diag] 날짜패턴 요소수={datey}", flush=True)
+            print(f"[product-diag] 날짜input0 url={af.url} buttons({bc}): {btxt}", flush=True)
         except Exception as _de:
             print(f"[product-diag] 덤프실패: {repr(_de)[:80]}", flush=True)
-        raise RuntimeError("날짜 버튼 못 찾음 (기간 변경 불가)")
+        raise RuntimeError("날짜 입력칸 못 찾음 (기간 변경 불가)")
     for idx in range(min(n, 2)):  # 시작일, 종료일 둘 다 같은 날로
-        date_btns.nth(idx).click(timeout=5000)
-        page.wait_for_timeout(1200)
-        if not _click_calendar_cell(af, page, d):
-            raise RuntimeError(f"달력에서 {d}일 셀 못 찾음")
-        page.wait_for_timeout(700)
+        box = date_inputs.nth(idx)
+        try:
+            box.click(timeout=5000)
+            page.wait_for_timeout(400)
+            box.fill(target_date)        # react input — fill 이 input 이벤트 발생시켜 적용됨
+            box.press("Enter")
+        except Exception as e:
+            # 폴백: 구버전 달력 클릭 방식
+            if not _click_calendar_cell(af, page, d):
+                raise RuntimeError(f"날짜 입력 실패 {target_date}: {repr(e)[:60]}")
+        page.wait_for_timeout(500)
     # 조회
     btn = af.locator("button:has-text('조회')").first
     if btn.count() > 0:
