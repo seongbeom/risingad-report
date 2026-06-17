@@ -3496,8 +3496,9 @@ def dashboard():
         return round((cur - prev) / prev * 100) if prev else None
 
     # 채널: (표시명, 색, by_key, 광고비필드, 매출필드, 연동수, 어제전환)
+    # 메타는 'spend'(부가세 미포함) 사용 — 타 채널(cost)과 기준 통일해 통합지표 왜곡 방지.
     _CH = [
-        ("메타", "#1877f2", meta_by_key, "spend_vat", "revenue", None, _mt.get("purch")),
+        ("메타", "#1877f2", meta_by_key, "spend", "revenue", None, _mt.get("purch")),
         ("네이버 검색", "#03c75a", naver_by_key, "cost", "revenue", naver_eff["connected"], _nt.get("conv")),
         ("크리테오", "#f76b1c", criteo_by_key, "cost", "revenue", criteo_eff["connected"], _ct.get("conv")),
         ("네이버 성과형", "#2e7d32", gfa_by_key, "cost", "revenue", gfa_eff["connected"], _gt.get("conv")),
