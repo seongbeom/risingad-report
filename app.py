@@ -125,7 +125,10 @@ def _inject_user():
 # timezone 명시 (Asia/Seoul) — 안 하면 서버 UTC로 동작해서 한국시간과 9시간 어긋남
 scheduler = BackgroundScheduler(
     timezone="Asia/Seoul",
-    executors={"default": ThreadPoolExecutor(max_workers=1)},
+    executors={
+        "default": ThreadPoolExecutor(max_workers=1),  # 스크랩 등 무거운 잡 (chromium 직렬)
+        "quick": ThreadPoolExecutor(max_workers=2),    # 핑·리로드체크 등 가벼운 잡 — 긴 스크랩에 안 막힘
+    },
     job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
 )
 scheduler.start()
@@ -1770,6 +1773,7 @@ def reload_schedules():
         minute=0,
         id="heartbeat", replace_existing=True,
         max_instances=3, misfire_grace_time=3000,
+        executor="quick",  # 긴 스크랩에 안 막히게 별도 스레드
     )
     print(f"[scheduler] heartbeat: 매시 정각 self-check")
 
@@ -1779,6 +1783,7 @@ def reload_schedules():
         seconds=30,
         id="reload_check", replace_existing=True,
         max_instances=1, misfire_grace_time=20,
+        executor="quick",  # 긴 스크랩에 안 막히게 별도 스레드
     )
     print("[scheduler] reload_check: 30초마다 (idle 시 graceful 리로드)")
 
@@ -1789,6 +1794,7 @@ def reload_schedules():
             minutes=5,
             id="deadman_ping", replace_existing=True,
             max_instances=1, misfire_grace_time=60,
+            executor="quick",  # 긴 스크랩에 안 막히게 별도 스레드
         )
         print("[scheduler] deadman_ping: 5분마다 (외부 생존 핑)")
     else:
