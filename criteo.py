@@ -266,6 +266,11 @@ def session_status():
                 "severity": "critical",
                 "message": "크리테오 세션 없음 — 최초 로그인 필요(criteo_login)"}
     meta = json.loads(SESSION_META.read_text())
+    if meta.get("dead_reason"):
+        # 크롤 중 로그인페이지로 튕겨 만료 처리된 상태 — 가짜 sentinel 날짜(오늘-999) 노출 금지
+        return {"ok": False, "days_left": None, "refreshed_at": None,
+                "severity": "critical",
+                "message": "크리테오 세션 만료 — 재로그인 필요(크리테오_세션갱신.command)"}
     refreshed = datetime.date.fromisoformat(meta["refreshed_at"])
     valid = int(meta.get("valid_days", 30))
     days_left = (refreshed + datetime.timedelta(days=valid) - datetime.date.today()).days

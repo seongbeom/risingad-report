@@ -29,6 +29,10 @@ def session_status():
                 "severity": "critical",
                 "message": "네이버 성과형 세션 없음 — 최초 로그인 필요(네이버성과형_세션갱신.command)"}
     meta = json.loads(SESSION_META.read_text())
+    if meta.get("dead_reason"):
+        return {"ok": False, "days_left": None, "refreshed_at": None,
+                "severity": "critical",
+                "message": "네이버 성과형 세션 만료 — 재로그인 필요(네이버성과형_세션갱신.command)"}
     refreshed = datetime.date.fromisoformat(meta["refreshed_at"])
     valid = int(meta.get("valid_days", 30))
     days_left = (refreshed + datetime.timedelta(days=valid) - datetime.date.today()).days
