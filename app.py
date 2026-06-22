@@ -22,6 +22,7 @@ import meta
 import naver
 import criteo
 import gfa
+import shopbox
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -1135,6 +1136,57 @@ def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
         _live_lock.release()
 
 
+SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장 일별분할 재계산
+
+
+def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
+    """쇼핑박스 광고비 = 입찰 낙찰가 일별분할(db) → shopbox_metrics + 효율시트 기입.
+    스크랩 없음(낙찰가는 수동입력 원장) → _live_lock 불필요. 노출/클릭/매출은 v2."""
+    accounts = [a for a in db.list_accounts() if db.list_shopbox_bids([a["id"]])]
+    if not accounts:
+        print("[shopbox] 입찰 원장 있는 매장 없음")
+        return
+    today = datetime.now().date()
+    dates = [(today - timedelta(days=i)).isoformat() for i in range(1, days + 1)]
+    ok_acct = 0
+    for a in accounts:
+        aid = a["id"]; lbl = a.get("label") or aid; ssid = a.get("spreadsheet_id") or ""
+        daily = {}
+        for d in dates:
+            devmap = {}
+            for dev in ("pc", "mo"):
+                cost = db.shopbox_daily_cost(aid, dev, d)
+                if cost > 0:
+                    db.upsert_shopbox_metric(aid, d, dev, {"cost": cost})
+                    devmap[dev] = {"cost": cost}
+            if devmap:
+                daily[d] = devmap
+        if not daily:
+            continue
+        try:
+            wrote, errs = (0, [])
+            if ssid:
+                wrote, errs = _retry_sheet_write(shopbox.write_to_sheet, ssid, daily)
+            db.set_setting(f"shopbox_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
+            db.add_sheet_log(aid, "shopbox", f"최근{days}일", wrote,
+                             "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+            print(f"[shopbox] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
+            ok_acct += 1
+        except Exception as e:
+            db.add_sheet_log(aid, "shopbox", f"최근{days}일", 0, "fail", repr(e)[:280])
+            print(f"[shopbox] {lbl} 실패: {repr(e)[:160]}")
+    db.set_setting("shopbox_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    print(f"[shopbox] done — {ok_acct}계정")
+
+
+def _shopbox_bids_by_acct():
+    """account_id → 입찰 원장 리스트 (UI 표시용)."""
+    out = {}
+    for b in db.list_shopbox_bids():
+        out.setdefault(b["account_id"], []).append(b)
+    return out
+
+
 HEALTHCHECK_PING_URL = os.environ.get("HEALTHCHECK_PING_URL", "")  # 외부 데드맨 스위치 (healthchecks.io 등)
 
 
@@ -1757,6 +1809,15 @@ def reload_schedules():
     )
     print("[scheduler] gfa_session_check: 매일 09:05 (만료 7일 전 경고)")
 
+    # 쇼핑박스 광고비 일별분할 → 시트 — 매일 07:20 (스크랩 없음, 입찰원장 기반)
+    scheduler.add_job(
+        _shopbox_collect_job, "cron",
+        hour=7, minute=20,
+        id="shopbox_collect", replace_existing=True,
+        misfire_grace_time=3600, executor="quick",
+    )
+    print(f"[scheduler] shopbox_collect: 매일 07:20 (광고비 일별분할, 최근 {SHOPBOX_BACKFILL_DAYS}일)")
+
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
     scheduler.add_job(
@@ -1929,6 +1990,7 @@ def index():
         "naver_collect": ("🟢 네이버 검색광고 수집", f"매일 07:10 (최근 {META_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("naver_last_run", None)),
         "criteo_collect": ("🟠 크리테오 수집", f"매일 06:40 (최근 {CRITEO_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("criteo_last_run", None)),
         "gfa_collect": ("🟢 네이버 성과형(GFA) 수집", f"매일 06:50 (최근 {GFA_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("gfa_last_run", None)),
+        "shopbox_collect": ("🛍 쇼핑박스 광고비", f"매일 07:20 (입찰 일별분할 → 효율시트, 최근 {SHOPBOX_BACKFILL_DAYS}일)", db.get_setting("shopbox_last_run", None)),
         "db_backup": ("💾 DB 백업", "매일 04:00", None),
         "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
     }
@@ -1936,7 +1998,7 @@ def index():
     try:
         jobs = {j.id: j for j in scheduler.get_jobs()}
         for jid in ["live_global", "daily_finalize", "meta_collect", "naver_collect",
-                    "criteo_collect", "gfa_collect", "db_backup", "daily_restart"]:
+                    "criteo_collect", "gfa_collect", "shopbox_collect", "db_backup", "daily_restart"]:
             if jid not in _sched_info:
                 continue
             name, desc, last = _sched_info[jid]
@@ -1999,6 +2061,7 @@ def index():
         sched_rows=sched_rows,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
         session_statuses=[{**p, "tool": p["command"]} for p in _session_guard_payload()],
+        shopbox_bids_by_acct=_shopbox_bids_by_acct(),
     )
 
 
@@ -2254,6 +2317,44 @@ def admin_gfa_collect():
     except ValueError:
         days = GFA_BACKFILL_DAYS
     threading.Thread(target=lambda: _gfa_collect_job(days=days), daemon=True).start()
+    return jsonify({"ok": True, "days": days})
+
+
+@app.route("/accounts/<account_id>/shopbox_bid", methods=["POST"])
+@login_required
+def add_shopbox_bid_route(account_id):
+    """쇼핑박스 낙찰가(정액 입찰) 입력 — 집행기간 일수로 일별분할됨."""
+    f = request.form
+    try:
+        amount = int((f.get("amount") or "0").replace(",", "").strip() or 0)
+    except ValueError:
+        amount = 0
+    device = (f.get("device") or "pc").strip()
+    gender = (f.get("gender") or "f").strip()
+    start = (f.get("start_date") or "").strip()
+    end = (f.get("end_date") or "").strip()
+    if device in ("pc", "mo") and start and end and amount > 0:
+        db.add_shopbox_bid(account_id, device, gender, start, end, amount, f.get("memo", ""))
+    return redirect(request.referrer or url_for("index"))
+
+
+@app.route("/shopbox_bid/<int:bid_id>/delete", methods=["POST"])
+@login_required
+def delete_shopbox_bid_route(bid_id):
+    db.delete_shopbox_bid(bid_id)
+    return redirect(request.referrer or url_for("index"))
+
+
+@app.route("/admin/shopbox_collect", methods=["POST"])
+def admin_shopbox_collect():
+    """localhost 전용 쇼핑박스 광고비 일별분할→시트 수동 트리거."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        days = int(request.form.get("days", str(SHOPBOX_BACKFILL_DAYS)))
+    except ValueError:
+        days = SHOPBOX_BACKFILL_DAYS
+    threading.Thread(target=lambda: _shopbox_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
 
 

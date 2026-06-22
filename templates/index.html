@@ -147,6 +147,7 @@
                             <div>{% if has_naver %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 네이버</div>
                             <div>{% if a.criteo_advertiser_id %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 크리테오</div>
                             <div>{% if a.naver_gfa_account_no %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 네이버성과형</div>
+                            <div>{% if shopbox_bids_by_acct.get(a.id) %}<span style="color:#27ae60">●</span>{% else %}<span style="color:#cfd4da">○</span>{% endif %} 쇼핑박스</div>
                             <div style="font-size:0.68rem; color:#aaa; margin-top:1px">설정은 <b>수정</b>에서 ▸</div>
                         </td>
                         <td style="font-size:0.7rem;line-height:1.45;white-space:nowrap">
@@ -273,6 +274,27 @@
                                 </div>
                                 <button class="btn btn-sm" type="submit" style="background:#2e7d32;color:#fff">네이버성과형 저장</button>
                             </form>
+                            <form method="POST" action="/accounts/{{ a.id }}/shopbox_bid" class="form-row" style="margin:8px 0 0; padding-top:8px; border-top:1px dashed #c9b8e0; align-items:flex-end; gap:6px; flex-wrap:wrap">
+                                <div class="form-group"><label>🛍 쇼핑박스 낙찰가 입력</label>
+                                    <select name="device" style="font-size:0.74rem"><option value="pc">PC(주간)</option><option value="mo">MO(월간)</option></select></div>
+                                <div class="form-group"><label>성별</label>
+                                    <select name="gender" style="font-size:0.74rem"><option value="f">여성</option><option value="m">남성</option></select></div>
+                                <div class="form-group"><label>집행 시작</label><input type="date" name="start_date" style="font-size:0.74rem"></div>
+                                <div class="form-group"><label>종료</label><input type="date" name="end_date" style="font-size:0.74rem"></div>
+                                <div class="form-group"><label>낙찰총액(원)</label><input name="amount" placeholder="3000000" style="width:110px;font-size:0.74rem"></div>
+                                <button class="btn btn-sm" type="submit" style="background:#7e57c2;color:#fff">입찰 추가</button>
+                            </form>
+                            {% set bids = shopbox_bids_by_acct.get(a.id) %}
+                            {% if bids %}
+                            <div style="margin:4px 0 0; font-size:0.72rem; color:#666">
+                                {% for b in bids %}
+                                <span style="display:inline-block; background:#f3eefb; border:1px solid #e0d4f0; border-radius:8px; padding:1px 6px; margin:2px 3px 0 0">
+                                    {{ 'PC' if b.device=='pc' else 'MO' }}/{{ '여' if b.gender=='f' else '남' }} {{ b.start_date[5:] }}~{{ b.end_date[5:] }} {{ "{:,}".format(b.amount) }}원
+                                    <form method="POST" action="/shopbox_bid/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('삭제?')"><button type="submit" style="border:none;background:none;color:#c0392b;cursor:pointer;padding:0 0 0 3px">×</button></form>
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
