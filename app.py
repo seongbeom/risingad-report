@@ -1171,6 +1171,9 @@ def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
             rev_by_date = shopbox.fetch_revenue(aid, days=days)
         except Exception as e:
             print(f"[shopbox] {lbl} 매출 수집 실패(나머지는 진행): {repr(e)[:120]}")
+        # 이 매장이 입찰원장을 가진 device — 입찰을 지웠다 다시 넣어도 시트의 옛 광고비가
+        # 0으로 덮여 정정되도록(스테일 방지). 한 번도 입찰 없는 매장은 건드리지 않음.
+        bid_devs = {b["device"] for b in db.list_shopbox_bids([aid])}
         daily = {}
         for d in dates:
             devmap = {}
@@ -1179,7 +1182,7 @@ def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
                 mm = (metrics_by_date.get(d, {}) or {}).get(dev, {})
                 rev = (rev_by_date.get(d, {}) or {}).get(dev, 0)
                 rec = {}
-                if cost > 0:
+                if cost > 0 or dev in bid_devs:
                     rec["cost"] = cost
                 if mm.get("impressions"):
                     rec["impressions"] = mm["impressions"]
@@ -2412,9 +2415,16 @@ def shopbox_add_bid():
     gender = (f.get("gender") or "f").strip()
     start = (f.get("start_date") or "").strip()
     end = (f.get("end_date") or "").strip()
-    if account_id and device in ("pc", "mo") and start and end and amount > 0:
-        db.add_shopbox_bid(account_id, device, gender, start, end, amount, f.get("memo", ""))
-    return redirect(url_for("shopbox_page"))
+    if not (account_id and device in ("pc", "mo") and start and end and amount > 0):
+        return redirect(url_for("shopbox_page", msg="invalid"))
+    if end < start:
+        return redirect(url_for("shopbox_page", msg="baddate"))
+    # 같은 매장·유형의 기간이 겹치는 입찰이 이미 있으면 차단 (광고비 이중집계 방지)
+    for b in db.list_shopbox_bids([account_id]):
+        if b["device"] == device and not (b["end_date"] < start or b["start_date"] > end):
+            return redirect(url_for("shopbox_page", msg="overlap"))
+    db.add_shopbox_bid(account_id, device, gender, start, end, amount, f.get("memo", ""))
+    return redirect(url_for("shopbox_page", msg="added"))
 
 
 @app.route("/shopbox_bid/<int:bid_id>/delete", methods=["POST"])
@@ -2457,8 +2467,22 @@ def shopbox_page():
     missing.sort(key=lambda x: x["label"])
     # 입찰 대상 매장 (쇼핑박스 자격 있거나 이미 입찰원장 있는 매장 우선, 없으면 전체)
     bid_accts = [a for a in accounts if a["id"] in creds] or accounts
+    # 매장별 현황 — 쇼핑박스 대상 매장의 PC/MO 입찰 상태 한눈에
+    overview = []
+    for a in bid_accts:
+        row = {"label": a.get("label") or a["id"], "id": a["id"]}
+        for dv in ("pc", "mo"):
+            active = next((b for b in bids if b["account_id"] == a["id"] and b["device"] == dv and b["active"]), None)
+            is_running = (a["id"], dv) in running
+            row[dv] = {"amount": active["amount"] if active else None,
+                       "daily": active["daily"] if active else None,
+                       "running": is_running,
+                       "warn": is_running and not active}
+        overview.append(row)
+    overview.sort(key=lambda r: (not (r["pc"]["warn"] or r["mo"]["warn"]), r["label"]))
     return render_template("shopbox.html", active="shopbox",
                            accounts=bid_accts, bids=bids, missing=missing,
+                           overview=overview, msg=request.args.get("msg", ""),
                            today=today.strftime("%Y-%m-%d"),
                            last_run=db.get_setting("shopbox_last_run", None))
 

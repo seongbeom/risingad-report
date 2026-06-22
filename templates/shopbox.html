@@ -18,10 +18,14 @@
     .sb-btn:hover{background:#6d49b0;}
     .preview{background:#faf8fd; border:1px solid #ece4f5; border-radius:9px; padding:10px 14px; font-size:.86rem; color:#5a4a78;}
     .preview b{color:#7e57c2; font-size:1.05rem;}
-    table.bids{width:100%; border-collapse:collapse; font-size:.85rem;}
-    table.bids th{text-align:left; color:var(--muted); font-weight:600; font-size:.74rem; padding:7px 10px; border-bottom:1px solid var(--line);}
-    table.bids td{padding:8px 10px; border-bottom:1px solid #f4f5f7;}
-    table.bids tr:hover td{background:#fafbfc;}
+    .kpi-strip{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px;}
+    .kpi{background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; box-shadow:var(--shadow-sm);}
+    .kpi .k-l{font-size:.72rem; color:var(--muted); margin-bottom:3px;}
+    .kpi .k-v{font-size:1.25rem; font-weight:700;}
+    table.bids, table.ov{width:100%; border-collapse:collapse; font-size:.85rem;}
+    table.bids th, table.ov th{text-align:left; color:var(--muted); font-weight:600; font-size:.74rem; padding:7px 10px; border-bottom:1px solid var(--line);}
+    table.bids td, table.ov td{padding:8px 10px; border-bottom:1px solid #f4f5f7;}
+    table.bids tr:hover td, table.ov tr:hover td{background:#fafbfc;}
     .pill{display:inline-block; padding:1px 8px; border-radius:8px; font-size:.72rem; font-weight:600;}
     .pill.live{background:#e7f8ee; color:#1e8449;}
     .pill.past{background:#f0f0f0; color:#999;}
@@ -29,8 +33,12 @@
     .pill.pc{background:#f0ecfb; color:#6d49b0;}
     .pill.mo{background:#fdeef6; color:#c2398a;}
     .del-btn{border:none; background:none; color:#c0392b; cursor:pointer; font-size:1rem;}
-    .warn-card{background:#fff8ef; border-color:#f4dcb8;}
-    .warn-item{display:inline-flex; align-items:center; gap:5px; background:#fff; border:1px solid #f0d9b0; border-radius:8px; padding:3px 9px; margin:3px 5px 0 0; font-size:.8rem;}
+    .cell-ok{color:#1e8449; font-weight:600;}
+    .cell-warn{color:#c0392b; font-weight:600; background:#fff4f0;}
+    .cell-none{color:#cfd4da;}
+    .banner{border-radius:9px; padding:10px 14px; margin-bottom:14px; font-size:.88rem; font-weight:500;}
+    .banner.ok{background:#e7f8ee; color:#1e7e44; border:1px solid #bfe9cf;}
+    .banner.warn{background:#fff4e5; color:#a8690a; border:1px solid #f4dcb8;}
   </style>
 </head>
 <body>
@@ -43,23 +51,25 @@
     <span class="sub">PC 주간 입찰 · MO 월간 입찰 — 낙찰가만 입력하면 광고비가 자동 분할·집계됩니다{% if last_run %} · 최근 수집 {{ last_run }}{% endif %}</span>
   </div>
 
-  <!-- 미입력 경고 -->
-  {% if missing %}
-  <div class="card warn-card">
-    <h2>⚠️ 낙찰가 미입력 — 광고는 집행 중인데 광고비가 비어 있습니다</h2>
-    <p class="card-sub">아래 매장은 최근 7일 쇼핑박스 노출이 있는데 현재 유효한 낙찰가가 없습니다. 입력하면 ROAS가 완성됩니다.</p>
-    <div>
-      {% for m in missing %}
-      <span class="warn-item"><span class="pill {{ 'pc' if m.device=='PC' else 'mo' }}">{{ m.device }}</span> {{ m.label }}</span>
-      {% endfor %}
-    </div>
+  {% if msg=='added' %}<div class="banner ok">✅ 입찰이 추가됐습니다. 다음 수집(매일 07:30) 또는 즉시 반영 시 시트·대시보드에 광고비가 채워집니다.</div>
+  {% elif msg=='overlap' %}<div class="banner warn">⚠️ 같은 매장·유형의 <b>기간이 겹치는 입찰</b>이 이미 있어 추가하지 않았습니다 (광고비 이중집계 방지). 기존 입찰을 삭제 후 다시 넣으세요.</div>
+  {% elif msg=='baddate' %}<div class="banner warn">⚠️ 종료일이 시작일보다 빠릅니다. 기간을 확인하세요.</div>
+  {% elif msg=='invalid' %}<div class="banner warn">⚠️ 입력값이 비었거나 잘못됐습니다. 매장·유형·기간·낙찰총액을 모두 채워주세요.</div>{% endif %}
+
+  {% set active_bids = bids|selectattr('active')|list %}
+  {% set pc_daily = active_bids|selectattr('device','equalto','pc')|sum(attribute='daily') %}
+  {% set mo_daily = active_bids|selectattr('device','equalto','mo')|sum(attribute='daily') %}
+  <div class="kpi-strip">
+    <div class="kpi"><div class="k-l">진행중 입찰</div><div class="k-v">{{ active_bids|length }}건</div></div>
+    <div class="kpi"><div class="k-l">진행중 PC 하루 광고비</div><div class="k-v" style="color:#6d49b0">{{ "{:,}".format(pc_daily) }}원</div></div>
+    <div class="kpi"><div class="k-l">진행중 MO 하루 광고비</div><div class="k-v" style="color:#c2398a">{{ "{:,}".format(mo_daily) }}원</div></div>
+    <div class="kpi" style="{% if missing %}background:#fff8ef;border-color:#f4dcb8{% endif %}"><div class="k-l">낙찰가 미입력 경고</div><div class="k-v" style="color:{% if missing %}#c0392b{% else %}#1e8449{% endif %}">{{ missing|length }}건</div></div>
   </div>
-  {% endif %}
 
   <!-- 낙찰가 입력 -->
   <div class="card">
     <h2>낙찰가 입력</h2>
-    <p class="card-sub">유형을 고르면 집행기간이 자동으로 채워집니다(수정 가능). 낙찰총액을 넣으면 하루 광고비가 미리 보입니다.</p>
+    <p class="card-sub">유형을 고르면 집행기간이 자동으로 채워집니다(수정 가능). 낙찰총액을 넣으면 하루 광고비가 미리 보입니다. 오타·기간 이상은 추가 전에 한 번 더 확인합니다.</p>
     <form method="POST" action="/shopbox/bid" id="bidForm">
       <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end">
         <div class="sb-field" style="min-width:160px">
@@ -90,14 +100,42 @@
       <div class="preview" id="preview" style="margin-top:14px">유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.</div>
     </form>
     <details style="margin:12px 0 0; font-size:.78rem; color:#7a6a93">
-      <summary style="cursor:pointer; color:#8a78a8">ⓘ 왜 낙찰가만 직접 입력하나요?</summary>
+      <summary style="cursor:pointer; color:#8a78a8">ⓘ 왜 낙찰가만 직접 입력하나요? 잘못 넣으면 어떻게 되나요?</summary>
       <div style="margin:6px 0 0; line-height:1.6; background:#faf8fd; border:1px solid #ece4f5; border-radius:8px; padding:8px 12px">
-        낙찰가는 ① 주/월에 1번만 바뀌고 ② 낙찰 매장 전체가 같은 금액이라 입력 부담이 작습니다.
-        자동 크롤링은 입찰 페이지 UI가 바뀌면 조용히 깨져 <b>광고비·ROAS가 틀린 채 쌓일 위험</b>이 있어(광고비는 ROAS 분모) 수동이 더 안전합니다.
-        <b>노출·클릭·매출은 전부 자동 수집</b>되고, 입력한 낙찰가는 집행기간으로 <b>자동 일별분할</b>됩니다(PC=÷7, MO=÷해당월 일수).
+        낙찰가는 ① 주/월에 1번만 바뀌고 ② 낙찰 매장 전체가 같은 금액이라 입력 부담이 작습니다. 자동 크롤링은 입찰 페이지 UI가 바뀌면 조용히 깨져 <b>광고비·ROAS가 틀린 채 쌓일 위험</b>이 있어(광고비는 ROAS 분모) 수동이 더 안전합니다.
+        <br>· <b>잘못 입력해도 안전합니다.</b> 광고비만 영향받고(노출·클릭·매출은 자동수집이라 무관), 틀리면 <b>삭제 후 다시 넣으면 시트값도 자동 정정</b>됩니다.
+        <br>· 기간 겹치는 중복 입찰은 <b>자동 차단</b>(이중집계 방지), 0 빠뜨림/기간 이상은 추가 전 <b>경고</b>합니다.
+        <br>· 입력한 낙찰가는 집행기간으로 <b>자동 일별분할</b>됩니다(PC=÷7, MO=÷해당월 일수).
       </div>
     </details>
   </div>
+
+  <!-- 매장별 현황 -->
+  {% if overview %}
+  <div class="card">
+    <h2>매장별 현황 <span style="font-size:.78rem; color:var(--muted); font-weight:400">PC=이번주 / MO=이번달 진행중 입찰</span></h2>
+    <div style="overflow-x:auto">
+    <table class="ov">
+      <thead><tr><th>매장</th><th>💻 PC (주간)</th><th>📱 MO (월간)</th></tr></thead>
+      <tbody>
+        {% for r in overview %}
+        <tr>
+          <td style="font-weight:600">{{ r.label }}</td>
+          {% for dv in ['pc','mo'] %}{% set c = r[dv] %}
+          <td class="{% if c.warn %}cell-warn{% elif c.amount %}cell-ok{% else %}cell-none{% endif %}">
+            {% if c.amount %}✓ {{ "{:,}".format(c.amount) }}원 <span style="color:#999;font-weight:400">(하루 {{ "{:,}".format(c.daily) }})</span>
+            {% elif c.warn %}⚠ 미입력 (광고 집행중)
+            {% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p style="font-size:.72rem; color:#aaa; margin:8px 0 0">⚠ = 최근 7일 노출이 있는데 낙찰가가 없는 경우. 입력하면 광고비·ROAS가 완성됩니다.</p>
+  </div>
+  {% endif %}
 
   <!-- 등록된 입찰 -->
   <div class="card">
@@ -120,7 +158,7 @@
           <td style="text-align:right">{{ "{:,}".format(b.amount) }}원</td>
           <td style="text-align:right; font-weight:600; color:#6d49b0">{{ "{:,}".format(b.daily) }}원</td>
           <td style="text-align:center">
-            <form method="POST" action="/shopbox_bid/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('이 입찰을 삭제할까요?')">
+            <form method="POST" action="/shopbox_bid/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('이 입찰을 삭제할까요? (시트의 광고비도 다음 수집 때 0으로 정정됩니다)')">
               <button class="del-btn" type="submit" title="삭제">×</button>
             </form>
           </td>
@@ -138,52 +176,36 @@
 
 <script>
   function fmt(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-  function thisWeek(){ // 월~일 (오늘 포함 주)
-    var t=new Date(); var day=(t.getDay()+6)%7; // 0=월
-    var mon=new Date(t); mon.setDate(t.getDate()-day);
-    var sun=new Date(mon); sun.setDate(mon.getDate()+6);
-    return [fmt(mon), fmt(sun)];
-  }
-  function thisMonth(){
-    var t=new Date();
-    return [fmt(new Date(t.getFullYear(),t.getMonth(),1)), fmt(new Date(t.getFullYear(),t.getMonth()+1,0))];
-  }
+  function thisWeek(){ var t=new Date(); var day=(t.getDay()+6)%7; var mon=new Date(t); mon.setDate(t.getDate()-day); var sun=new Date(mon); sun.setDate(mon.getDate()+6); return [fmt(mon), fmt(sun)]; }
+  function thisMonth(){ var t=new Date(); return [fmt(new Date(t.getFullYear(),t.getMonth(),1)), fmt(new Date(t.getFullYear(),t.getMonth()+1,0))]; }
   function selectedDevice(){return document.querySelector('input[name=device]:checked').value;}
-  function autofillDates(){
-    var r = selectedDevice()==='pc' ? thisWeek() : thisMonth();
-    document.getElementById('startDate').value = r[0];
-    document.getElementById('endDate').value = r[1];
-    updatePreview();
-  }
-  function updateSeg(){
-    document.querySelectorAll('.seg').forEach(function(seg){
-      seg.querySelectorAll('label').forEach(function(l){
-        l.classList.toggle('on', l.querySelector('input').checked);
-      });
-    });
-  }
+  function autofillDates(){ var r = selectedDevice()==='pc' ? thisWeek() : thisMonth(); document.getElementById('startDate').value=r[0]; document.getElementById('endDate').value=r[1]; updatePreview(); }
+  function updateSeg(){ document.querySelectorAll('.seg').forEach(function(seg){ seg.querySelectorAll('label').forEach(function(l){ l.classList.toggle('on', l.querySelector('input').checked); }); }); }
+  function days(){ var s=document.getElementById('startDate').value, e=document.getElementById('endDate').value; if(!s||!e) return 0; return Math.round((new Date(e)-new Date(s))/86400000)+1; }
+  function amt(){ return parseInt((document.getElementById('amount').value||'').replace(/[^0-9]/g,''))||0; }
   function updatePreview(){
-    var amt = parseInt((document.getElementById('amount').value||'').replace(/[^0-9]/g,''))||0;
-    var s = document.getElementById('startDate').value, e = document.getElementById('endDate').value;
-    var pv = document.getElementById('preview');
-    if(!s || !e || amt<=0){ pv.innerHTML='유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.'; return; }
-    var days = Math.round((new Date(e)-new Date(s))/86400000)+1;
-    if(days<=0){ pv.innerHTML='종료일이 시작일보다 빠릅니다.'; return; }
-    var daily = Math.round(amt/days);
-    var dev = selectedDevice()==='pc' ? 'PC 주간' : 'MO 월간';
-    pv.innerHTML = dev+' · 집행 <b>'+days+'일</b> · 낙찰총액 '+amt.toLocaleString()+'원 → 하루 <b>'+daily.toLocaleString()+'원</b>으로 분할 기입';
+    var a=amt(), s=document.getElementById('startDate').value, e=document.getElementById('endDate').value, pv=document.getElementById('preview');
+    if(!s||!e||a<=0){ pv.innerHTML='유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.'; return; }
+    var d=days(); if(d<=0){ pv.innerHTML='⚠️ 종료일이 시작일보다 빠릅니다.'; return; }
+    var dev=selectedDevice()==='pc'?'PC 주간':'MO 월간';
+    pv.innerHTML=dev+' · 집행 <b>'+d+'일</b> · 낙찰총액 '+a.toLocaleString()+'원 → 하루 <b>'+Math.round(a/d).toLocaleString()+'원</b>으로 분할 기입';
   }
-  // 천단위 콤마 표시
-  document.getElementById('amount').addEventListener('input', function(){
-    var v = this.value.replace(/[^0-9]/g,'');
-    this.value = v ? parseInt(v).toLocaleString() : '';
-    updatePreview();
-  });
+  document.getElementById('amount').addEventListener('input', function(){ var v=this.value.replace(/[^0-9]/g,''); this.value=v?parseInt(v).toLocaleString():''; updatePreview(); });
   document.querySelectorAll('input[name=device]').forEach(function(el){ el.addEventListener('change', function(){updateSeg(); autofillDates();}); });
   document.querySelectorAll('input[name=gender]').forEach(function(el){ el.addEventListener('change', updateSeg); });
   document.getElementById('startDate').addEventListener('change', updatePreview);
   document.getElementById('endDate').addEventListener('change', updatePreview);
-  // 초기: PC 기준 이번주 자동입력
+  // 제출 전 오타·기간 검증
+  document.getElementById('bidForm').addEventListener('submit', function(ev){
+    var a=amt(), d=days(), dev=selectedDevice(), w=[];
+    if(a<=0){ alert('낙찰총액을 입력하세요.'); ev.preventDefault(); return; }
+    if(d<=0){ alert('종료일이 시작일보다 빠릅니다. 기간을 확인하세요.'); ev.preventDefault(); return; }
+    if(a<10000) w.push('· 낙찰총액이 '+a.toLocaleString()+'원으로 매우 작습니다 — 0을 빠뜨리지 않았나요?');
+    if(a>50000000) w.push('· 낙찰총액이 '+a.toLocaleString()+'원으로 매우 큽니다 — 0을 더 넣지 않았나요?');
+    if(dev==='pc' && (d<5||d>9)) w.push('· PC 주간인데 집행기간이 '+d+'일입니다 (보통 7일).');
+    if(dev==='mo' && (d<25||d>32)) w.push('· MO 월간인데 집행기간이 '+d+'일입니다 (보통 28~31일).');
+    if(w.length && !confirm('한 번 더 확인해주세요:\n\n'+w.join('\n')+'\n\n이대로 추가할까요?')){ ev.preventDefault(); }
+  });
   updateSeg(); autofillDates();
 </script>
 </body>
