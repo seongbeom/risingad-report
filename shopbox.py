@@ -237,16 +237,24 @@ DEVICE_LABELS = {
 _METRIC_SUBS = [("노출", "impressions"), ("클릭", "clicks"), ("광고비", "cost"), ("매출", "revenue")]
 
 
-def _shopbox_cols(ws, device):
-    """효율시트 일별 채널행(28~34)에서 device('pc'|'mo') 쇼핑박스 블록의 지표 컬럼 letter.
-    반환 {impressions?,clicks?,cost,revenue?} (최소 cost 있어야 유효). 없으면 None."""
+def _shopbox_cols(grid, device):
+    """효율시트 [일별 성과] 블록에서 device('pc'|'mo') 쇼핑박스 채널의 지표 컬럼 letter.
+    효율탭은 [주차별 성과비교]/[주차별 성과]/[전일자 성과비교]/[일별 성과] 여러 블록이 있고
+    쇼핑박스 라벨이 여러 블록 헤더에 중복 등장 → 반드시 '일별 성과' 블록(날짜행이 따라오는)을 골라야 함.
+    grid = ws.get_all_values() (전체). 반환 {impressions?,clicks?,cost,revenue?} (cost 필수). 없으면 None."""
     from gspread.utils import rowcol_to_a1
     labels = DEVICE_LABELS[device]
-    grid = ws.get("A28:OZ34")
-    ch_row = None
-    ch_col = None
+    # 1) [일별 성과] 섹션 시작행 (B열 마커) — 없으면 0부터
+    daily_anchor = 0
     for ri, row in enumerate(grid):
-        for ci, c in enumerate(row):
+        b = (row[1] if len(row) > 1 else "") or ""
+        if "일별" in b and "성과" in b and "비교" not in b:
+            daily_anchor = ri
+            break
+    # 2) anchor 이후 채널 라벨 행
+    ch_row = ch_col = None
+    for ri in range(daily_anchor, len(grid)):
+        for ci, c in enumerate(grid[ri]):
             if (c or "").strip() in labels:
                 ch_row, ch_col = ri, ci
                 break
@@ -254,20 +262,26 @@ def _shopbox_cols(ws, device):
             break
     if ch_row is None:
         return None
+    # 3) 채널 블록 너비 = 다음(다른) 채널 라벨 전까지
     ch = grid[ch_row]
-    # 다음 채널 라벨 전까지가 이 블록
     nxt = len(ch)
     for i in range(ch_col + 1, len(ch)):
         if (ch[i] or "").strip():
             nxt = i
             break
-    met = grid[ch_row + 1] if ch_row + 1 < len(grid) else []
+    # 4) 지표 라벨 행 — 헤더 다음 1~3행 중 노출/클릭/광고비/매출 있는 행
     cols = {}
-    for i in range(ch_col, min(nxt, len(met))):
-        label = (met[i] or "").strip()
-        for sub, key in _METRIC_SUBS:
-            if key not in cols and sub in label:
-                cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
+    for mr in range(ch_row + 1, min(ch_row + 4, len(grid))):
+        met = grid[mr]
+        found = {}
+        for i in range(ch_col, min(nxt, len(met))):
+            label = (met[i] or "").strip()
+            for sub, key in _METRIC_SUBS:
+                if key not in found and sub in label:
+                    found[key] = rowcol_to_a1(1, i + 1).rstrip("1")
+        if found:
+            cols = found
+            break
     return cols if "cost" in cols else None
 
 
@@ -293,12 +307,14 @@ def write_to_sheet(spreadsheet_id, daily):
             except Exception as ce:
                 errors.append(f"{eff_name} 자동생성 실패: {repr(ce)[:50]}")
                 continue
-        cols = {dev: _shopbox_cols(ws, dev) for dev in ("pc", "mo")}
+        grid = ws.get_all_values()
+        cols = {dev: _shopbox_cols(grid, dev) for dev in ("pc", "mo")}
         if not any(cols.values()):
             errors.append(f"{eff_name} 쇼핑박스 PC/MO 칸 못 찾음 — 스킵")
             continue
-        col_b = ws.col_values(2)
-        rowmap = {(v or "").strip(): i for i, v in enumerate(col_b, start=1)}
+        # 날짜→행: [일별 성과] 블록이 뒤쪽이라 마지막 매칭이 일별행 (dict 후승)
+        rowmap = {(row[1] if len(row) > 1 else "").strip(): i
+                  for i, row in enumerate(grid, start=1)}
         data = []
         for d, devmap in days.items():
             row = rowmap.get(d.replace("-", "/"))
