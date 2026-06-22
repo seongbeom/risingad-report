@@ -1609,6 +1609,33 @@ def _heartbeat_job():
                 except Exception:
                     traceback.print_exc()
 
+        # 5c) 쇼핑박스 — 입찰 진행 중인데 노출/클릭이 0 (입찰원장 있는 매장·디바이스만 → 오경보 없음).
+        # 어제(확정일) 기준: 입찰기간이 어제를 포함하는데 어제 노출=0&클릭=0 이면 세션/소재/슬롯 이상.
+        if now.hour >= 10:
+            try:
+                yday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+                active = {(b["account_id"], b["device"]) for b in db.list_shopbox_bids()
+                          if b["start_date"] <= yday <= b["end_date"]}
+                if active:
+                    ymetrics = {(r["account_id"], r["device"]): r
+                                for r in db.list_shopbox_metrics(start_date=yday, end_date=yday)}
+                    lbl = _label_map()
+                    dead = []
+                    for aid, dev in active:
+                        m = ymetrics.get((aid, dev))
+                        if not m or ((m.get("impressions") or 0) == 0 and (m.get("clicks") or 0) == 0):
+                            dead.append(f"{lbl.get(aid, aid)} {dev.upper()}")
+                    if dead:
+                        _heartbeat_alert(
+                            f"shopbox_dead_{yday}",
+                            f"⚠️ 쇼핑박스 입찰 진행 중인데 어제({yday[5:]}) 노출/클릭 0: {', '.join(sorted(dead))} "
+                            f"— 쇼핑파트너센터 세션 만료 또는 소재/슬롯 비활성 의심",
+                            severity="warn",
+                        )
+                        problems.append("shopbox_dead")
+            except Exception:
+                traceback.print_exc()
+
         # 6) per-account "오늘 막힘" 감지 (14시 이후).
         # 어제 매출>0 이던 활성 매장인데 오늘 데이터가 없으면(행없음 or 매출0+시간별0) → 그 계정만 콕 집어 알림.
         # rosy001 처럼 특정 계정이 하루종일 hang 하는 케이스를 사람이 바로 인지하도록.
@@ -3626,9 +3653,11 @@ def dashboard():
     # 쇼핑박스 — (account,date)별 PC+MO 합산 (device 차원 제거)
     shopbox_by_key = {}
     for r in db.list_shopbox_metrics(account_ids=selected_ids, start_date=_window_start, end_date=today):
-        agg = shopbox_by_key.setdefault((r["account_id"], r["date"]), {"cost": 0, "revenue": 0})
+        agg = shopbox_by_key.setdefault((r["account_id"], r["date"]), {"cost": 0, "revenue": 0, "impressions": 0, "clicks": 0})
         agg["cost"] += r.get("cost") or 0
         agg["revenue"] += r.get("revenue") or 0
+        agg["impressions"] += r.get("impressions") or 0
+        agg["clicks"] += r.get("clicks") or 0
     shopbox_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and db.list_shopbox_bids([a["id"]]))
 
     # ===== 전 채널 한눈 요약 — 어제 + 통합(블렌디드) + 전주동요일 대비 + MTD =====
@@ -3640,8 +3669,13 @@ def dashboard():
         r = sum((src.get((aid, d), {}) or {}).get(rk) or 0 for aid in selected_ids)
         return c, r
 
+    def _ch_fieldsum(src, field, d):
+        return sum((src.get((aid, d), {}) or {}).get(field) or 0 for aid in selected_ids)
+
     def _pct_delta(cur, prev):
         return round((cur - prev) / prev * 100) if prev else None
+
+    _last7 = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
 
     # 채널: (표시명, 색, by_key, 광고비필드, 매출필드, 연동수, 어제전환)
     # 메타는 'spend'(부가세 미포함) 사용 — 타 채널(cost)과 기준 통일해 통합지표 왜곡 방지.
@@ -3660,6 +3694,8 @@ def dashboard():
     for name, color, src, ck, rk, conn, conv in _CH:
         cy, ry = _ch_daysum(src, ck, rk, yesterday)
         cw, rw = _ch_daysum(src, ck, rk, last_week_same)
+        clk_y = _ch_fieldsum(src, "clicks", yesterday)
+        imp_y = _ch_fieldsum(src, "impressions", yesterday)
         mrows = _mtd_fn[name](account_ids=selected_ids, start_date=_mstart, end_date=today)
         mc = sum(r.get(ck) or 0 for r in mrows); mr = sum(r.get(rk) or 0 for r in mrows)
         _cs_rows.append({
@@ -3667,6 +3703,10 @@ def dashboard():
             "roas": round(ry / cy * 100) if cy else None, "connected": conn,
             "wow_cost": _pct_delta(cy, cw), "wow_rev": _pct_delta(ry, rw),
             "mtd_cost": mc, "mtd_rev": mr, "mtd_roas": round(mr / mc * 100) if mc else None,
+            "cpc": round(cy / clk_y) if clk_y else None,
+            "cpm": round(cy / imp_y * 1000) if imp_y else None,
+            "cpa": round(cy / conv) if conv else None,
+            "spark": [_ch_daysum(src, ck, rk, d)[0] for d in _last7],
         })
     _cs_tc = sum(r["cost"] for r in _cs_rows); _cs_tr = sum(r["rev"] for r in _cs_rows)
     _cs_tc_w = sum(_ch_daysum(s, ck, rk, last_week_same)[0] for _, _, s, ck, rk, _, _ in _CH)
@@ -3702,6 +3742,7 @@ def dashboard():
     def _sb_eff(d):
         d["ctr"] = round(d["clk"] / d["imp"] * 100, 2) if d["imp"] else None
         d["cpc"] = round(d["cost"] / d["clk"]) if d["clk"] else None
+        d["cpm"] = round(d["cost"] / d["imp"] * 1000) if d["imp"] else None
         d["roas"] = round(d["rev"] / d["cost"] * 100) if d["cost"] else None
         return d
 
@@ -3740,10 +3781,18 @@ def dashboard():
             if dv in devs:
                 _sb_store_rows.append({"label": _sb_label.get(aid, aid), "device": dv.upper(), **_sb_eff(devs[dv])})
     _sb_store_rows.sort(key=lambda x: -(x["rev"] or 0))
+    _sb7 = {d: {"imp": 0, "rev": 0} for d in _last7}
+    for r in db.list_shopbox_metrics(account_ids=selected_ids, start_date=_last7[0], end_date=_last7[-1]):
+        if r["date"] in _sb7:
+            _sb7[r["date"]]["imp"] += r.get("impressions") or 0
+            _sb7[r["date"]]["rev"] += r.get("revenue") or 0
     shopbox_detail = {
         "date": yesterday, "y": _sb_y, "m": _sb_m, "stores": _sb_store_rows,
         "has_data": bool(_sb_rows_y or _sb_rows_m),
         "last_run": db.get_setting("shopbox_last_run", None),
+        "spark_imp": [_sb7[d]["imp"] for d in _last7],
+        "spark_rev": [_sb7[d]["rev"] for d in _last7],
+        "spark_days": [d[5:] for d in _last7],
     }
 
     # 매장별 월 매출목표 vs 이번달 누적(MTD) 달성률

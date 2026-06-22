@@ -136,6 +136,8 @@
 <div class="app">
 {% set active = 'dashboard' %}{% include '_sidebar.html' %}
 <div class="main"><div class="main-inner">
+    {# 인라인 SVG 스파크라인 — vals: 숫자 리스트, color: 선색 #}
+    {% macro spark(vals, color) %}{% if vals and vals|length > 1 and (vals|max) > 0 %}{% set mx = vals|max %}{% set n = vals|length %}<svg width="78" height="20" viewBox="0 0 78 20" preserveAspectRatio="none" style="vertical-align:middle"><polyline fill="none" stroke="{{ color }}" stroke-width="1.4" stroke-linejoin="round" points="{% for v in vals %}{{ (loop.index0 * (78.0/(n-1)))|round(1) }},{{ (19 - (v/mx*18))|round(1) }} {% endfor %}"/><circle cx="78" cy="{{ (19 - (vals[-1]/mx*18))|round(1) }}" r="1.7" fill="{{ color }}"/></svg>{% else %}<span style="color:#ccc;font-size:.7rem">—</span>{% endif %}{% endmacro %}
     <h1 style="margin-top:0">데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
     {% if freshness %}
@@ -207,12 +209,16 @@
             <div class="nv-kpi"><div class="nv-kpi-l">전체 매장매출</div><div class="nv-kpi-v">{{ "{:,.0f}".format(bl.store_rev) }}</div></div>
         </div>
         <div style="overflow-x:auto">
-        <table class="num" style="width:100%;font-size:0.84rem;border-collapse:collapse;min-width:620px">
+        <table class="num" style="width:100%;font-size:0.84rem;border-collapse:collapse;min-width:760px">
             <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
                 <th style="text-align:left;padding:6px 8px">채널</th>
                 <th style="padding:6px 8px">광고비</th><th style="padding:6px 8px">전주대비</th>
                 <th style="padding:6px 8px">광고매출</th><th style="padding:6px 8px">ROAS</th>
-                <th style="padding:6px 8px">전환</th><th style="padding:6px 8px">매출비중</th></tr></thead>
+                <th style="padding:6px 8px" title="클릭당 비용">CPC</th>
+                <th style="padding:6px 8px" title="노출 1000회당 비용">CPM</th>
+                <th style="padding:6px 8px" title="전환당 비용">CPA</th>
+                <th style="padding:6px 8px">전환</th><th style="padding:6px 8px">매출비중</th>
+                <th style="padding:6px 8px;text-align:center" title="최근 7일 광고비 추세">추세</th></tr></thead>
             <tbody>
             {% for r in cs.rows %}
             <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
@@ -222,8 +228,12 @@
                 <td style="padding:6px 8px">{{ wow(r.wow_cost) }}</td>
                 <td style="padding:6px 8px">{{ "{:,.0f}".format(r.rev) }}</td>
                 <td style="padding:6px 8px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.cpc is not none %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.cpm is not none %}{{ "{:,.0f}".format(r.cpm) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.cpa is not none %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
                 <td style="padding:6px 8px;color:#666">{% if r.conv is not none %}{{ "{:,.0f}".format(r.conv) }}{% else %}-{% endif %}</td>
                 <td style="padding:6px 8px;color:#888">{% if cs.tot.rev %}{{ (r.rev / cs.tot.rev * 100)|round }}%{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;text-align:center">{{ spark(r.spark, r.color) }}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -233,7 +243,8 @@
                 <td style="padding:7px 8px">{{ wow(cs.tot.wow_cost) }}</td>
                 <td style="padding:7px 8px">{{ "{:,.0f}".format(cs.tot.rev) }}</td>
                 <td style="padding:7px 8px;color:{% if cs.tot.roas and cs.tot.roas>=300 %}#27ae60{% elif cs.tot.roas and cs.tot.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if cs.tot.roas is not none %}{{ cs.tot.roas }}%{% else %}-{% endif %}</td>
-                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
+                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
+                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
             </tr></tfoot>
         </table>
         </div>
@@ -267,10 +278,12 @@
             {% set d = sb.y[dv] %}
             <div style="background:{{ bg }};border-radius:10px;padding:10px 12px">
                 <div style="font-weight:700;font-size:0.86rem;margin-bottom:6px">{{ label }}</div>
-                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 4px;font-size:0.8rem">
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 4px;font-size:0.8rem">
                     <div><div style="color:#999;font-size:.66rem">노출</div><b>{{ num(d.imp) }}</b></div>
                     <div><div style="color:#999;font-size:.66rem">클릭</div><b>{{ num(d.clk) }}</b></div>
                     <div><div style="color:#999;font-size:.66rem">CTR</div><b>{% if d.ctr is not none %}{{ d.ctr }}%{% else %}-{% endif %}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">CPC</div><b>{{ num(d.cpc) }}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">CPM</div><b>{{ num(d.cpm) }}</b></div>
                     <div><div style="color:#999;font-size:.66rem">광고비</div><b>{{ num(d.cost) }}</b></div>
                     <div><div style="color:#999;font-size:.66rem">매출</div><b>{{ num(d.rev) }}</b></div>
                     <div><div style="color:#999;font-size:.66rem">ROAS</div>{{ roas(d.roas) }}</div>
@@ -306,8 +319,15 @@
         </table>
         </div>
         {% endif %}
+        <!-- 최근 7일 추세 -->
+        <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:10px;padding:6px 10px;font-size:0.8rem">
+            <strong style="color:#555">📈 최근 7일</strong>
+            <span style="display:inline-flex;align-items:center;gap:6px">노출 {{ spark(sb.spark_imp, '#7e57c2') }}</span>
+            <span style="display:inline-flex;align-items:center;gap:6px">매출 {{ spark(sb.spark_rev, '#27ae60') }}</span>
+            <span style="color:#bbb;font-size:.7rem">{{ sb.spark_days[0] }} → {{ sb.spark_days[-1] }}</span>
+        </div>
         <!-- 이번달 누적 -->
-        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.8rem">
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:4px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.8rem">
             <strong style="color:#555">📅 이번달 누적</strong>
             {% for dv, lab in [('pc','PC'), ('mo','MO')] %}{% set d = sb.m[dv] %}
             <span>{{ lab }} 노출 <b>{{ num(d.imp) }}</b> · 클릭 <b>{{ num(d.clk) }}</b> · 매출 <b>{{ num(d.rev) }}</b>{% if d.roas is not none %} · ROAS {{ roas(d.roas) }}{% endif %}</span>
