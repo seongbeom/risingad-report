@@ -1165,12 +1165,19 @@ def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
                 metrics_by_date = shopbox.fetch_metrics(aid, days=days)
             except Exception as e:
                 print(f"[shopbox] {lbl} 노출/클릭 수집 실패(광고비는 진행): {repr(e)[:120]}")
+        # 매출 크롤 (cafe24 애널리틱스 UTM, 모든 대상 매장 — 실패해도 나머지 진행)
+        rev_by_date = {}
+        try:
+            rev_by_date = shopbox.fetch_revenue(aid, days=days)
+        except Exception as e:
+            print(f"[shopbox] {lbl} 매출 수집 실패(나머지는 진행): {repr(e)[:120]}")
         daily = {}
         for d in dates:
             devmap = {}
             for dev in ("pc", "mo"):
                 cost = db.shopbox_daily_cost(aid, dev, d)
                 mm = (metrics_by_date.get(d, {}) or {}).get(dev, {})
+                rev = (rev_by_date.get(d, {}) or {}).get(dev, 0)
                 rec = {}
                 if cost > 0:
                     rec["cost"] = cost
@@ -1178,6 +1185,8 @@ def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
                     rec["impressions"] = mm["impressions"]
                 if mm.get("clicks"):
                     rec["clicks"] = mm["clicks"]
+                if rev:
+                    rec["revenue"] = rev
                 if rec:
                     db.upsert_shopbox_metric(aid, d, dev, rec)
                     devmap[dev] = rec

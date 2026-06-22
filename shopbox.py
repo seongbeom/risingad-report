@@ -131,6 +131,94 @@ def fetch_metrics(account_id, days=14):
     return out
 
 
+_CA2_CAMPAIGNS = "https://ca-internal.cafe24data.com/ca2/adsources/campaigns"
+
+
+def fetch_revenue(account_id, days=14):
+    """쇼핑박스 매출 수집 (cafe24 애널리틱스 UTM 유형별분석 = adsources/campaigns).
+    cafe24 스토어 세션으로 유입분석(traffic) 페이지 로드 → 자동발생 ca2 요청에서 Bearer 토큰 확보
+    → 일자별 adsources/campaigns 재호출 → utm_campaign 으로 PC/MO 매출 합산.
+    PC = campaign 'pc', MO = campaign 'mo' + 'knowledge_shopping'(스펙 일치, 타채널은 sa/gfa/cv/숫자라 충돌없음).
+    반환 {date: {'pc': revenue, 'mo': revenue}}. 매출 없는 날/디바이스는 생략. tier=premium 필요(없으면 빈값)."""
+    import datetime as _dt
+    import scraper
+    import db
+    from playwright.sync_api import sync_playwright
+    acc = db.get_account(account_id)
+    if not acc:
+        raise RuntimeError(f"cafe24 계정 없음: {account_id}")
+    base = "https://%s.cafe24.com" % acc["cafe24_id"]
+    auth = {"h": None}
+
+    def _on_req(req):
+        if "ca-internal.cafe24data.com/ca2/" in req.url and not auth["h"]:
+            a = req.headers.get("authorization")
+            if a:
+                auth["h"] = a
+
+    out = {}
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        sf = scraper._session_path(account_id)
+        ctx = b.new_context(storage_state=str(sf)) if sf.exists() else b.new_context()
+        ctx.set_default_timeout(60000)
+        pg = ctx.new_page()
+        pg.on("request", _on_req)
+        scraper.ensure_login(pg, ctx, acc)
+        pg.goto(base + "/disp/admin/shop1/menu/cafe24analytics?type=traffic",
+                wait_until="networkidle", timeout=40000)
+        pg.wait_for_timeout(6000)
+        if not auth["h"]:
+            # 폴백: 유입/광고채널 메뉴 클릭으로 ca2 요청 유발
+            outer = next((f for f in pg.frames if "cafe24analytics" in (f.url or "")), pg.main_frame)
+            for label in ("유입 분석", "광고 채널 분석"):
+                try:
+                    loc = outer.get_by_text(label, exact=False).first
+                    if loc.count():
+                        loc.click(force=True, timeout=4000)
+                        pg.wait_for_timeout(4000)
+                except Exception:
+                    pass
+                if auth["h"]:
+                    break
+        af = next((f for f in pg.frames if "cafe24data" in (f.url or "")), None)
+        if not auth["h"] or af is None:
+            b.close()
+            raise RuntimeError("cafe24 애널리틱스 토큰/프레임 확보 실패 — 세션 만료 의심")
+        today = _dt.date.today()
+        for i in range(0, days + 1):
+            d = today - _dt.timedelta(days=i)
+            ds = d.strftime("%Y-%m-%d")
+            q = (f"device_type=total&start_date={ds}&end_date={ds}&sort=order_amount"
+                 f"&order=desc&limit=300&conversion_timeframe=30d&offset=0&tier=premium")
+            try:
+                r = af.evaluate(
+                    """async (args)=>{const[u,a]=args;
+                       const r=await fetch("https://ca-internal.cafe24data.com/ca2/adsources/campaigns?"+u,{headers:{authorization:a}});
+                       return [r.status, await r.text()];}""",
+                    [q, auth["h"]])
+            except Exception:
+                continue
+            if r[0] != 200:
+                continue
+            try:
+                arr = _json.loads(r[1]).get("campaigns", [])
+            except Exception:
+                continue
+            pc = sum(int(x.get("order_amount") or 0) for x in arr if x.get("campaign") == "pc")
+            mo = sum(int(x.get("order_amount") or 0) for x in arr
+                     if x.get("campaign") in ("mo", "knowledge_shopping"))
+            dev = {}
+            if pc:
+                dev["pc"] = pc
+            if mo:
+                dev["mo"] = mo
+            if dev:
+                out[ds] = dev
+        b.close()
+    return out
+
+
 DEVICE_LABELS = {
     "pc": ["쇼핑박스 PC", "쇼핑박스PC", "네이버 쇼핑박스 PC"],
     "mo": ["쇼핑박스 MO", "쇼핑박스MO", "네이버 쇼핑박스 MO (트렌드픽)", "네이버 쇼핑박스 MO"],
