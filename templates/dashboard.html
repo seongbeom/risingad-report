@@ -252,6 +252,71 @@
     </div>
     {% endif %}
 
+    <!-- 쇼핑박스 PC/MO 상세 -->
+    {% if shopbox_detail and shopbox_detail.has_data %}
+    {% set sb = shopbox_detail %}
+    {% macro num(v) %}{% if v is not none %}{{ "{:,.0f}".format(v) }}{% else %}-{% endif %}{% endmacro %}
+    {% macro roas(v) %}<b style="color:{% if v and v>=300 %}#27ae60{% elif v and v<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if v is not none %}{{ v }}%{% else %}-{% endif %}</b>{% endmacro %}
+    <div class="card">
+        <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🛍 쇼핑박스 상세
+            <span style="font-size:0.76rem;color:#888;font-weight:400">PC 주간입찰 · MO 월간입찰 · {{ sb.date[5:] }}(어제)</span>
+        </h2>
+        <!-- PC/MO 디바이스 타일 (어제) -->
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px">
+            {% for dv, label, bg in [('pc','💻 PC (주간)','#f5f3ff'), ('mo','📱 MO (월간/트렌드픽)','#fff5fb')] %}
+            {% set d = sb.y[dv] %}
+            <div style="background:{{ bg }};border-radius:10px;padding:10px 12px">
+                <div style="font-weight:700;font-size:0.86rem;margin-bottom:6px">{{ label }}</div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 4px;font-size:0.8rem">
+                    <div><div style="color:#999;font-size:.66rem">노출</div><b>{{ num(d.imp) }}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">클릭</div><b>{{ num(d.clk) }}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">CTR</div><b>{% if d.ctr is not none %}{{ d.ctr }}%{% else %}-{% endif %}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">광고비</div><b>{{ num(d.cost) }}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">매출</div><b>{{ num(d.rev) }}</b></div>
+                    <div><div style="color:#999;font-size:.66rem">ROAS</div>{{ roas(d.roas) }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if sb.y.pc.cost == 0 and sb.y.mo.cost == 0 %}
+        <p style="font-size:0.72rem;color:#e67e22;margin:2px 0 8px">⚠ 광고비/ROAS는 <code>/admin</code>에서 낙찰가를 입력하면 채워집니다 (노출·클릭·매출은 자동 수집됨).</p>
+        {% endif %}
+        <!-- 매장별 (어제) -->
+        {% if sb.stores %}
+        <div style="overflow-x:auto">
+        <table class="num" style="width:100%;font-size:0.82rem;border-collapse:collapse;min-width:560px">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
+                <th style="text-align:left;padding:5px 8px">매장</th><th style="padding:5px 8px">구분</th>
+                <th style="padding:5px 8px">노출</th><th style="padding:5px 8px">클릭</th><th style="padding:5px 8px">CTR</th>
+                <th style="padding:5px 8px">광고비</th><th style="padding:5px 8px">매출</th><th style="padding:5px 8px">ROAS</th></tr></thead>
+            <tbody>
+            {% for r in sb.stores %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:5px 8px;font-weight:600">{{ r.label }}</td>
+                <td style="padding:5px 8px;color:#888">{{ r.device }}</td>
+                <td style="padding:5px 8px">{{ num(r.imp) }}</td>
+                <td style="padding:5px 8px">{{ num(r.clk) }}</td>
+                <td style="padding:5px 8px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
+                <td style="padding:5px 8px">{{ num(r.cost) }}</td>
+                <td style="padding:5px 8px">{{ num(r.rev) }}</td>
+                <td style="padding:5px 8px">{{ roas(r.roas) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% endif %}
+        <!-- 이번달 누적 -->
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.8rem">
+            <strong style="color:#555">📅 이번달 누적</strong>
+            {% for dv, lab in [('pc','PC'), ('mo','MO')] %}{% set d = sb.m[dv] %}
+            <span>{{ lab }} 노출 <b>{{ num(d.imp) }}</b> · 클릭 <b>{{ num(d.clk) }}</b> · 매출 <b>{{ num(d.rev) }}</b>{% if d.roas is not none %} · ROAS {{ roas(d.roas) }}{% endif %}</span>
+            {% endfor %}
+            {% if sb.last_run %}<span style="margin-left:auto;color:#aaa;font-size:.72rem">수집 {{ sb.last_run }}</span>{% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- 최근 빠진 데이터 백필 -->
     {% if request.args.get('backfill') == 'started' %}
     <div class="card" style="padding:10px 16px; background:#eafaf0; border-color:#bce8cf; font-size:0.85rem; color:#1e8449">

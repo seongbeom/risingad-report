@@ -3693,6 +3693,59 @@ def dashboard():
         "has_data": _cs_tc > 0 or _cs_tr > 0,
     }
 
+    # ===== 쇼핑박스 PC/MO 상세 (노출·클릭·CTR·CPC·광고비·매출·ROAS) =====
+    _sb_label = {a["id"]: (a.get("label") or a["id"]) for a in accounts}
+
+    def _sb_blank():
+        return {"imp": 0, "clk": 0, "cost": 0, "rev": 0}
+
+    def _sb_eff(d):
+        d["ctr"] = round(d["clk"] / d["imp"] * 100, 2) if d["imp"] else None
+        d["cpc"] = round(d["cost"] / d["clk"]) if d["clk"] else None
+        d["roas"] = round(d["rev"] / d["cost"] * 100) if d["cost"] else None
+        return d
+
+    def _sb_agg_dev(rows):
+        out = {"pc": _sb_blank(), "mo": _sb_blank()}
+        for r in rows:
+            dev = out.get(r["device"])
+            if dev is None:
+                continue
+            dev["imp"] += r.get("impressions") or 0
+            dev["clk"] += r.get("clicks") or 0
+            dev["cost"] += r.get("cost") or 0
+            dev["rev"] += r.get("revenue") or 0
+        for dev in out.values():
+            _sb_eff(dev)
+        return out
+
+    _sb_rows_y = db.list_shopbox_metrics(account_ids=selected_ids, start_date=yesterday, end_date=yesterday)
+    _sb_rows_m = db.list_shopbox_metrics(account_ids=selected_ids, start_date=_mstart, end_date=today)
+    _sb_y = _sb_agg_dev(_sb_rows_y)
+    _sb_m = _sb_agg_dev(_sb_rows_m)
+    # 매장별(어제) — device별 행, 활동 있는 매장만
+    _sb_store = {}
+    for r in _sb_rows_y:
+        if not ((r.get("impressions") or 0) or (r.get("clicks") or 0) or (r.get("cost") or 0) or (r.get("revenue") or 0)):
+            continue
+        st = _sb_store.setdefault(r["account_id"], {})
+        dev = st.setdefault(r["device"], _sb_blank())
+        dev["imp"] += r.get("impressions") or 0
+        dev["clk"] += r.get("clicks") or 0
+        dev["cost"] += r.get("cost") or 0
+        dev["rev"] += r.get("revenue") or 0
+    _sb_store_rows = []
+    for aid, devs in _sb_store.items():
+        for dv in ("pc", "mo"):
+            if dv in devs:
+                _sb_store_rows.append({"label": _sb_label.get(aid, aid), "device": dv.upper(), **_sb_eff(devs[dv])})
+    _sb_store_rows.sort(key=lambda x: -(x["rev"] or 0))
+    shopbox_detail = {
+        "date": yesterday, "y": _sb_y, "m": _sb_m, "stores": _sb_store_rows,
+        "has_data": bool(_sb_rows_y or _sb_rows_m),
+        "last_run": db.get_setting("shopbox_last_run", None),
+    }
+
     # 매장별 월 매출목표 vs 이번달 누적(MTD) 달성률
     month_start_s = now.replace(day=1).strftime("%Y-%m-%d")
     days_in_month = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
@@ -3954,6 +4007,7 @@ def dashboard():
         gfa_eff=gfa_eff,
         gfa_trend=gfa_trend,
         channel_summary=channel_summary,
+        shopbox_detail=shopbox_detail,
         goals=goals,
         goal_month=now.month,
         now=now.strftime("%H:%M"),
