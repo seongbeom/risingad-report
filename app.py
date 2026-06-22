@@ -1842,7 +1842,7 @@ def reload_schedules():
     )
     print("[scheduler] gfa_session_check: 매일 09:05 (만료 7일 전 경고)")
 
-    # 쇼핑박스 광고비 일별분할 → 시트 — 매일 07:20 (스크랩 없음, 입찰원장 기반)
+    # 쇼핑박스 광고비(입찰분할)+노출/클릭(네이버)+매출(cafe24 UTM) → 시트 — 매일 07:30
     scheduler.add_job(
         _shopbox_collect_job, "cron",
         hour=7, minute=30,
@@ -2023,7 +2023,7 @@ def index():
         "naver_collect": ("🟢 네이버 검색광고 수집", f"매일 07:10 (최근 {META_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("naver_last_run", None)),
         "criteo_collect": ("🟠 크리테오 수집", f"매일 06:40 (최근 {CRITEO_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("criteo_last_run", None)),
         "gfa_collect": ("🟢 네이버 성과형(GFA) 수집", f"매일 06:50 (최근 {GFA_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("gfa_last_run", None)),
-        "shopbox_collect": ("🛍 쇼핑박스 광고비", f"매일 07:20 (입찰 일별분할 → 효율시트, 최근 {SHOPBOX_BACKFILL_DAYS}일)", db.get_setting("shopbox_last_run", None)),
+        "shopbox_collect": ("🛍 쇼핑박스 (광고비+노출/클릭+매출)", f"매일 07:30 (입찰분할 + 네이버 노출/클릭 + cafe24 UTM 매출 → 효율시트, 최근 {SHOPBOX_BACKFILL_DAYS}일)", db.get_setting("shopbox_last_run", None)),
         "db_backup": ("💾 DB 백업", "매일 04:00", None),
         "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
     }
