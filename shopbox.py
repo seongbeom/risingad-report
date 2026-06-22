@@ -111,15 +111,25 @@ def fetch_metrics(account_id, days=14):
         body["strtDateTime"] = (today - _dt.timedelta(days=days)).strftime("%Y-%m-%dT00:00")
         body["endDateTime"] = (today + _dt.timedelta(days=1)).strftime("%Y-%m-%dT00:00")
         body["granularity"] = "DAY"
-        body["dimensions"] = ["slotNo"]
+        # slotNo + expsTrtrCd(placement코드) 차원. placement코드는 주차 무관 고정이라,
+        # 현재주 소재(utm)로 코드→device 를 학습해 과거주 슬롯(소재없음)도 PC/MO 판별 → cross-week 백필.
+        body["dimensions"] = ["slotNo", "expsTrtrCd"]
         resp = ctx.request.post(_GROUPBY_URL, data=_json.dumps(body),
                                 headers={"content-type": "application/json"})
         recs = _json.loads(resp.text()) if resp.status == 200 else []
+        # 1) 현재주 소재로 device 확정된 슬롯 → 그 placement코드를 device로 학습
+        code_dev = {}
+        for r in recs:
+            dev = slot_dev.get(str(r.get("slotNo") or ""))
+            code = str(r.get("expsTrtrCd") or "")
+            if dev and code:
+                code_dev.setdefault(code, dev)
+        # 2) 집계: 소재 utm(현재주) 우선, 없으면 학습된 placement코드로 device 판별(과거주)
         for r in recs:
             sn = str(r.get("slotNo") or "")
-            dev = slot_dev.get(sn)
+            dev = slot_dev.get(sn) or code_dev.get(str(r.get("expsTrtrCd") or ""))
             if not dev:
-                continue  # device 매핑 안 된 슬롯(소재 없음) 스킵
+                continue  # device 매핑 실패(소재없고 placement코드도 미학습) 스킵
             ymdhm = r.get("ymdhm") or ""
             if len(ymdhm) < 8:
                 continue
