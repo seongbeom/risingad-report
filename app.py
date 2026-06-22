@@ -2428,6 +2428,37 @@ def shopbox_add_bid():
     return redirect(url_for("shopbox_page", msg="added"))
 
 
+@app.route("/shopbox/bid_bulk", methods=["POST"])
+@login_required
+def shopbox_add_bid_bulk():
+    """여러 매장에 동일 낙찰가 일괄 입력 (낙찰가는 기간별로 전 매장 동일하므로)."""
+    f = request.form
+    account_ids = [a for a in f.getlist("account_ids") if a]
+    try:
+        amount = int((f.get("amount") or "0").replace(",", "").strip() or 0)
+    except ValueError:
+        amount = 0
+    device = (f.get("device") or "pc").strip()
+    gender = (f.get("gender") or "f").strip()
+    start = (f.get("start_date") or "").strip()
+    end = (f.get("end_date") or "").strip()
+    if not (account_ids and device in ("pc", "mo") and start and end and amount > 0):
+        return redirect(url_for("shopbox_page", msg="invalid"))
+    if end < start:
+        return redirect(url_for("shopbox_page", msg="baddate"))
+    added = skipped = 0
+    for aid in account_ids:
+        dup = any(b["device"] == device and b["gender"] == gender
+                  and not (b["end_date"] < start or b["start_date"] > end)
+                  for b in db.list_shopbox_bids([aid]))
+        if dup:
+            skipped += 1
+            continue
+        db.add_shopbox_bid(aid, device, gender, start, end, amount, f.get("memo", ""))
+        added += 1
+    return redirect(url_for("shopbox_page", msg="bulk", added=added, skipped=skipped))
+
+
 @app.route("/shopbox_bid/<int:bid_id>/delete", methods=["POST"])
 @login_required
 def delete_shopbox_bid_route(bid_id):
@@ -2484,6 +2515,7 @@ def shopbox_page():
     return render_template("shopbox.html", active="shopbox",
                            accounts=bid_accts, bids=bids, missing=missing,
                            overview=overview, msg=request.args.get("msg", ""),
+                           added=request.args.get("added", ""), skipped=request.args.get("skipped", ""),
                            today=today.strftime("%Y-%m-%d"),
                            last_run=db.get_setting("shopbox_last_run", None))
 

@@ -18,6 +18,8 @@
     .sb-btn:hover{background:#6d49b0;}
     .preview{background:#faf8fd; border:1px solid #ece4f5; border-radius:9px; padding:10px 14px; font-size:.86rem; color:#5a4a78;}
     .preview b{color:#7e57c2; font-size:1.05rem;}
+    .store-chip{display:inline-flex; align-items:center; gap:5px; padding:6px 11px; border:1px solid var(--line); border-radius:8px; font-size:.84rem; cursor:pointer; background:#fff; user-select:none;}
+    .store-chip:has(input:checked){background:#f0ecfb; border-color:#c9b8e0; color:#6d49b0; font-weight:600;}
     .kpi-strip{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px;}
     .kpi{background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; box-shadow:var(--shadow-sm);}
     .kpi .k-l{font-size:.72rem; color:var(--muted); margin-bottom:3px;}
@@ -51,10 +53,11 @@
     <span class="sub">PC 주간 입찰 · MO 월간 입찰 — 낙찰가만 입력하면 광고비가 자동 분할·집계됩니다{% if last_run %} · 최근 수집 {{ last_run }}{% endif %}</span>
   </div>
 
-  {% if msg=='added' %}<div class="banner ok">✅ 입찰이 추가됐습니다. 다음 수집(매일 07:30) 또는 즉시 반영 시 시트·대시보드에 광고비가 채워집니다.</div>
-  {% elif msg=='overlap' %}<div class="banner warn">⚠️ 같은 매장·유형의 <b>기간이 겹치는 입찰</b>이 이미 있어 추가하지 않았습니다 (광고비 이중집계 방지). 기존 입찰을 삭제 후 다시 넣으세요.</div>
+  {% if msg=='bulk' %}<div class="banner ok">✅ <b>{{ added }}개 매장</b>에 동일 낙찰가를 입력했습니다.{% if skipped and skipped!='0' %} ({{ skipped }}개는 기간이 겹쳐 건너뜀){% endif %} 다음 수집 때 시트·대시보드에 광고비가 채워집니다.</div>
+  {% elif msg=='added' %}<div class="banner ok">✅ 입찰이 추가됐습니다.</div>
+  {% elif msg=='overlap' %}<div class="banner warn">⚠️ 같은 매장·유형·성별의 <b>기간이 겹치는 입찰</b>이 이미 있어 추가하지 않았습니다 (이중집계 방지).</div>
   {% elif msg=='baddate' %}<div class="banner warn">⚠️ 종료일이 시작일보다 빠릅니다. 기간을 확인하세요.</div>
-  {% elif msg=='invalid' %}<div class="banner warn">⚠️ 입력값이 비었거나 잘못됐습니다. 매장·유형·기간·낙찰총액을 모두 채워주세요.</div>{% endif %}
+  {% elif msg=='invalid' %}<div class="banner warn">⚠️ 입력값이 비었거나 잘못됐습니다. 매장(1곳 이상)·유형·기간·낙찰총액을 모두 채워주세요.</div>{% endif %}
 
   {% set active_bids = bids|selectattr('active')|list %}
   {% set pc_daily = active_bids|selectattr('device','equalto','pc')|sum(attribute='daily') %}
@@ -68,16 +71,20 @@
 
   <!-- 낙찰가 입력 -->
   <div class="card">
-    <h2>낙찰가 입력</h2>
-    <p class="card-sub">유형을 고르면 집행기간이 자동으로 채워집니다(수정 가능). 낙찰총액을 넣으면 하루 광고비가 미리 보입니다. 오타·기간 이상은 추가 전에 한 번 더 확인합니다.</p>
-    <form method="POST" action="/shopbox/bid" id="bidForm">
-      <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end">
-        <div class="sb-field" style="min-width:160px">
-          <label>매장</label>
-          <select name="account_id" required>
-            {% for a in accounts %}<option value="{{ a.id }}">{{ a.label or a.id }}</option>{% endfor %}
-          </select>
+    <h2>낙찰가 입력 <span style="font-size:.76rem; color:var(--muted); font-weight:400">낙찰가는 기간별로 전 매장 동일 → 매장 여러 곳 선택해 한 번에 입력</span></h2>
+    <p class="card-sub">① 매장 선택(여러 곳 가능) → ② 유형 고르면 기간 자동 → ③ 낙찰총액 입력. 하루 광고비가 미리 보이고, 오타·기간 이상은 추가 전에 확인합니다.</p>
+    <form method="POST" action="/shopbox/bid_bulk" id="bidForm">
+      <div class="sb-field" style="margin-bottom:14px">
+        <label>매장 선택 <span style="color:#7e57c2" id="selCount">(0곳 선택)</span>
+          <a onclick="toggleAll()" style="cursor:pointer; color:var(--accent); font-weight:600; margin-left:8px">전체 선택/해제</a>
+        </label>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px">
+          {% for a in accounts %}
+          <label class="store-chip"><input type="checkbox" name="account_ids" value="{{ a.id }}" onchange="updateSel()"> {{ a.label or a.id }}</label>
+          {% endfor %}
         </div>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end">
         <div class="sb-field">
           <label>유형</label>
           <div class="seg" id="segType">
@@ -95,9 +102,9 @@
         <div class="sb-field"><label>집행 시작</label><input type="date" name="start_date" id="startDate" value="{{ today }}" required></div>
         <div class="sb-field"><label>집행 종료</label><input type="date" name="end_date" id="endDate" required></div>
         <div class="sb-field"><label>낙찰총액 (원)</label><input name="amount" id="amount" inputmode="numeric" placeholder="3,000,000" style="width:140px" required></div>
-        <button class="sb-btn" type="submit">＋ 입찰 추가</button>
+        <button class="sb-btn" type="submit">＋ 선택 매장에 일괄 입력</button>
       </div>
-      <div class="preview" id="preview" style="margin-top:14px">유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.</div>
+      <div class="preview" id="preview" style="margin-top:14px">매장·유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.</div>
     </form>
     <details style="margin:12px 0 0; font-size:.78rem; color:#7a6a93">
       <summary style="cursor:pointer; color:#8a78a8">ⓘ 왜 낙찰가만 직접 입력하나요? 잘못 넣으면 어떻게 되나요?</summary>
@@ -183,12 +190,25 @@
   function updateSeg(){ document.querySelectorAll('.seg').forEach(function(seg){ seg.querySelectorAll('label').forEach(function(l){ l.classList.toggle('on', l.querySelector('input').checked); }); }); }
   function days(){ var s=document.getElementById('startDate').value, e=document.getElementById('endDate').value; if(!s||!e) return 0; return Math.round((new Date(e)-new Date(s))/86400000)+1; }
   function amt(){ return parseInt((document.getElementById('amount').value||'').replace(/[^0-9]/g,''))||0; }
+  function checkedStores(){ return document.querySelectorAll('input[name=account_ids]:checked'); }
+  function updateSel(){
+    var n=checkedStores().length;
+    document.getElementById('selCount').textContent='('+n+'곳 선택)';
+    updatePreview();
+  }
+  function toggleAll(){
+    var boxes=document.querySelectorAll('input[name=account_ids]');
+    var allOn=document.querySelectorAll('input[name=account_ids]:checked').length===boxes.length;
+    boxes.forEach(function(b){ b.checked=!allOn; });
+    updateSel();
+  }
   function updatePreview(){
     var a=amt(), s=document.getElementById('startDate').value, e=document.getElementById('endDate').value, pv=document.getElementById('preview');
-    if(!s||!e||a<=0){ pv.innerHTML='유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.'; return; }
+    var n=checkedStores().length;
+    if(!s||!e||a<=0||n===0){ pv.innerHTML='매장·유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.'; return; }
     var d=days(); if(d<=0){ pv.innerHTML='⚠️ 종료일이 시작일보다 빠릅니다.'; return; }
     var dev=selectedDevice()==='pc'?'PC 주간':'MO 월간';
-    pv.innerHTML=dev+' · 집행 <b>'+d+'일</b> · 낙찰총액 '+a.toLocaleString()+'원 → 하루 <b>'+Math.round(a/d).toLocaleString()+'원</b>으로 분할 기입';
+    pv.innerHTML='<b>'+n+'개 매장</b> · '+dev+' · 집행 <b>'+d+'일</b> · 낙찰총액 '+a.toLocaleString()+'원 → 매장당 하루 <b>'+Math.round(a/d).toLocaleString()+'원</b>으로 분할 기입';
   }
   document.getElementById('amount').addEventListener('input', function(){ var v=this.value.replace(/[^0-9]/g,''); this.value=v?parseInt(v).toLocaleString():''; updatePreview(); });
   document.querySelectorAll('input[name=device]').forEach(function(el){ el.addEventListener('change', function(){updateSeg(); autofillDates();}); });
@@ -198,6 +218,7 @@
   // 제출 전 오타·기간 검증
   document.getElementById('bidForm').addEventListener('submit', function(ev){
     var a=amt(), d=days(), dev=selectedDevice(), w=[];
+    if(checkedStores().length===0){ alert('입찰을 넣을 매장을 1곳 이상 선택하세요.'); ev.preventDefault(); return; }
     if(a<=0){ alert('낙찰총액을 입력하세요.'); ev.preventDefault(); return; }
     if(d<=0){ alert('종료일이 시작일보다 빠릅니다. 기간을 확인하세요.'); ev.preventDefault(); return; }
     if(a<10000) w.push('· 낙찰총액이 '+a.toLocaleString()+'원으로 매우 작습니다 — 0을 빠뜨리지 않았나요?');
@@ -206,7 +227,7 @@
     if(dev==='mo' && (d<25||d>32)) w.push('· MO 월간인데 집행기간이 '+d+'일입니다 (보통 28~31일).');
     if(w.length && !confirm('한 번 더 확인해주세요:\n\n'+w.join('\n')+'\n\n이대로 추가할까요?')){ ev.preventDefault(); }
   });
-  updateSeg(); autofillDates();
+  updateSeg(); autofillDates(); updateSel();
 </script>
 </body>
 </html>
