@@ -762,10 +762,11 @@
     </div>
     {% endif %}
 
-    <!-- 광고 효율 (ROAS) -->
+    <!-- 메타 매장별 ROAS -->
     {% if ad_eff.has_data %}
     <div class="card">
-        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">📈 광고 효율 (ROAS)
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">📈 메타 매장별 ROAS
+            <span style="font-size:0.72rem;color:#999;font-weight:400">메타 전용 · 매장 단위</span>
             <span style="display:inline-flex; gap:4px">
                 <button type="button" class="ae-tab" data-k="yesterday" onclick="switchAdEff('yesterday')" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;border:1px solid #ddd;cursor:pointer;background:#4a90d9;color:#fff">어제 (확정)</button>
                 <button type="button" class="ae-tab" data-k="today" onclick="switchAdEff('today')" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;border:1px solid #ddd;cursor:pointer;background:#fff;color:#555">오늘 (진행중)</button>
@@ -876,37 +877,6 @@
     </div>
 
     {% set aey = ad_eff.yesterday %}
-    <!-- 광고 효율 지표 -->
-    <div class="card">
-        <h2>📊 광고 효율 지표 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 ({{ aey.date }}) · 메타</span></h2>
-        <p class="card-sub">CPM=1000노출당 비용 · CPC=클릭당 · CTR=클릭률 · <strong>빈도</strong>=같은 사람 노출횟수(높으면 피로) · <strong>CPA</strong>=구매당 비용</p>
-        {% if aey.rows %}
-        <table class="num" style="width:100%; font-size:0.83rem; border-collapse:collapse">
-            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
-                <th style="text-align:left;padding:4px 8px">매장</th><th style="padding:4px 8px">광고비</th>
-                <th style="padding:4px 8px">노출</th><th style="padding:4px 8px">도달</th>
-                <th style="padding:4px 8px">빈도</th><th style="padding:4px 8px">CPM</th>
-                <th style="padding:4px 8px">CPC</th><th style="padding:4px 8px">CTR</th><th style="padding:4px 8px">CPA</th>
-            </tr></thead>
-            <tbody>
-            {% for r in aey.rows %}
-            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
-                <td style="text-align:left;padding:3px 8px;font-weight:600">{{ r.label }}</td>
-                <td style="padding:3px 8px">{{ "{:,.0f}".format(r.spend) }}</td>
-                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(r.imp) }}</td>
-                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(r.reach) }}</td>
-                <td style="padding:3px 8px;font-weight:600;color:{% if r.freq>=3 %}#e74c3c{% elif r.freq>=2 %}#e67e22{% else %}#333{% endif %}">{{ r.freq }}</td>
-                <td style="padding:3px 8px;color:#666">{% if r.cpm %}{{ "{:,.0f}".format(r.cpm) }}{% else %}-{% endif %}</td>
-                <td style="padding:3px 8px;color:#666">{% if r.cpc %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
-                <td style="padding:3px 8px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
-                <td style="padding:3px 8px;color:#666">{% if r.cpa %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}<p style="color:#aaa">어제 광고 데이터 없음</p>{% endif %}
-    </div>
-
     <!-- 광고 퍼널 -->
     <div class="card">
         <h2>🔻 광고 퍼널 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 ({{ aey.date }}) · 선택매장 합계</span></h2>
