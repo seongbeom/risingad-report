@@ -274,37 +274,12 @@
                                 </div>
                                 <button class="btn btn-sm" type="submit" style="background:#2e7d32;color:#fff">네이버성과형 저장</button>
                             </form>
-                            <form method="POST" action="/accounts/{{ a.id }}/shopbox_bid" class="form-row" style="margin:8px 0 0; padding-top:8px; border-top:1px dashed #c9b8e0; align-items:flex-end; gap:6px; flex-wrap:wrap">
-                                <div class="form-group"><label>🛍 쇼핑박스 낙찰가 입력</label>
-                                    <select name="device" style="font-size:0.74rem"><option value="pc">PC(주간)</option><option value="mo">MO(월간)</option></select></div>
-                                <div class="form-group"><label>성별</label>
-                                    <select name="gender" style="font-size:0.74rem"><option value="f">여성</option><option value="m">남성</option></select></div>
-                                <div class="form-group"><label>집행 시작</label><input type="date" name="start_date" style="font-size:0.74rem"></div>
-                                <div class="form-group"><label>종료</label><input type="date" name="end_date" style="font-size:0.74rem"></div>
-                                <div class="form-group"><label>낙찰총액(원)</label><input name="amount" placeholder="3000000" style="width:110px;font-size:0.74rem"></div>
-                                <button class="btn btn-sm" type="submit" style="background:#7e57c2;color:#fff">입찰 추가</button>
-                            </form>
-                            <details style="margin:6px 0 0; font-size:0.71rem; color:#7a6a93">
-                                <summary style="cursor:pointer; color:#8a78a8">ⓘ 왜 자동이 아니라 직접 입력인가요?</summary>
-                                <div style="margin:4px 0 0; line-height:1.5; background:#faf8fd; border:1px solid #ece4f5; border-radius:6px; padding:6px 8px">
-                                    쇼핑박스 <b>낙찰가</b>는 ① 주/월에 <b>1번만</b> 바뀌고 ② 낙찰된 매장 전체가 <b>같은 금액</b>이라, 입력 부담이 매우 작습니다.
-                                    반면 입찰/낙찰내역 자동 크롤링은 페이지 UI가 바뀌면 조용히 깨져 <b>광고비·ROAS가 틀린 채 쌓일</b> 위험이 있습니다(광고비는 ROAS 분모라 오염이 치명적).
-                                    낙찰가는 어차피 <b>입찰 종료 후 사람이 낙찰내역에서 확인</b>해야 하는 값이므로, 그때 숫자 하나 직접 넣는 것이 가장 안전·정확합니다.
-                                    <br>· <b>광고비만</b> 직접 입력하면 됩니다. <b>노출·클릭·매출은 자동 수집</b>됩니다.
-                                    <br>· 입력값은 집행기간(시작~종료) 일수로 <b>자동 일별분할</b>됩니다 (PC=÷7, MO=÷해당월일수).
-                                </div>
-                            </details>
                             {% set bids = shopbox_bids_by_acct.get(a.id) %}
-                            {% if bids %}
-                            <div style="margin:4px 0 0; font-size:0.72rem; color:#666">
-                                {% for b in bids %}
-                                <span style="display:inline-block; background:#f3eefb; border:1px solid #e0d4f0; border-radius:8px; padding:1px 6px; margin:2px 3px 0 0">
-                                    {{ 'PC' if b.device=='pc' else 'MO' }}/{{ '여' if b.gender=='f' else '남' }} {{ b.start_date[5:] }}~{{ b.end_date[5:] }} {{ "{:,}".format(b.amount) }}원
-                                    <form method="POST" action="/shopbox_bid/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('삭제?')"><button type="submit" style="border:none;background:none;color:#c0392b;cursor:pointer;padding:0 0 0 3px">×</button></form>
-                                </span>
-                                {% endfor %}
+                            <div style="margin:8px 0 0; padding-top:8px; border-top:1px dashed #c9b8e0; font-size:0.74rem; color:#666">
+                                🛍 쇼핑박스 낙찰가 입력은 전용 페이지로 이동했습니다 →
+                                <a href="/shopbox" style="color:#7e57c2; font-weight:600">쇼핑박스 입찰 관리 열기</a>
+                                {% if bids %}<span style="color:#999"> (현재 {{ bids|length }}건 등록됨)</span>{% endif %}
                             </div>
-                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}

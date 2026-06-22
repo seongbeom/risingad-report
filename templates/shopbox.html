@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>쇼핑박스 입찰 - Cafe24</title>
+  <style>
+    .sb-field{display:flex; flex-direction:column; gap:4px;}
+    .sb-field label{font-size:.72rem; color:var(--muted); font-weight:600;}
+    .sb-field input, .sb-field select{padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:#fff;}
+    .sb-field input:focus, .sb-field select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(74,144,217,.12);}
+    .seg{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden;}
+    .seg label{padding:8px 14px; font-size:.86rem; cursor:pointer; background:#fff; color:var(--muted); font-weight:600; border-right:1px solid var(--line);}
+    .seg label:last-child{border-right:none;}
+    .seg input{display:none;}
+    .seg label.on{background:#7e57c2; color:#fff;}
+    .sb-btn{padding:9px 18px; border:none; border-radius:9px; background:#7e57c2; color:#fff; font-weight:700; font-size:.9rem; cursor:pointer;}
+    .sb-btn:hover{background:#6d49b0;}
+    .preview{background:#faf8fd; border:1px solid #ece4f5; border-radius:9px; padding:10px 14px; font-size:.86rem; color:#5a4a78;}
+    .preview b{color:#7e57c2; font-size:1.05rem;}
+    table.bids{width:100%; border-collapse:collapse; font-size:.85rem;}
+    table.bids th{text-align:left; color:var(--muted); font-weight:600; font-size:.74rem; padding:7px 10px; border-bottom:1px solid var(--line);}
+    table.bids td{padding:8px 10px; border-bottom:1px solid #f4f5f7;}
+    table.bids tr:hover td{background:#fafbfc;}
+    .pill{display:inline-block; padding:1px 8px; border-radius:8px; font-size:.72rem; font-weight:600;}
+    .pill.live{background:#e7f8ee; color:#1e8449;}
+    .pill.past{background:#f0f0f0; color:#999;}
+    .pill.soon{background:#fff4e5; color:#c87f0a;}
+    .pill.pc{background:#f0ecfb; color:#6d49b0;}
+    .pill.mo{background:#fdeef6; color:#c2398a;}
+    .del-btn{border:none; background:none; color:#c0392b; cursor:pointer; font-size:1rem;}
+    .warn-card{background:#fff8ef; border-color:#f4dcb8;}
+    .warn-item{display:inline-flex; align-items:center; gap:5px; background:#fff; border:1px solid #f0d9b0; border-radius:8px; padding:3px 9px; margin:3px 5px 0 0; font-size:.8rem;}
+  </style>
+</head>
+<body>
+<div class="app">
+{% set active = 'shopbox' %}{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner">
+
+  <div class="page-head">
+    <h1>🛍 쇼핑박스 입찰</h1>
+    <span class="sub">PC 주간 입찰 · MO 월간 입찰 — 낙찰가만 입력하면 광고비가 자동 분할·집계됩니다{% if last_run %} · 최근 수집 {{ last_run }}{% endif %}</span>
+  </div>
+
+  <!-- 미입력 경고 -->
+  {% if missing %}
+  <div class="card warn-card">
+    <h2>⚠️ 낙찰가 미입력 — 광고는 집행 중인데 광고비가 비어 있습니다</h2>
+    <p class="card-sub">아래 매장은 최근 7일 쇼핑박스 노출이 있는데 현재 유효한 낙찰가가 없습니다. 입력하면 ROAS가 완성됩니다.</p>
+    <div>
+      {% for m in missing %}
+      <span class="warn-item"><span class="pill {{ 'pc' if m.device=='PC' else 'mo' }}">{{ m.device }}</span> {{ m.label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 낙찰가 입력 -->
+  <div class="card">
+    <h2>낙찰가 입력</h2>
+    <p class="card-sub">유형을 고르면 집행기간이 자동으로 채워집니다(수정 가능). 낙찰총액을 넣으면 하루 광고비가 미리 보입니다.</p>
+    <form method="POST" action="/shopbox/bid" id="bidForm">
+      <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end">
+        <div class="sb-field" style="min-width:160px">
+          <label>매장</label>
+          <select name="account_id" required>
+            {% for a in accounts %}<option value="{{ a.id }}">{{ a.label or a.id }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="sb-field">
+          <label>유형</label>
+          <div class="seg" id="segType">
+            <label class="on"><input type="radio" name="device" value="pc" checked>💻 PC (주간)</label>
+            <label><input type="radio" name="device" value="mo">📱 MO (월간)</label>
+          </div>
+        </div>
+        <div class="sb-field">
+          <label>성별</label>
+          <div class="seg" id="segGender">
+            <label class="on"><input type="radio" name="gender" value="f" checked>여성</label>
+            <label><input type="radio" name="gender" value="m">남성</label>
+          </div>
+        </div>
+        <div class="sb-field"><label>집행 시작</label><input type="date" name="start_date" id="startDate" value="{{ today }}" required></div>
+        <div class="sb-field"><label>집행 종료</label><input type="date" name="end_date" id="endDate" required></div>
+        <div class="sb-field"><label>낙찰총액 (원)</label><input name="amount" id="amount" inputmode="numeric" placeholder="3,000,000" style="width:140px" required></div>
+        <button class="sb-btn" type="submit">＋ 입찰 추가</button>
+      </div>
+      <div class="preview" id="preview" style="margin-top:14px">유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.</div>
+    </form>
+    <details style="margin:12px 0 0; font-size:.78rem; color:#7a6a93">
+      <summary style="cursor:pointer; color:#8a78a8">ⓘ 왜 낙찰가만 직접 입력하나요?</summary>
+      <div style="margin:6px 0 0; line-height:1.6; background:#faf8fd; border:1px solid #ece4f5; border-radius:8px; padding:8px 12px">
+        낙찰가는 ① 주/월에 1번만 바뀌고 ② 낙찰 매장 전체가 같은 금액이라 입력 부담이 작습니다.
+        자동 크롤링은 입찰 페이지 UI가 바뀌면 조용히 깨져 <b>광고비·ROAS가 틀린 채 쌓일 위험</b>이 있어(광고비는 ROAS 분모) 수동이 더 안전합니다.
+        <b>노출·클릭·매출은 전부 자동 수집</b>되고, 입력한 낙찰가는 집행기간으로 <b>자동 일별분할</b>됩니다(PC=÷7, MO=÷해당월 일수).
+      </div>
+    </details>
+  </div>
+
+  <!-- 등록된 입찰 -->
+  <div class="card">
+    <h2>등록된 입찰 <span style="font-size:.78rem; color:var(--muted); font-weight:400">{{ bids|length }}건</span></h2>
+    {% if bids %}
+    <div style="overflow-x:auto">
+    <table class="bids">
+      <thead><tr>
+        <th>매장</th><th>유형</th><th>성별</th><th>집행기간</th><th>상태</th>
+        <th style="text-align:right">낙찰총액</th><th style="text-align:right">하루 광고비</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for b in bids %}
+        <tr>
+          <td style="font-weight:600">{{ b.label }}</td>
+          <td><span class="pill {{ 'pc' if b.device=='pc' else 'mo' }}">{{ 'PC' if b.device=='pc' else 'MO' }}</span></td>
+          <td>{{ '여성' if b.gender=='f' else '남성' }}</td>
+          <td>{{ b.start_date }} ~ {{ b.end_date }} <span style="color:#bbb">({{ b.days }}일)</span></td>
+          <td>{% if b.active %}<span class="pill live">진행중</span>{% elif b.start_date > today %}<span class="pill soon">예정</span>{% else %}<span class="pill past">종료</span>{% endif %}</td>
+          <td style="text-align:right">{{ "{:,}".format(b.amount) }}원</td>
+          <td style="text-align:right; font-weight:600; color:#6d49b0">{{ "{:,}".format(b.daily) }}원</td>
+          <td style="text-align:center">
+            <form method="POST" action="/shopbox_bid/{{ b.id }}/delete" style="display:inline" onsubmit="return confirm('이 입찰을 삭제할까요?')">
+              <button class="del-btn" type="submit" title="삭제">×</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:var(--muted); font-size:.86rem">아직 등록된 입찰이 없습니다. 위에서 낙찰가를 추가해 보세요.</p>
+    {% endif %}
+  </div>
+
+</div></div></div>
+
+<script>
+  function fmt(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function thisWeek(){ // 월~일 (오늘 포함 주)
+    var t=new Date(); var day=(t.getDay()+6)%7; // 0=월
+    var mon=new Date(t); mon.setDate(t.getDate()-day);
+    var sun=new Date(mon); sun.setDate(mon.getDate()+6);
+    return [fmt(mon), fmt(sun)];
+  }
+  function thisMonth(){
+    var t=new Date();
+    return [fmt(new Date(t.getFullYear(),t.getMonth(),1)), fmt(new Date(t.getFullYear(),t.getMonth()+1,0))];
+  }
+  function selectedDevice(){return document.querySelector('input[name=device]:checked').value;}
+  function autofillDates(){
+    var r = selectedDevice()==='pc' ? thisWeek() : thisMonth();
+    document.getElementById('startDate').value = r[0];
+    document.getElementById('endDate').value = r[1];
+    updatePreview();
+  }
+  function updateSeg(){
+    document.querySelectorAll('.seg').forEach(function(seg){
+      seg.querySelectorAll('label').forEach(function(l){
+        l.classList.toggle('on', l.querySelector('input').checked);
+      });
+    });
+  }
+  function updatePreview(){
+    var amt = parseInt((document.getElementById('amount').value||'').replace(/[^0-9]/g,''))||0;
+    var s = document.getElementById('startDate').value, e = document.getElementById('endDate').value;
+    var pv = document.getElementById('preview');
+    if(!s || !e || amt<=0){ pv.innerHTML='유형·기간·낙찰총액을 입력하면 하루 광고비가 계산됩니다.'; return; }
+    var days = Math.round((new Date(e)-new Date(s))/86400000)+1;
+    if(days<=0){ pv.innerHTML='종료일이 시작일보다 빠릅니다.'; return; }
+    var daily = Math.round(amt/days);
+    var dev = selectedDevice()==='pc' ? 'PC 주간' : 'MO 월간';
+    pv.innerHTML = dev+' · 집행 <b>'+days+'일</b> · 낙찰총액 '+amt.toLocaleString()+'원 → 하루 <b>'+daily.toLocaleString()+'원</b>으로 분할 기입';
+  }
+  // 천단위 콤마 표시
+  document.getElementById('amount').addEventListener('input', function(){
+    var v = this.value.replace(/[^0-9]/g,'');
+    this.value = v ? parseInt(v).toLocaleString() : '';
+    updatePreview();
+  });
+  document.querySelectorAll('input[name=device]').forEach(function(el){ el.addEventListener('change', function(){updateSeg(); autofillDates();}); });
+  document.querySelectorAll('input[name=gender]').forEach(function(el){ el.addEventListener('change', updateSeg); });
+  document.getElementById('startDate').addEventListener('change', updatePreview);
+  document.getElementById('endDate').addEventListener('change', updatePreview);
+  // 초기: PC 기준 이번주 자동입력
+  updateSeg(); autofillDates();
+</script>
+</body>
+</html>

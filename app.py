@@ -2398,11 +2398,69 @@ def add_shopbox_bid_route(account_id):
     return redirect(request.referrer or url_for("index"))
 
 
+@app.route("/shopbox/bid", methods=["POST"])
+@login_required
+def shopbox_add_bid():
+    """전용 쇼핑박스 페이지에서 낙찰가 입력 (account_id 를 폼에서 받음)."""
+    f = request.form
+    account_id = (f.get("account_id") or "").strip()
+    try:
+        amount = int((f.get("amount") or "0").replace(",", "").strip() or 0)
+    except ValueError:
+        amount = 0
+    device = (f.get("device") or "pc").strip()
+    gender = (f.get("gender") or "f").strip()
+    start = (f.get("start_date") or "").strip()
+    end = (f.get("end_date") or "").strip()
+    if account_id and device in ("pc", "mo") and start and end and amount > 0:
+        db.add_shopbox_bid(account_id, device, gender, start, end, amount, f.get("memo", ""))
+    return redirect(url_for("shopbox_page"))
+
+
 @app.route("/shopbox_bid/<int:bid_id>/delete", methods=["POST"])
 @login_required
 def delete_shopbox_bid_route(bid_id):
     db.delete_shopbox_bid(bid_id)
     return redirect(request.referrer or url_for("index"))
+
+
+@app.route("/shopbox")
+@login_required
+def shopbox_page():
+    """쇼핑박스 낙찰가 입력 전용 페이지 — 입력 UX + 진행중 입찰 + 미입력 경고."""
+    accounts = db.list_accounts()
+    creds = shopbox._load_accounts()
+    label = {a["id"]: (a.get("label") or a["id"]) for a in accounts}
+    today = datetime.now().date()
+    # 입찰 원장 (활성 우선 → 시작일 최신순)
+    bids = []
+    for b in db.list_shopbox_bids():
+        try:
+            s = datetime.strptime(b["start_date"], "%Y-%m-%d").date()
+            e = datetime.strptime(b["end_date"], "%Y-%m-%d").date()
+            days = (e - s).days + 1
+        except Exception:
+            days = 0
+        bids.append({**b, "label": label.get(b["account_id"], b["account_id"]),
+                     "days": days, "daily": round(b["amount"] / days) if days > 0 else 0,
+                     "active": days > 0 and s <= today <= e})
+    bids.sort(key=lambda r: (not r["active"], r["start_date"]), reverse=False)
+    # 쇼핑박스 운영 중(최근7일 노출>0)인데 오늘 유효한 입찰 없는 (매장,device) → 낙찰가 미입력 경고
+    win_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    running = {}
+    for r in db.list_shopbox_metrics(start_date=win_start, end_date=today.strftime("%Y-%m-%d")):
+        if (r.get("impressions") or 0) > 0:
+            running[(r["account_id"], r["device"])] = True
+    has_active_bid = {(b["account_id"], b["device"]) for b in bids if b["active"]}
+    missing = [{"label": label.get(a, a), "account_id": a, "device": dv.upper()}
+               for (a, dv) in running if (a, dv) not in has_active_bid]
+    missing.sort(key=lambda x: x["label"])
+    # 입찰 대상 매장 (쇼핑박스 자격 있거나 이미 입찰원장 있는 매장 우선, 없으면 전체)
+    bid_accts = [a for a in accounts if a["id"] in creds] or accounts
+    return render_template("shopbox.html", active="shopbox",
+                           accounts=bid_accts, bids=bids, missing=missing,
+                           today=today.strftime("%Y-%m-%d"),
+                           last_run=db.get_setting("shopbox_last_run", None))
 
 
 @app.route("/admin/shopbox_collect", methods=["POST"])
