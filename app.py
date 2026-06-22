@@ -3590,6 +3590,14 @@ def dashboard():
     criteo_trend = _simple_trend(criteo_by_key)
     gfa_trend = _simple_trend(gfa_by_key)
 
+    # 쇼핑박스 — (account,date)별 PC+MO 합산 (device 차원 제거)
+    shopbox_by_key = {}
+    for r in db.list_shopbox_metrics(account_ids=selected_ids, start_date=_window_start, end_date=today):
+        agg = shopbox_by_key.setdefault((r["account_id"], r["date"]), {"cost": 0, "revenue": 0})
+        agg["cost"] += r.get("cost") or 0
+        agg["revenue"] += r.get("revenue") or 0
+    shopbox_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and db.list_shopbox_bids([a["id"]]))
+
     # ===== 전 채널 한눈 요약 — 어제 + 통합(블렌디드) + 전주동요일 대비 + MTD =====
     _mt = ad_eff["yesterday"]["tot"]; _nt = naver_eff["yesterday"]["tot"]
     _ct = criteo_eff["yesterday"]["tot"]; _gt = gfa_eff["yesterday"]["tot"]
@@ -3609,10 +3617,12 @@ def dashboard():
         ("네이버 검색", "#03c75a", naver_by_key, "cost", "revenue", naver_eff["connected"], _nt.get("conv")),
         ("크리테오", "#f76b1c", criteo_by_key, "cost", "revenue", criteo_eff["connected"], _ct.get("conv")),
         ("네이버 성과형", "#2e7d32", gfa_by_key, "cost", "revenue", gfa_eff["connected"], _gt.get("conv")),
+        ("쇼핑박스", "#7e57c2", shopbox_by_key, "cost", "revenue", shopbox_conn, None),
     ]
     _mstart = now.replace(day=1).strftime("%Y-%m-%d")
     _mtd_fn = {"메타": db.list_meta_metrics, "네이버 검색": db.list_naver_metrics,
-               "크리테오": db.list_criteo_metrics, "네이버 성과형": db.list_gfa_metrics}
+               "크리테오": db.list_criteo_metrics, "네이버 성과형": db.list_gfa_metrics,
+               "쇼핑박스": db.list_shopbox_metrics}
     _cs_rows = []
     for name, color, src, ck, rk, conn, conv in _CH:
         cy, ry = _ch_daysum(src, ck, rk, yesterday)
