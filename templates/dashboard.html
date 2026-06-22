@@ -772,7 +772,7 @@
                 <button type="button" class="ae-tab" data-k="today" onclick="switchAdEff('today')" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;border:1px solid #ddd;cursor:pointer;background:#fff;color:#555">오늘 (진행중)</button>
             </span>
         </h2>
-        <p class="card-sub">메타 광고비(부가세포함) 대비 매출. <strong>광고ROAS</strong>=광고매출/광고비, <strong>블렌디드</strong>=전체매출/광고비, <strong>광고의존도</strong>=광고비/전체매출.</p>
+        <p class="card-sub">메타 광고비(부가세포함) 대비 매출. <strong>광고ROAS</strong>=광고매출/광고비, <strong>블렌디드</strong>=전체매출/광고비, <strong>광고의존도</strong>=광고비/전체매출, <strong>도달</strong>=고유 사용자 수, <strong>빈도</strong>=1인당 노출횟수(3↑ 빨강=피로).</p>
         {% for key in ['yesterday','today'] %}
         {% set ae = ad_eff[key] %}
         <div class="ae-grid" data-k="{{ key }}" style="{% if key != 'yesterday' %}display:none{% endif %}">
@@ -784,6 +784,8 @@
                     <th style="padding:4px 8px">광고ROAS</th><th style="padding:4px 8px">전체매출</th>
                     <th style="padding:4px 8px">블렌디드</th><th style="padding:4px 8px">광고의존도</th>
                     <th style="padding:4px 8px">전환</th>
+                    <th style="padding:4px 8px" title="도달한 고유 사용자 수">도달</th>
+                    <th style="padding:4px 8px" title="1인당 평균 노출횟수 — 높으면 광고 피로">빈도</th>
                 </tr></thead>
                 <tbody>
                 {% for r in ae.rows %}
@@ -796,6 +798,8 @@
                     <td style="padding:3px 8px; color:#666">{% if r.broas is not none %}{{ r.broas }}%{% else %}-{% endif %}</td>
                     <td style="padding:3px 8px; color:#666">{% if r.dep is not none %}{{ r.dep }}%{% else %}-{% endif %}</td>
                     <td style="padding:3px 8px; color:#666">{{ r.purch }}</td>
+                    <td style="padding:3px 8px; color:#666">{% if r.reach %}{{ "{:,.0f}".format(r.reach) }}{% else %}-{% endif %}</td>
+                    <td style="padding:3px 8px; font-weight:600; color:{% if r.freq and r.freq>=3 %}#e74c3c{% elif r.freq and r.freq>=2 %}#e67e22{% else %}#666{% endif %}">{% if r.freq %}{{ r.freq }}{% else %}-{% endif %}</td>
                 </tr>
                 {% endfor %}
                 </tbody>
@@ -808,6 +812,7 @@
                     <td style="padding:4px 8px; color:#666">{% if ae.tot.broas is not none %}{{ ae.tot.broas }}%{% else %}-{% endif %}</td>
                     <td style="padding:4px 8px; color:#666">{% if ae.tot.dep is not none %}{{ ae.tot.dep }}%{% else %}-{% endif %}</td>
                     <td style="padding:4px 8px; color:#666">{{ ae.tot.purch }}</td>
+                    <td style="padding:4px 8px; color:#bbb">-</td><td style="padding:4px 8px; color:#bbb">-</td>
                 </tr></tfoot>
             </table>
             {% else %}<p style="color:#aaa; font-size:0.85rem">{{ ae.date }} 광고 데이터 없음</p>{% endif %}
