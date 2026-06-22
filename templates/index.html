@@ -284,6 +284,16 @@
                                 <div class="form-group"><label>낙찰총액(원)</label><input name="amount" placeholder="3000000" style="width:110px;font-size:0.74rem"></div>
                                 <button class="btn btn-sm" type="submit" style="background:#7e57c2;color:#fff">입찰 추가</button>
                             </form>
+                            <details style="margin:6px 0 0; font-size:0.71rem; color:#7a6a93">
+                                <summary style="cursor:pointer; color:#8a78a8">ⓘ 왜 자동이 아니라 직접 입력인가요?</summary>
+                                <div style="margin:4px 0 0; line-height:1.5; background:#faf8fd; border:1px solid #ece4f5; border-radius:6px; padding:6px 8px">
+                                    쇼핑박스 <b>낙찰가</b>는 ① 주/월에 <b>1번만</b> 바뀌고 ② 낙찰된 매장 전체가 <b>같은 금액</b>이라, 입력 부담이 매우 작습니다.
+                                    반면 입찰/낙찰내역 자동 크롤링은 페이지 UI가 바뀌면 조용히 깨져 <b>광고비·ROAS가 틀린 채 쌓일</b> 위험이 있습니다(광고비는 ROAS 분모라 오염이 치명적).
+                                    낙찰가는 어차피 <b>입찰 종료 후 사람이 낙찰내역에서 확인</b>해야 하는 값이므로, 그때 숫자 하나 직접 넣는 것이 가장 안전·정확합니다.
+                                    <br>· <b>광고비만</b> 직접 입력하면 됩니다. <b>노출·클릭·매출은 자동 수집</b>됩니다.
+                                    <br>· 입력값은 집행기간(시작~종료) 일수로 <b>자동 일별분할</b>됩니다 (PC=÷7, MO=÷해당월일수).
+                                </div>
+                            </details>
                             {% set bids = shopbox_bids_by_acct.get(a.id) %}
                             {% if bids %}
                             <div style="margin:4px 0 0; font-size:0.72rem; color:#666">
