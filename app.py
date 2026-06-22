@@ -73,6 +73,10 @@ def _criteo_session_check_job():
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cafe24-scraper-secret-key-change-me")
+# 템플릿 변경을 프로세스 재시작 없이 즉시 반영 — 화면(템플릿)만 바꾸는 배포는 리로드 불필요
+# → 라이브 스크래퍼를 안 건드림(deploy.sh 가 .py 변경 없을 때 reload 스킵).
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 # 로그인 설정 (.env)
 # ADMIN_USERS="alice:pw1,bob:pw2" 형식으로 여러 사용자 지정 가능 (첫 번째가 super admin)
@@ -2425,7 +2429,23 @@ def shopbox_add_bid():
         if b["device"] == device and b["gender"] == gender and not (b["end_date"] < start or b["start_date"] > end):
             return redirect(url_for("shopbox_page", msg="overlap"))
     db.add_shopbox_bid(account_id, device, gender, start, end, amount, f.get("memo", ""))
+    _shopbox_apply_bid_cost(account_id, device, start, end)
     return redirect(url_for("shopbox_page", msg="added"))
+
+
+def _shopbox_apply_bid_cost(account_id, device, start, end):
+    """입찰 추가/삭제 직후, 그 기간의 일별 광고비를 즉시 shopbox_metrics 에 반영
+    (수집 job 안 기다리고 대시보드에 ROAS 바로 보이게). 최근 60일~오늘로 범위 제한."""
+    try:
+        s = max(datetime.strptime(start, "%Y-%m-%d").date(), datetime.now().date() - timedelta(days=60))
+        e = min(datetime.strptime(end, "%Y-%m-%d").date(), datetime.now().date())
+    except Exception:
+        return
+    d = s
+    while d <= e:
+        ds = d.isoformat()
+        db.set_shopbox_cost(account_id, ds, device, db.shopbox_daily_cost(account_id, device, ds))
+        d += timedelta(days=1)
 
 
 @app.route("/shopbox/bid_bulk", methods=["POST"])
@@ -2455,6 +2475,7 @@ def shopbox_add_bid_bulk():
             skipped += 1
             continue
         db.add_shopbox_bid(aid, device, gender, start, end, amount, f.get("memo", ""))
+        _shopbox_apply_bid_cost(aid, device, start, end)
         added += 1
     return redirect(url_for("shopbox_page", msg="bulk", added=added, skipped=skipped))
 
@@ -2462,7 +2483,10 @@ def shopbox_add_bid_bulk():
 @app.route("/shopbox_bid/<int:bid_id>/delete", methods=["POST"])
 @login_required
 def delete_shopbox_bid_route(bid_id):
+    bid = next((b for b in db.list_shopbox_bids() if b["id"] == bid_id), None)
     db.delete_shopbox_bid(bid_id)
+    if bid:  # 삭제 후 그 기간 광고비 재계산(남은 입찰 반영, 없으면 0) → 시트·대시보드 정정
+        _shopbox_apply_bid_cost(bid["account_id"], bid["device"], bid["start_date"], bid["end_date"])
     return redirect(request.referrer or url_for("index"))
 
 

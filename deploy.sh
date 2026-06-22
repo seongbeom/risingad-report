@@ -20,6 +20,20 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+# 1.5) 이번 배포가 건드리는 파일 판별 — .py(또는 requirements) 변경 없으면 '템플릿 전용'
+#      → 리로드 스킵(앱이 TEMPLATES_AUTO_RELOAD 로 즉시 반영). 라이브 스크래퍼 무중단.
+CHANGED=$(git diff --name-only origin/master HEAD 2>/dev/null)
+NEEDS_RELOAD=0
+[ -z "$CHANGED" ] && NEEDS_RELOAD=1   # 변경목록 못 구하면 안전하게 리로드
+for f in $CHANGED; do
+  case "$f" in
+    *.py|requirements*.txt) NEEDS_RELOAD=1 ;;
+  esac
+done
+echo "▶ 변경 파일:"; echo "$CHANGED" | sed 's/^/    /'
+[ "$NEEDS_RELOAD" = "1" ] && echo "  → 코드(.py) 변경 있음: graceful 리로드 진행" \
+                          || echo "  → 템플릿/문서 전용: 리로드 스킵(스크래퍼 무중단)"
+
 # 2) push
 echo "▶ git push origin master"
 git push origin master
@@ -29,6 +43,14 @@ git push origin master
 echo "▶ 배포 전 프로세스 시작시각 기록"
 BEFORE=$(curl -s --max-time 8 "http://$SERVER_HOST:9090/healthz" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('started_at',''))" 2>/dev/null || echo "")
 echo "  현재 started_at=$BEFORE"
+
+# 템플릿/문서 전용 배포 → 서버 git pull 만 하고 리로드 없이 종료 (스크래퍼 안 건드림)
+if [ "$NEEDS_RELOAD" != "1" ]; then
+  echo "▶ 서버 git pull (리로드 없음 — 템플릿 즉시 반영)"
+  ssh $SSH_OPTS -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only"
+  echo "✅ 배포 완료 (템플릿 전용 — 스크래퍼 무중단, 새로고침하면 반영됨)"
+  exit 0
+fi
 
 echo "▶ 서버 git pull + 문법검사 + reload 요청"
 ssh $SSH_OPTS -i "$KEY" "$HOST" "cd $REMOTE_DIR && git pull --ff-only && \

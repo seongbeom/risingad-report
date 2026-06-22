@@ -864,6 +864,19 @@ def upsert_shopbox_metric(account_id, date, device, m):
              m.get("clicks", 0), m.get("revenue", 0)))
 
 
+def set_shopbox_cost(account_id, date, device, cost):
+    """광고비(cost)만 갱신 — 노출/클릭/매출은 보존. 입찰 입력 즉시 대시보드 반영용.
+    해당 행 없으면 cost만 있는 행 생성."""
+    with db_conn() as conn:
+        cur = conn.execute(
+            "UPDATE shopbox_metrics SET cost=?, updated_at=datetime('now','localtime') "
+            "WHERE account_id=? AND date=? AND device=?", (cost, account_id, date, device))
+        if cur.rowcount == 0:
+            conn.execute(
+                "INSERT INTO shopbox_metrics (account_id,date,device,cost,impressions,clicks,revenue,updated_at) "
+                "VALUES (?,?,?,?,0,0,0,datetime('now','localtime'))", (account_id, date, device, cost))
+
+
 def list_shopbox_metrics(account_ids=None, start_date=None, end_date=None):
     sql = "SELECT * FROM shopbox_metrics WHERE 1=1"
     params = []
