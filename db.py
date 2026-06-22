@@ -208,6 +208,36 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_gfa_metrics_date ON gfa_metrics(date);
 
+            -- 네이버 쇼핑박스 입찰 원장 (정액 낙찰가 — PC주간/MO월간). 일별분할의 원천.
+            CREATE TABLE IF NOT EXISTS shopbox_bids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                device TEXT NOT NULL,        -- 'pc' | 'mo'
+                gender TEXT DEFAULT 'f',     -- 'f'(여성) | 'm'(남성)
+                start_date TEXT NOT NULL,    -- 집행 시작일
+                end_date TEXT NOT NULL,      -- 집행 종료일 (이 기간 일수로 낙찰가 분할)
+                amount INTEGER DEFAULT 0,    -- 낙찰 총액(원)
+                memo TEXT DEFAULT '',
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_shopbox_bids_acct ON shopbox_bids(account_id, device);
+
+            -- 쇼핑박스 일별 성과 (광고비=입찰 일별분할 / 노출·클릭=광고리포트 / 매출=cafe24 UTM)
+            CREATE TABLE IF NOT EXISTS shopbox_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                device TEXT NOT NULL,        -- 'pc' | 'mo'
+                cost INTEGER DEFAULT 0,
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date, device),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_shopbox_metrics_date ON shopbox_metrics(date);
+
             -- 메타 캠페인별 일별 성과 (캠페인 분해 뷰용)
             CREATE TABLE IF NOT EXISTS meta_campaign_metrics (
                 account_id TEXT NOT NULL,
@@ -774,6 +804,79 @@ def list_criteo_metrics(account_ids=None, start_date=None, end_date=None):
 
 def list_gfa_metrics(account_ids=None, start_date=None, end_date=None):
     return _list_simple_metrics("gfa_metrics", account_ids, start_date, end_date)
+
+
+# ===== 쇼핑박스 (입찰 원장 + 일별분할 + 일별 성과) =====
+def add_shopbox_bid(account_id, device, gender, start_date, end_date, amount, memo=""):
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO shopbox_bids (account_id,device,gender,start_date,end_date,amount,memo) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (account_id, device, gender, start_date, end_date, int(amount or 0), memo))
+
+
+def delete_shopbox_bid(bid_id):
+    with db_conn() as conn:
+        conn.execute("DELETE FROM shopbox_bids WHERE id=?", (bid_id,))
+
+
+def list_shopbox_bids(account_ids=None):
+    sql = "SELECT * FROM shopbox_bids WHERE 1=1"
+    params = []
+    if account_ids:
+        sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"
+        params.extend(account_ids)
+    sql += " ORDER BY start_date DESC, device"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def shopbox_daily_cost(account_id, device, date):
+    """입찰 원장에서 해당 날짜의 광고비 = Σ(겹치는 입찰의 낙찰가 ÷ 집행일수).
+    정액 입찰을 집행기간(시작~종료) 일수로 균등 분할. 여러 입찰 겹치면 합산."""
+    import datetime as _dt
+    d = _dt.date.fromisoformat(date)
+    total = 0.0
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT start_date,end_date,amount FROM shopbox_bids "
+            "WHERE account_id=? AND device=? AND start_date<=? AND end_date>=?",
+            (account_id, device, date, date)).fetchall()
+    for s, e, amt in rows:
+        try:
+            days = (_dt.date.fromisoformat(e) - _dt.date.fromisoformat(s)).days + 1
+            if days > 0 and s <= date <= e:
+                total += (amt or 0) / days
+        except Exception:
+            continue
+    return round(total)
+
+
+def upsert_shopbox_metric(account_id, date, device, m):
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO shopbox_metrics (account_id,date,device,cost,impressions,clicks,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date,device) DO UPDATE SET
+                 cost=excluded.cost, impressions=excluded.impressions, clicks=excluded.clicks,
+                 revenue=excluded.revenue, updated_at=excluded.updated_at""",
+            (account_id, date, device, m.get("cost", 0), m.get("impressions", 0),
+             m.get("clicks", 0), m.get("revenue", 0)))
+
+
+def list_shopbox_metrics(account_ids=None, start_date=None, end_date=None):
+    sql = "SELECT * FROM shopbox_metrics WHERE 1=1"
+    params = []
+    if account_ids:
+        sql += f" AND account_id IN ({','.join('?' * len(account_ids))})"
+        params.extend(account_ids)
+    if start_date:
+        sql += " AND date >= ?"; params.append(start_date)
+    if end_date:
+        sql += " AND date <= ?"; params.append(end_date)
+    sql += " ORDER BY date DESC, device"
+    with db_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def _list_simple_metrics(table, account_ids=None, start_date=None, end_date=None):
