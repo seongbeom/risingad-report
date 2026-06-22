@@ -1140,25 +1140,47 @@ SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장
 
 
 def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
-    """쇼핑박스 광고비 = 입찰 낙찰가 일별분할(db) → shopbox_metrics + 효율시트 기입.
-    스크랩 없음(낙찰가는 수동입력 원장) → _live_lock 불필요. 노출/클릭/매출은 v2."""
-    accounts = [a for a in db.list_accounts() if db.list_shopbox_bids([a["id"]])]
+    """쇼핑박스: 광고비(입찰 일별분할) + 노출/클릭(쇼핑파트너센터 groupBy.nhn 크롤) → shopbox_metrics + 시트.
+    크롬 쓰므로(노출/클릭 수집) _live_lock 으로 cafe24 와 직렬화. 매출은 v2(cafe24 유입분석).
+    대상: 입찰원장 있거나 쇼핑박스 자격 있는 매장."""
+    creds = shopbox._load_accounts()
+    accounts = [a for a in db.list_accounts()
+                if db.list_shopbox_bids([a["id"]]) or a["id"] in creds]
     if not accounts:
-        print("[shopbox] 입찰 원장 있는 매장 없음")
+        print("[shopbox] 대상 매장 없음")
+        return
+    if not _live_lock.acquire(timeout=600):
+        print("[shopbox] _live_lock 획득 실패 — 스킵")
         return
     today = datetime.now().date()
-    dates = [(today - timedelta(days=i)).isoformat() for i in range(1, days + 1)]
+    dates = [(today - timedelta(days=i)).isoformat() for i in range(0, days + 1)]
     ok_acct = 0
-    for a in accounts:
+    try:
+      for a in accounts:
         aid = a["id"]; lbl = a.get("label") or aid; ssid = a.get("spreadsheet_id") or ""
+        # 노출/클릭 크롤 (자격 있는 매장만, 실패해도 광고비는 진행)
+        metrics_by_date = {}
+        if aid in creds:
+            try:
+                metrics_by_date = shopbox.fetch_metrics(aid, days=days)
+            except Exception as e:
+                print(f"[shopbox] {lbl} 노출/클릭 수집 실패(광고비는 진행): {repr(e)[:120]}")
         daily = {}
         for d in dates:
             devmap = {}
             for dev in ("pc", "mo"):
                 cost = db.shopbox_daily_cost(aid, dev, d)
+                mm = (metrics_by_date.get(d, {}) or {}).get(dev, {})
+                rec = {}
                 if cost > 0:
-                    db.upsert_shopbox_metric(aid, d, dev, {"cost": cost})
-                    devmap[dev] = {"cost": cost}
+                    rec["cost"] = cost
+                if mm.get("impressions"):
+                    rec["impressions"] = mm["impressions"]
+                if mm.get("clicks"):
+                    rec["clicks"] = mm["clicks"]
+                if rec:
+                    db.upsert_shopbox_metric(aid, d, dev, rec)
+                    devmap[dev] = rec
             if devmap:
                 daily[d] = devmap
         if not daily:
@@ -1175,8 +1197,10 @@ def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
         except Exception as e:
             db.add_sheet_log(aid, "shopbox", f"최근{days}일", 0, "fail", repr(e)[:280])
             print(f"[shopbox] {lbl} 실패: {repr(e)[:160]}")
-    db.set_setting("shopbox_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
-    print(f"[shopbox] done — {ok_acct}계정")
+      db.set_setting("shopbox_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+      print(f"[shopbox] done — {ok_acct}계정")
+    finally:
+        _live_lock.release()
 
 
 def _shopbox_bids_by_acct():
@@ -1812,11 +1836,11 @@ def reload_schedules():
     # 쇼핑박스 광고비 일별분할 → 시트 — 매일 07:20 (스크랩 없음, 입찰원장 기반)
     scheduler.add_job(
         _shopbox_collect_job, "cron",
-        hour=7, minute=20,
+        hour=7, minute=30,
         id="shopbox_collect", replace_existing=True,
-        misfire_grace_time=3600, executor="quick",
+        misfire_grace_time=3600,
     )
-    print(f"[scheduler] shopbox_collect: 매일 07:20 (광고비 일별분할, 최근 {SHOPBOX_BACKFILL_DAYS}일)")
+    print(f"[scheduler] shopbox_collect: 매일 07:30 (광고비 분할 + 노출/클릭 크롤, 최근 {SHOPBOX_BACKFILL_DAYS}일)")
 
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.

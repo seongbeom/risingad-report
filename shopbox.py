@@ -7,6 +7,130 @@
 효율시트의 '쇼핑박스 PC' / '쇼핑박스 MO' 채널 블록을 동적 탐색해 일별 기입.
 (criteo/gfa write_to_sheet 패턴 동일)
 """
+import json as _json
+import re as _re
+from pathlib import Path as _Path
+
+_DATA = _Path(__file__).parent / "data"
+_ACCOUNTS_FILE = _DATA / "shopbox_accounts.json"
+_GROUPBY_URL = "https://adcenter.shopping.naver.com/p/report/ad/trendreport/groupBy.nhn"
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+
+def _load_accounts():
+    try:
+        return _json.loads(_ACCOUNTS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _device_from_url(url):
+    """소재 cntsLinkUrl 의 utm_campaign → 'pc' | 'mo' | None (문서 키: pc / mo / knowledge_shopping=mo)."""
+    m = _re.search(r"utm_campaign=([^&]+)", url or "")
+    if not m:
+        return None
+    c = m.group(1).lower()
+    if c == "pc":
+        return "pc"
+    if c == "mo" or "knowledge_shopping" in c:
+        return "mo"
+    return None
+
+
+def fetch_metrics(account_id, days=14):
+    """쇼핑박스 노출/클릭 수집 (세션 크롤 + groupBy.nhn API).
+    로그인 → 대시보드에서 groupBy 요청바디·소재(slotNo→device) 캡처 → groupBy(slotNo,DAY) 재호출.
+    반환 {date: {'pc': {impressions,clicks}, 'mo': {...}}}. 자격 없거나 로그인 실패시 예외."""
+    import datetime as _dt
+    import time as _time
+    from playwright.sync_api import sync_playwright
+    acc = _load_accounts().get(account_id)
+    if not acc:
+        raise RuntimeError(f"shopbox 자격 없음: {account_id}")
+    profile = _DATA / f"shopbox_profile_{account_id}"
+    profile.mkdir(parents=True, exist_ok=True)
+    base_body = {"v": None}
+    slot_dev = {}
+
+    def _on_req(req):
+        if "groupBy.nhn" in req.url and req.method == "POST":
+            try:
+                b = _json.loads(req.post_data or "{}")
+                if b.get("granularity") == "DAY" and base_body["v"] is None:
+                    base_body["v"] = b
+            except Exception:
+                pass
+
+    def _on_resp(resp):
+        if "adCntsList.nhn" in resp.url:
+            try:
+                for r in _json.loads(resp.text()):
+                    dev = _device_from_url(r.get("cntsLinkUrl", ""))
+                    sn = str(r.get("slotNo") or "")
+                    if sn and dev:
+                        slot_dev[sn] = dev
+            except Exception:
+                pass
+
+    out = {}
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            str(profile), headless=True, user_agent=_UA,
+            args=["--disable-blink-features=AutomationControlled"],
+            viewport={"width": 1500, "height": 980})
+        pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+        pg.on("request", _on_req)
+        pg.on("response", _on_resp)
+        pg.goto("https://center.shopping.naver.com/report/ad/dashboard",
+                wait_until="domcontentloaded", timeout=60000)
+        pg.wait_for_timeout(3000)
+        # 로그인 필요시 폼 입력
+        if "/login" in pg.url:
+            for fr in [pg] + list(pg.frames):
+                try:
+                    txt = fr.locator("#login_username, input[type=text]").first
+                    pw = fr.locator("#login_password, input[type=password]").first
+                    if txt.count() and pw.count():
+                        txt.fill(acc["id"]); pw.fill(acc["pw"])
+                        fr.locator("button:has-text('로그인'), .btn_login, button[type=submit]").first.click(timeout=5000)
+                        break
+                except Exception:
+                    continue
+            pg.wait_for_timeout(4000)
+            pg.goto("https://center.shopping.naver.com/report/ad/dashboard",
+                    wait_until="networkidle", timeout=60000)
+        pg.wait_for_load_state("networkidle", timeout=30000)
+        pg.wait_for_timeout(6000)
+        if base_body["v"] is None:
+            ctx.close()
+            raise RuntimeError("groupBy 요청 캡처 실패 — 로그인 만료 의심")
+        # slotNo 별 일자 노출/클릭 재호출
+        today = _dt.date.today()
+        body = dict(base_body["v"])
+        body["strtDateTime"] = (today - _dt.timedelta(days=days)).strftime("%Y-%m-%dT00:00")
+        body["endDateTime"] = (today + _dt.timedelta(days=1)).strftime("%Y-%m-%dT00:00")
+        body["granularity"] = "DAY"
+        body["dimensions"] = ["slotNo"]
+        resp = ctx.request.post(_GROUPBY_URL, data=_json.dumps(body),
+                                headers={"content-type": "application/json"})
+        recs = _json.loads(resp.text()) if resp.status == 200 else []
+        for r in recs:
+            sn = str(r.get("slotNo") or "")
+            dev = slot_dev.get(sn)
+            if not dev:
+                continue  # device 매핑 안 된 슬롯(소재 없음) 스킵
+            ymdhm = r.get("ymdhm") or ""
+            if len(ymdhm) < 8:
+                continue
+            d = f"{ymdhm[:4]}-{ymdhm[4:6]}-{ymdhm[6:8]}"
+            slot = out.setdefault(d, {}).setdefault(dev, {"impressions": 0, "clicks": 0})
+            slot["impressions"] += int(r.get("vExpsCnt") or 0)
+            slot["clicks"] += int(r.get("vClkCnt") or 0)
+        ctx.close()
+    return out
+
+
 DEVICE_LABELS = {
     "pc": ["쇼핑박스 PC", "쇼핑박스PC", "네이버 쇼핑박스 PC"],
     "mo": ["쇼핑박스 MO", "쇼핑박스MO", "네이버 쇼핑박스 MO (트렌드픽)", "네이버 쇼핑박스 MO"],
