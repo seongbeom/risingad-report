@@ -270,24 +270,27 @@
     {% macro roas(v) %}<b style="color:{% if v and v>=300 %}#27ae60{% elif v and v<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if v is not none %}{{ v }}%{% else %}-{% endif %}</b>{% endmacro %}
     <div class="card">
         <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🛍 쇼핑박스 상세
-            <span style="font-size:0.76rem;color:#888;font-weight:400">PC 주간입찰 · MO 월간입찰 · {{ sb.date[5:] }}(어제)</span>
+            <span style="font-size:0.76rem;color:#888;font-weight:400">PC 주간입찰 · MO 월간입찰 · 오늘(실시간) vs 어제</span>
         </h2>
-        <!-- PC/MO 디바이스 타일 (어제) -->
+        <!-- PC/MO 디바이스 타일 (오늘 vs 어제) -->
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px">
             {% for dv, label, bg in [('pc','💻 PC (주간)','#f5f3ff'), ('mo','📱 MO (월간/트렌드픽)','#fff5fb')] %}
-            {% set d = sb.y[dv] %}
             <div style="background:{{ bg }};border-radius:10px;padding:10px 12px">
                 <div style="font-weight:700;font-size:0.86rem;margin-bottom:6px">{{ label }}</div>
-                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 4px;font-size:0.8rem">
-                    <div><div style="color:#999;font-size:.66rem">노출</div><b>{{ num(d.imp) }}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">클릭</div><b>{{ num(d.clk) }}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">CTR</div><b>{% if d.ctr is not none %}{{ d.ctr }}%{% else %}-{% endif %}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">CPC</div><b>{{ num(d.cpc) }}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">CPM</div><b>{{ num(d.cpm) }}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">광고비</div><b>{{ num(d.cost) }}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">매출</div><b>{{ num(d.rev) }}</b></div>
-                    <div><div style="color:#999;font-size:.66rem">ROAS</div>{{ roas(d.roas) }}</div>
-                </div>
+                <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
+                    <thead><tr style="color:#aaa;font-size:.66rem;text-align:right">
+                        <th></th><th>노출</th><th>클릭</th><th>CTR</th><th>광고비</th><th>매출</th><th>ROAS</th></tr></thead>
+                    <tbody>
+                    {% for per, plab, pc in [('t','오늘','#7e57c2'), ('y','어제','#aaa')] %}{% set d = sb[per][dv] %}
+                    <tr style="text-align:right">
+                        <td style="text-align:left;font-weight:700;color:{{ pc }}">{{ plab }}{% if per=='t' %} <span style="font-size:.6rem;color:#bbb">실시간</span>{% endif %}</td>
+                        <td>{{ num(d.imp) }}</td><td>{{ num(d.clk) }}</td>
+                        <td>{% if d.ctr is not none %}{{ d.ctr }}%{% else %}-{% endif %}</td>
+                        <td>{{ num(d.cost) }}</td><td>{{ num(d.rev) }}</td><td>{{ roas(d.roas) }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
             </div>
             {% endfor %}
         </div>

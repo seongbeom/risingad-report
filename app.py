@@ -3875,8 +3875,10 @@ def dashboard():
             _sb_eff(dev)
         return out
 
+    _sb_rows_t = db.list_shopbox_metrics(account_ids=selected_ids, start_date=today, end_date=today)
     _sb_rows_y = db.list_shopbox_metrics(account_ids=selected_ids, start_date=yesterday, end_date=yesterday)
     _sb_rows_m = db.list_shopbox_metrics(account_ids=selected_ids, start_date=_mstart, end_date=today)
+    _sb_t = _sb_agg_dev(_sb_rows_t)
     _sb_y = _sb_agg_dev(_sb_rows_y)
     _sb_m = _sb_agg_dev(_sb_rows_m)
     # 매장별(어제) — device별 행, 활동 있는 매장만
@@ -3902,8 +3904,8 @@ def dashboard():
             _sb7[r["date"]]["imp"] += r.get("impressions") or 0
             _sb7[r["date"]]["rev"] += r.get("revenue") or 0
     shopbox_detail = {
-        "date": yesterday, "y": _sb_y, "m": _sb_m, "stores": _sb_store_rows,
-        "has_data": bool(_sb_rows_y or _sb_rows_m),
+        "date": yesterday, "today_date": today, "t": _sb_t, "y": _sb_y, "m": _sb_m, "stores": _sb_store_rows,
+        "has_data": bool(_sb_rows_t or _sb_rows_y or _sb_rows_m),
         "last_run": db.get_setting("shopbox_last_run", None),
         "spark_imp": [_sb7[d]["imp"] for d in _last7],
         "spark_rev": [_sb7[d]["rev"] for d in _last7],
