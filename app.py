@@ -2419,9 +2419,10 @@ def shopbox_add_bid():
         return redirect(url_for("shopbox_page", msg="invalid"))
     if end < start:
         return redirect(url_for("shopbox_page", msg="baddate"))
-    # 같은 매장·유형의 기간이 겹치는 입찰이 이미 있으면 차단 (광고비 이중집계 방지)
+    # 같은 매장·유형·성별의 기간이 겹치는 입찰이 이미 있으면 차단 (광고비 이중집계 방지).
+    # 성별까지 봐야 함 — 같은 주 여성+남성 동시 입찰은 정상(별도 구좌·낙찰가)이라 막으면 안 됨.
     for b in db.list_shopbox_bids([account_id]):
-        if b["device"] == device and not (b["end_date"] < start or b["start_date"] > end):
+        if b["device"] == device and b["gender"] == gender and not (b["end_date"] < start or b["start_date"] > end):
             return redirect(url_for("shopbox_page", msg="overlap"))
     db.add_shopbox_bid(account_id, device, gender, start, end, amount, f.get("memo", ""))
     return redirect(url_for("shopbox_page", msg="added"))
