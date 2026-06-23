@@ -168,9 +168,9 @@
                                 </div>
                                 {% endif %}
                                 {% if a.naver_gfa_account_no %}
-                                <div title="네이버 성과형 마지막 수집/시트기입">
+                                <div title="네이버 성과형 마지막 수집/시트기입 — 비어있으면 권한 미승인이거나 성과형 광고 미집행(데이터 없음)">
                                     <span style="color:#2e7d32">🟢성과형</span>
-                                    {% if st.gfa_last %}{{ st.gfa_last[5:16] }}{% else %}<span style="color:#aaa">대기(권한)</span>{% endif %}
+                                    {% if st.gfa_last %}{{ st.gfa_last[5:16] }}{% else %}<span style="color:#aaa" title="권한 미승인 또는 광고 미집행 — 데이터 없음">대기</span>{% endif %}
                                 </div>
                                 {% endif %}
                                 {% if st.fail_at %}
