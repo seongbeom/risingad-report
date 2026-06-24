@@ -188,158 +188,6 @@
     </div>
     {% endif %}
 
-    <!-- 전 채널 광고 요약 + 통합(블렌디드) + 전주대비 + MTD -->
-    {% if channel_summary and channel_summary.has_data %}
-    {% macro wow(d) %}{% if d is not none %}<span style="font-size:.7rem;color:{% if d>0 %}#27ae60{% elif d<0 %}#e74c3c{% else %}#999{% endif %}">{% if d>0 %}▲{% elif d<0 %}▼{% endif %}{{ d|abs }}%</span>{% endif %}{% endmacro %}
-    {% set cs = channel_summary %}{% set bl = cs.blended %}
-    <div class="card">
-        <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">📊 광고 채널 요약
-            <span style="font-size:0.76rem;color:#888;font-weight:400">{{ cs.date[5:] }} (어제) · 전주({{ cs.last_week[5:] }}) 동요일 대비</span>
-        </h2>
-        <!-- 통합(블렌디드) 히어로 -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px">
-            <div class="nv-kpi" style="background:#f4f8ff"><div class="nv-kpi-l">통합 ROAS(블렌디드)</div>
-                <div class="nv-kpi-v" style="color:{% if bl.broas and bl.broas>=400 %}#27ae60{% elif bl.broas and bl.broas<200 %}#e74c3c{% else %}#e67e22{% endif %}">{% if bl.broas is not none %}{{ bl.broas }}%{% else %}-{% endif %}
-                {% if bl.broas is not none and bl.broas_w is not none %}{{ wow(((bl.broas-bl.broas_w)/bl.broas_w*100)|round if bl.broas_w else none) }}{% endif %}</div>
-                <div style="font-size:.64rem;color:#aaa">전체매장매출÷광고비</div></div>
-            <div class="nv-kpi" style="background:#fff7f0"><div class="nv-kpi-l">광고 의존도</div>
-                <div class="nv-kpi-v" style="color:{% if bl.dep and bl.dep>=50 %}#e74c3c{% elif bl.dep and bl.dep>=30 %}#e67e22{% else %}#27ae60{% endif %}">{% if bl.dep is not none %}{{ bl.dep }}%{% else %}-{% endif %}</div>
-                <div style="font-size:.64rem;color:#aaa">매출 중 광고비 비중</div></div>
-            <div class="nv-kpi"><div class="nv-kpi-l">전체 광고비 {{ wow(cs.tot.wow_cost) }}</div><div class="nv-kpi-v">{{ "{:,.0f}".format(bl.ad_spend) }}</div></div>
-            <div class="nv-kpi"><div class="nv-kpi-l">전체 매장매출</div><div class="nv-kpi-v">{{ "{:,.0f}".format(bl.store_rev) }}</div></div>
-        </div>
-        <div style="overflow-x:auto">
-        <table class="num" style="width:100%;font-size:0.84rem;border-collapse:collapse;min-width:760px">
-            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
-                <th style="text-align:left;padding:6px 8px">채널</th>
-                <th style="padding:6px 8px">광고비</th><th style="padding:6px 8px">전주대비</th>
-                <th style="padding:6px 8px">광고매출</th><th style="padding:6px 8px">ROAS</th>
-                <th style="padding:6px 8px" title="클릭당 비용">CPC</th>
-                <th style="padding:6px 8px" title="노출 1000회당 비용">CPM</th>
-                <th style="padding:6px 8px" title="전환당 비용">CPA</th>
-                <th style="padding:6px 8px">전환</th><th style="padding:6px 8px">매출비중</th>
-                <th style="padding:6px 8px;text-align:center" title="최근 7일 광고비 추세">추세</th></tr></thead>
-            <tbody>
-            {% for r in cs.rows %}
-            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
-                <td style="text-align:left;padding:6px 8px;font-weight:600">
-                    <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:{{ r.color }};margin-right:6px"></span>{{ r.name }}{% if r.connected is not none %}<span style="color:#aaa;font-weight:400;font-size:0.72rem"> {{ r.connected }}곳</span>{% endif %}</td>
-                <td style="padding:6px 8px">{{ "{:,.0f}".format(r.cost) }}</td>
-                <td style="padding:6px 8px">{{ wow(r.wow_cost) }}</td>
-                <td style="padding:6px 8px">{{ "{:,.0f}".format(r.rev) }}</td>
-                <td style="padding:6px 8px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
-                <td style="padding:6px 8px;color:#666">{% if r.cpc is not none %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
-                <td style="padding:6px 8px;color:#666">{% if r.cpm is not none %}{{ "{:,.0f}".format(r.cpm) }}{% else %}-{% endif %}</td>
-                <td style="padding:6px 8px;color:#666">{% if r.cpa is not none %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
-                <td style="padding:6px 8px;color:#666">{% if r.conv is not none %}{{ "{:,.0f}".format(r.conv) }}{% else %}-{% endif %}</td>
-                <td style="padding:6px 8px;color:#888">{% if cs.tot.rev %}{{ (r.rev / cs.tot.rev * 100)|round }}%{% else %}-{% endif %}</td>
-                <td style="padding:6px 8px;text-align:center">{{ spark(r.spark, r.color) }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-            <tfoot><tr style="text-align:right;border-top:2px solid #eee;font-weight:700;background:#fafcff">
-                <td style="text-align:left;padding:7px 8px">전체 합계</td>
-                <td style="padding:7px 8px">{{ "{:,.0f}".format(cs.tot.cost) }}</td>
-                <td style="padding:7px 8px">{{ wow(cs.tot.wow_cost) }}</td>
-                <td style="padding:7px 8px">{{ "{:,.0f}".format(cs.tot.rev) }}</td>
-                <td style="padding:7px 8px;color:{% if cs.tot.roas and cs.tot.roas>=300 %}#27ae60{% elif cs.tot.roas and cs.tot.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if cs.tot.roas is not none %}{{ cs.tot.roas }}%{% else %}-{% endif %}</td>
-                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
-                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
-            </tr></tfoot>
-        </table>
-        </div>
-        <!-- 이번달 누적(MTD) -->
-        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.82rem">
-            <strong style="color:#555">📅 이번달 누적</strong>
-            <span>광고비 <b>{{ "{:,.0f}".format(cs.mtd.cost) }}</b></span>
-            <span>매장매출 <b>{{ "{:,.0f}".format(cs.mtd.store_rev) }}</b></span>
-            <span>통합ROAS <b style="color:{% if cs.mtd.broas and cs.mtd.broas>=400 %}#27ae60{% elif cs.mtd.broas and cs.mtd.broas<200 %}#e74c3c{% else %}#e67e22{% endif %}">{% if cs.mtd.broas is not none %}{{ cs.mtd.broas }}%{% else %}-{% endif %}</b></span>
-            <span>광고의존도 <b>{% if cs.mtd.dep is not none %}{{ cs.mtd.dep }}%{% else %}-{% endif %}</b></span>
-        </div>
-        <p style="font-size:0.72rem;color:#aaa;margin:8px 0 0">
-            <b>통합 ROAS(블렌디드)</b> = 전체 매장 실매출 ÷ 전체 광고비 — 채널 광고매출 합산은 같은 구매가 여러 채널에 중복집계될 수 있어, 통합지표는 매장 실매출 기준입니다.
-            <b>모든 채널 광고비는 부가세 미포함 기준으로 통일</b>(메타 포함). 채널별 ROAS=각 채널 광고매출/광고비이며, 채널 전환·광고매출 합산은 중복집계 가능(브랜드검색 등 저예산 채널은 ROAS 과대평가될 수 있음).
-        </p>
-    </div>
-    {% endif %}
-
-    <!-- 쇼핑박스 PC/MO 상세 -->
-    {% if shopbox_detail and shopbox_detail.has_data %}
-    {% set sb = shopbox_detail %}
-    {% macro num(v) %}{% if v is not none %}{{ "{:,.0f}".format(v) }}{% else %}-{% endif %}{% endmacro %}
-    {% macro roas(v) %}<b style="color:{% if v and v>=300 %}#27ae60{% elif v and v<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if v is not none %}{{ v }}%{% else %}-{% endif %}</b>{% endmacro %}
-    <div class="card">
-        <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🛍 쇼핑박스 상세
-            <span style="font-size:0.76rem;color:#888;font-weight:400">PC 주간입찰 · MO 월간입찰 · 오늘(실시간) vs 어제</span>
-        </h2>
-        <!-- PC/MO 디바이스 타일 (오늘 vs 어제) -->
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px">
-            {% for dv, label, bg in [('pc','💻 PC (주간)','#f5f3ff'), ('mo','📱 MO (월간/트렌드픽)','#fff5fb')] %}
-            <div style="background:{{ bg }};border-radius:10px;padding:10px 12px">
-                <div style="font-weight:700;font-size:0.86rem;margin-bottom:6px">{{ label }}</div>
-                <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
-                    <thead><tr style="color:#aaa;font-size:.66rem;text-align:right">
-                        <th></th><th>노출</th><th>클릭</th><th>CTR</th><th>광고비</th><th>매출</th><th>ROAS</th></tr></thead>
-                    <tbody>
-                    {% for per, plab, pc in [('t','오늘','#7e57c2'), ('y','어제','#aaa')] %}{% set d = sb[per][dv] %}
-                    <tr style="text-align:right">
-                        <td style="text-align:left;font-weight:700;color:{{ pc }}">{{ plab }}{% if per=='t' %} <span style="font-size:.6rem;color:#bbb">실시간</span>{% endif %}</td>
-                        <td>{{ num(d.imp) }}</td><td>{{ num(d.clk) }}</td>
-                        <td>{% if d.ctr is not none %}{{ d.ctr }}%{% else %}-{% endif %}</td>
-                        <td>{{ num(d.cost) }}</td><td>{{ num(d.rev) }}</td><td>{{ roas(d.roas) }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endfor %}
-        </div>
-        {% if sb.y.pc.cost == 0 and sb.y.mo.cost == 0 %}
-        <p style="font-size:0.72rem;color:#e67e22;margin:2px 0 8px">⚠ 광고비/ROAS는 <code>/admin</code>에서 낙찰가를 입력하면 채워집니다 (노출·클릭·매출은 자동 수집됨).</p>
-        {% endif %}
-        <!-- 매장별 (어제) -->
-        {% if sb.stores %}
-        <div style="overflow-x:auto">
-        <table class="num" style="width:100%;font-size:0.82rem;border-collapse:collapse;min-width:560px">
-            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
-                <th style="text-align:left;padding:5px 8px">매장</th><th style="padding:5px 8px">구분</th>
-                <th style="padding:5px 8px">노출</th><th style="padding:5px 8px">클릭</th><th style="padding:5px 8px">CTR</th>
-                <th style="padding:5px 8px">광고비</th><th style="padding:5px 8px">매출</th><th style="padding:5px 8px">ROAS</th></tr></thead>
-            <tbody>
-            {% for r in sb.stores %}
-            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
-                <td style="text-align:left;padding:5px 8px;font-weight:600">{{ r.label }}</td>
-                <td style="padding:5px 8px;color:#888">{{ r.device }}</td>
-                <td style="padding:5px 8px">{{ num(r.imp) }}</td>
-                <td style="padding:5px 8px">{{ num(r.clk) }}</td>
-                <td style="padding:5px 8px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
-                <td style="padding:5px 8px">{{ num(r.cost) }}</td>
-                <td style="padding:5px 8px">{{ num(r.rev) }}</td>
-                <td style="padding:5px 8px">{{ roas(r.roas) }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        </div>
-        {% endif %}
-        <!-- 최근 7일 추세 -->
-        <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:10px;padding:6px 10px;font-size:0.8rem">
-            <strong style="color:#555">📈 최근 7일</strong>
-            <span style="display:inline-flex;align-items:center;gap:6px">노출 {{ spark(sb.spark_imp, '#7e57c2') }}</span>
-            <span style="display:inline-flex;align-items:center;gap:6px">매출 {{ spark(sb.spark_rev, '#27ae60') }}</span>
-            <span style="color:#bbb;font-size:.7rem">{{ sb.spark_days[0] }} → {{ sb.spark_days[-1] }}</span>
-        </div>
-        <!-- 이번달 누적 -->
-        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:4px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.8rem">
-            <strong style="color:#555">📅 이번달 누적</strong>
-            {% for dv, lab in [('pc','PC'), ('mo','MO')] %}{% set d = sb.m[dv] %}
-            <span>{{ lab }} 노출 <b>{{ num(d.imp) }}</b> · 클릭 <b>{{ num(d.clk) }}</b> · 매출 <b>{{ num(d.rev) }}</b>{% if d.roas is not none %} · ROAS {{ roas(d.roas) }}{% endif %}</span>
-            {% endfor %}
-            {% if sb.last_run %}<span style="margin-left:auto;color:#aaa;font-size:.72rem">수집 {{ sb.last_run }}</span>{% endif %}
-        </div>
-    </div>
-    {% endif %}
-
     <!-- 최근 빠진 데이터 백필 -->
     {% if request.args.get('backfill') == 'started' %}
     <div class="card" style="padding:10px 16px; background:#eafaf0; border-color:#bce8cf; font-size:0.85rem; color:#1e8449">
@@ -503,6 +351,7 @@
     </div>
     {% endif %}
 
+    <h2 class="dash-section" style="margin:30px 4px 12px;font-size:1.2rem;font-weight:800;color:#1f2d3d;border-bottom:2px solid #e8ebef;padding-bottom:8px">⭐ 핵심</h2>
     <!-- 1. 오늘 누적 표 (매출 큰 순) -->
     <div class="card">
         <h2>📊 오늘 누적 — {{ today }} <span style="font-size:0.78rem; color:#888; font-weight:400">현재 {{ mega.cur_hour if mega else now }}시</span></h2>
@@ -733,35 +582,210 @@
         </script>
     </div>
 
-    <!-- 월 매출목표 달성률 -->
-    {% if goals %}
+    <!-- 운영 상태 + 알람 -->
+    <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div>
+            <h2 style="border-bottom:none;padding-bottom:0">⚙️ 운영 상태</h2>
+            <table style="font-size:0.88rem;margin-top:8px">
+                <tr><td style="padding:4px 8px;color:#666">라이브 인터벌</td>
+                    <td><strong>{{ ops_status.live_interval }}분</strong>
+                        {% if ops_status.live_active %}<span class="badge badge-on" style="margin-left:6px">활성</span>
+                        {% else %}<span class="badge badge-off" style="margin-left:6px">비활성</span>{% endif %}
+                    </td></tr>
+                <tr><td style="padding:4px 8px;color:#666">다음 라이브</td>
+                    <td><strong>{{ ops_status.next_live }}</strong></td></tr>
+                <tr><td style="padding:4px 8px;color:#666">오늘 실행</td>
+                    <td><strong style="color:#27ae60">{{ ops_status.today_success_runs }}건 성공</strong>
+                        {% if ops_status.today_failed_runs %}
+                            · <strong style="color:#e74c3c">{{ ops_status.today_failed_runs }}건 실패</strong>
+                        {% endif %}
+                    </td></tr>
+                <tr><td style="padding:4px 8px;color:#666">다음 시트 기록</td>
+                    <td><strong>{{ ops_status.next_daily }}</strong></td></tr>
+                {% if ops_status.last_run %}
+                <tr><td style="padding:4px 8px;color:#666">마지막 실행</td>
+                    <td>
+                        {{ ops_status.last_run.cafe24_id }}
+                        <span class="badge badge-{{ 'success' if ops_status.last_run.status == 'success' else ('error' if ops_status.last_run.status == 'error' else 'running') }}" style="margin-left:6px">{{ ops_status.last_run.status }}</span>
+                        <span class="label-sub" style="margin-left:6px;color:#aaa">{{ ops_status.last_run.started_at[5:16] if ops_status.last_run.started_at|length >= 16 else ops_status.last_run.started_at }}</span>
+                    </td></tr>
+                {% endif %}
+                <tr><td style="padding:4px 8px;color:#666">메타 광고 수집</td>
+                    <td>{% if ops_status.meta_last %}<span style="color:#27ae60">🟢 {{ ops_status.meta_last }}</span>{% else %}<span style="color:#aaa">대기</span>{% endif %}</td></tr>
+            </table>
+            <!-- 자동 스케줄 -->
+            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e0e0e0">
+                <div style="font-size:0.8rem; font-weight:600; color:#555; margin-bottom:4px">⏱ 자동 스케줄 (다음 실행)</div>
+                <table style="font-size:0.78rem; width:100%">
+                    {% for j in ops_status.jobs %}
+                    <tr><td style="padding:2px 8px; color:#666">{{ j.label }}</td>
+                        <td style="text-align:right; color:#888; font-variant-numeric:tabular-nums">{{ j.next }}</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <div>
+            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length + ad_alerts|length + (validate_warnings|length) }}건</span></h2>
+            {% if alerts or ad_alerts or validate_warnings %}
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
+                {% for w in validate_warnings %}
+                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.84rem;background:#fef0f0;border-left:3px solid #c0392b">
+                    <span>🔬</span>
+                    <span><strong>{{ w.label }}</strong> 데이터 검증 경고 ({{ w.date }}) · <span style="color:#666">{{ w.warns|join(' / ') }}</span></span>
+                </div>
+                {% endfor %}
+                {% for a in ad_alerts %}
+                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;background:#fff0f5;border-left:3px solid #d63384">
+                    <span style="font-size:0.95rem">📣</span>
+                    <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
+                </div>
+                {% endfor %}
+                {% for a in alerts %}
+                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;
+                            background:{% if a.type == 'critical' %}#fee{% elif a.type == 'partial' %}#fff5e6{% elif a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% elif a.type == 'stuck' or a.type == 'timeout' %}#fef0f0{% else %}#f0f4ff{% endif %};
+                            border-left:3px solid {% if a.type == 'critical' %}#c0392b{% elif a.type == 'partial' %}#f39c12{% elif a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% elif a.type == 'stuck' %}#8e44ad{% elif a.type == 'timeout' %}#c0392b{% else %}#4a90d9{% endif %}">
+                    <span style="font-size:0.95rem">{% if a.type == 'critical' %}🚨{% elif a.type == 'partial' %}⚠️{% elif a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% elif a.type == 'stuck' %}🔧{% elif a.type == 'timeout' %}⏰{% else %}🤖{% endif %}</span>
+                    <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty" style="margin-top:8px;font-size:0.86rem">이상 없음 ✅</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <h2 class="dash-section" style="margin:30px 4px 12px;font-size:1.2rem;font-weight:800;color:#1f2d3d;border-bottom:2px solid #e8ebef;padding-bottom:8px">📣 광고</h2>
+    <!-- 전 채널 광고 요약 + 통합(블렌디드) + 전주대비 + MTD -->
+    {% if channel_summary and channel_summary.has_data %}
+    {% macro wow(d) %}{% if d is not none %}<span style="font-size:.7rem;color:{% if d>0 %}#27ae60{% elif d<0 %}#e74c3c{% else %}#999{% endif %}">{% if d>0 %}▲{% elif d<0 %}▼{% endif %}{{ d|abs }}%</span>{% endif %}{% endmacro %}
+    {% set cs = channel_summary %}{% set bl = cs.blended %}
     <div class="card">
-        <h2>🎯 월 매출목표 달성률 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ goal_month }}월 · 이번달 누적(MTD)</span></h2>
-        <p class="card-sub">페이스 = 경과일 기준 진행 속도(100%=정상). 예상 = 현재 페이스로 추정한 월말 매출. 목표는 계정관리에서 설정.</p>
-        <table class="num" style="width:100%; font-size:0.85rem">
-            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
-                <th style="text-align:left;padding:4px 8px">매장</th><th style="padding:4px 8px">목표</th>
-                <th style="padding:4px 8px">누적</th><th style="padding:4px 8px">달성률</th>
-                <th style="padding:4px 8px;width:22%">진행</th><th style="padding:4px 8px">페이스</th><th style="padding:4px 8px">월말 예상</th>
-            </tr></thead>
+        <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">📊 광고 채널 요약
+            <span style="font-size:0.76rem;color:#888;font-weight:400">{{ cs.date[5:] }} (어제) · 전주({{ cs.last_week[5:] }}) 동요일 대비</span>
+        </h2>
+        <!-- 통합(블렌디드) 히어로 -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px">
+            <div class="nv-kpi" style="background:#f4f8ff"><div class="nv-kpi-l">통합 ROAS(블렌디드)</div>
+                <div class="nv-kpi-v" style="color:{% if bl.broas and bl.broas>=400 %}#27ae60{% elif bl.broas and bl.broas<200 %}#e74c3c{% else %}#e67e22{% endif %}">{% if bl.broas is not none %}{{ bl.broas }}%{% else %}-{% endif %}
+                {% if bl.broas is not none and bl.broas_w is not none %}{{ wow(((bl.broas-bl.broas_w)/bl.broas_w*100)|round if bl.broas_w else none) }}{% endif %}</div>
+                <div style="font-size:.64rem;color:#aaa">전체매장매출÷광고비</div></div>
+            <div class="nv-kpi" style="background:#fff7f0"><div class="nv-kpi-l">광고 의존도</div>
+                <div class="nv-kpi-v" style="color:{% if bl.dep and bl.dep>=50 %}#e74c3c{% elif bl.dep and bl.dep>=30 %}#e67e22{% else %}#27ae60{% endif %}">{% if bl.dep is not none %}{{ bl.dep }}%{% else %}-{% endif %}</div>
+                <div style="font-size:.64rem;color:#aaa">매출 중 광고비 비중</div></div>
+            <div class="nv-kpi"><div class="nv-kpi-l">전체 광고비 {{ wow(cs.tot.wow_cost) }}</div><div class="nv-kpi-v">{{ "{:,.0f}".format(bl.ad_spend) }}</div></div>
+            <div class="nv-kpi"><div class="nv-kpi-l">전체 매장매출</div><div class="nv-kpi-v">{{ "{:,.0f}".format(bl.store_rev) }}</div></div>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="num" style="width:100%;font-size:0.84rem;border-collapse:collapse;min-width:760px">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
+                <th style="text-align:left;padding:6px 8px">채널</th>
+                <th style="padding:6px 8px">광고비</th><th style="padding:6px 8px">전주대비</th>
+                <th style="padding:6px 8px">광고매출</th><th style="padding:6px 8px">ROAS</th>
+                <th style="padding:6px 8px" title="클릭당 비용">CPC</th>
+                <th style="padding:6px 8px" title="노출 1000회당 비용">CPM</th>
+                <th style="padding:6px 8px" title="전환당 비용">CPA</th>
+                <th style="padding:6px 8px">전환</th><th style="padding:6px 8px">매출비중</th>
+                <th style="padding:6px 8px;text-align:center" title="최근 7일 광고비 추세">추세</th></tr></thead>
             <tbody>
-            {% for g in goals %}
-            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
-                <td style="text-align:left;padding:3px 8px;font-weight:600">{{ g.label }}</td>
-                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(g.goal) }}</td>
-                <td style="padding:3px 8px">{{ "{:,.0f}".format(g.actual) }}</td>
-                <td style="padding:3px 8px;font-weight:700;color:{% if g.pct>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#e67e22{% endif %}">{{ g.pct }}%</td>
-                <td style="padding:3px 8px"><div style="background:#eef2f7;border-radius:4px;height:14px;position:relative">
-                    <div style="background:{% if g.pct>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#4a90d9{% endif %};height:14px;border-radius:4px;width:{{ g.pct if g.pct<100 else 100 }}%"></div></div></td>
-                <td style="padding:3px 8px;color:{% if g.pace and g.pace>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#666{% endif %}">{% if g.pace is not none %}{{ g.pace }}%{% else %}-{% endif %}</td>
-                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(g.projected) }}</td>
+            {% for r in cs.rows %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:6px 8px;font-weight:600">
+                    <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:{{ r.color }};margin-right:6px"></span>{{ r.name }}{% if r.connected is not none %}<span style="color:#aaa;font-weight:400;font-size:0.72rem"> {{ r.connected }}곳</span>{% endif %}</td>
+                <td style="padding:6px 8px">{{ "{:,.0f}".format(r.cost) }}</td>
+                <td style="padding:6px 8px">{{ wow(r.wow_cost) }}</td>
+                <td style="padding:6px 8px">{{ "{:,.0f}".format(r.rev) }}</td>
+                <td style="padding:6px 8px;font-weight:700;color:{% if r.roas and r.roas>=300 %}#27ae60{% elif r.roas and r.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if r.roas is not none %}{{ r.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.cpc is not none %}{{ "{:,.0f}".format(r.cpc) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.cpm is not none %}{{ "{:,.0f}".format(r.cpm) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.cpa is not none %}{{ "{:,.0f}".format(r.cpa) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#666">{% if r.conv is not none %}{{ "{:,.0f}".format(r.conv) }}{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;color:#888">{% if cs.tot.rev %}{{ (r.rev / cs.tot.rev * 100)|round }}%{% else %}-{% endif %}</td>
+                <td style="padding:6px 8px;text-align:center">{{ spark(r.spark, r.color) }}</td>
             </tr>
             {% endfor %}
             </tbody>
+            <tfoot><tr style="text-align:right;border-top:2px solid #eee;font-weight:700;background:#fafcff">
+                <td style="text-align:left;padding:7px 8px">전체 합계</td>
+                <td style="padding:7px 8px">{{ "{:,.0f}".format(cs.tot.cost) }}</td>
+                <td style="padding:7px 8px">{{ wow(cs.tot.wow_cost) }}</td>
+                <td style="padding:7px 8px">{{ "{:,.0f}".format(cs.tot.rev) }}</td>
+                <td style="padding:7px 8px;color:{% if cs.tot.roas and cs.tot.roas>=300 %}#27ae60{% elif cs.tot.roas and cs.tot.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if cs.tot.roas is not none %}{{ cs.tot.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
+                <td style="padding:7px 8px"></td><td style="padding:7px 8px"></td><td style="padding:7px 8px"></td>
+            </tr></tfoot>
         </table>
+        </div>
+        <!-- 이번달 누적(MTD) -->
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.82rem">
+            <strong style="color:#555">📅 이번달 누적</strong>
+            <span>광고비 <b>{{ "{:,.0f}".format(cs.mtd.cost) }}</b></span>
+            <span>매장매출 <b>{{ "{:,.0f}".format(cs.mtd.store_rev) }}</b></span>
+            <span>통합ROAS <b style="color:{% if cs.mtd.broas and cs.mtd.broas>=400 %}#27ae60{% elif cs.mtd.broas and cs.mtd.broas<200 %}#e74c3c{% else %}#e67e22{% endif %}">{% if cs.mtd.broas is not none %}{{ cs.mtd.broas }}%{% else %}-{% endif %}</b></span>
+            <span>광고의존도 <b>{% if cs.mtd.dep is not none %}{{ cs.mtd.dep }}%{% else %}-{% endif %}</b></span>
+        </div>
+        <p style="font-size:0.72rem;color:#aaa;margin:8px 0 0">
+            <b>통합 ROAS(블렌디드)</b> = 전체 매장 실매출 ÷ 전체 광고비 — 채널 광고매출 합산은 같은 구매가 여러 채널에 중복집계될 수 있어, 통합지표는 매장 실매출 기준입니다.
+            <b>모든 채널 광고비는 부가세 미포함 기준으로 통일</b>(메타 포함). 채널별 ROAS=각 채널 광고매출/광고비이며, 채널 전환·광고매출 합산은 중복집계 가능(브랜드검색 등 저예산 채널은 ROAS 과대평가될 수 있음).
+        </p>
     </div>
     {% endif %}
 
+    {% if ad_summary.has_data %}
+    <!-- 주간/월간 광고 요약 -->
+    {% macro deltabadge(d) %}{% if d is not none %}<span style="font-size:0.74rem; color:{% if d>0 %}#27ae60{% elif d<0 %}#e74c3c{% else %}#888{% endif %}">{{ '▲' if d>0 else ('▼' if d<0 else '─') }}{{ '%+.1f'|format(d) }}%</span>{% endif %}{% endmacro %}
+    <div class="card">
+        <h2>🗓 주간 / 월간 광고 요약 <span style="font-size:0.78rem;color:#888;font-weight:400">선택매장 합계</span></h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+            {% for blk, title, sub in [(ad_summary.week, '주간 (최근 7일)', '이전 7일 대비'), (ad_summary.month, '월간 (이번달)', '지난달 동기간 대비')] %}
+            <div style="background:#f8fbff; border-radius:8px; padding:12px 14px">
+                <div style="font-weight:700; margin-bottom:8px">{{ title }} <span style="font-size:0.74rem; color:#999; font-weight:400">{{ sub }}</span></div>
+                <table style="width:100%; font-size:0.85rem">
+                    <tr><td style="color:#666; padding:3px 0">광고비</td>
+                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.spend) }}원</td>
+                        <td style="text-align:right">{{ deltabadge(blk.spend_d) }}</td></tr>
+                    <tr><td style="color:#666; padding:3px 0">광고매출</td>
+                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.rev) }}원</td>
+                        <td style="text-align:right">{{ deltabadge(blk.rev_d) }}</td></tr>
+                    <tr><td style="color:#666; padding:3px 0">ROAS</td>
+                        <td style="text-align:right; font-weight:700; color:{% if blk.this.roas and blk.this.roas>=300 %}#27ae60{% elif blk.this.roas and blk.this.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if blk.this.roas is not none %}{{ blk.this.roas }}%{% else %}-{% endif %}</td>
+                        <td style="text-align:right">{{ deltabadge(blk.roas_d) }}</td></tr>
+                    <tr><td style="color:#666; padding:3px 0">구매</td>
+                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.purch) }}건</td>
+                        <td style="text-align:right; color:#aaa; font-size:0.74rem">이전 {{ "{:,.0f}".format(blk.last.purch) }}</td></tr>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if ad_eff.has_data %}
+    <!-- 실행 제안 (자동 인사이트) -->
+    <div class="card" style="background:#fffdf5; border:1px solid #f0e6c0">
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">💡 실행 제안
+            <span style="font-size:0.78rem; color:#888; font-weight:400">어제 광고 기준 · 목표 ROAS</span>
+            <form method="POST" action="/settings/target_roas" style="display:inline-flex; gap:4px; align-items:center; margin-left:auto">
+                <span style="font-size:0.78rem; color:#666">목표 ROAS</span>
+                <input name="target_roas" type="number" value="{{ target_roas }}" style="width:64px; font-size:0.8rem; padding:2px 4px">%
+                <button class="btn btn-sm" type="submit">저장</button>
+            </form>
+        </h2>
+        {% if ad_insights %}
+        <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px">
+            {% for ins in ad_insights %}
+            <div style="display:flex; gap:8px; padding:7px 10px; border-radius:6px; font-size:0.86rem;
+                background:{% if ins.kind=='up' %}#eafaf0{% elif ins.kind=='down' %}#fdeeee{% elif ins.kind=='fatigue' %}#fff4e6{% else %}#eef3fb{% endif %};
+                border-left:3px solid {% if ins.kind=='up' %}#27ae60{% elif ins.kind=='down' %}#e74c3c{% elif ins.kind=='fatigue' %}#e67e22{% else %}#4a90d9{% endif %}">
+                <span>{% if ins.kind=='up' %}📈{% elif ins.kind=='down' %}📉{% elif ins.kind=='fatigue' %}🔁{% else %}🔻{% endif %}</span>
+                <span><strong>{{ ins.label }}</strong> · <span style="color:#555">{{ ins.msg }}</span></span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}<p class="empty" style="margin-top:6px; font-size:0.86rem">제안 없음 — 전 매장 목표 ROAS 충족 ✅</p>{% endif %}
+    </div>
+
+    {% set aey = ad_eff.yesterday %}
     <!-- 메타 매장별 ROAS -->
     {% if ad_eff.has_data %}
     <div class="card">
@@ -824,158 +848,6 @@
             document.querySelectorAll('.ae-tab').forEach(function(b){ var on=b.getAttribute('data-k')===k; b.style.background=on?'#4a90d9':'#fff'; b.style.color=on?'#fff':'#555'; });
         }
         </script>
-    </div>
-    {% endif %}
-
-    {% if ad_summary.has_data %}
-    <!-- 주간/월간 광고 요약 -->
-    {% macro deltabadge(d) %}{% if d is not none %}<span style="font-size:0.74rem; color:{% if d>0 %}#27ae60{% elif d<0 %}#e74c3c{% else %}#888{% endif %}">{{ '▲' if d>0 else ('▼' if d<0 else '─') }}{{ '%+.1f'|format(d) }}%</span>{% endif %}{% endmacro %}
-    <div class="card">
-        <h2>🗓 주간 / 월간 광고 요약 <span style="font-size:0.78rem;color:#888;font-weight:400">선택매장 합계</span></h2>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
-            {% for blk, title, sub in [(ad_summary.week, '주간 (최근 7일)', '이전 7일 대비'), (ad_summary.month, '월간 (이번달)', '지난달 동기간 대비')] %}
-            <div style="background:#f8fbff; border-radius:8px; padding:12px 14px">
-                <div style="font-weight:700; margin-bottom:8px">{{ title }} <span style="font-size:0.74rem; color:#999; font-weight:400">{{ sub }}</span></div>
-                <table style="width:100%; font-size:0.85rem">
-                    <tr><td style="color:#666; padding:3px 0">광고비</td>
-                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.spend) }}원</td>
-                        <td style="text-align:right">{{ deltabadge(blk.spend_d) }}</td></tr>
-                    <tr><td style="color:#666; padding:3px 0">광고매출</td>
-                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.rev) }}원</td>
-                        <td style="text-align:right">{{ deltabadge(blk.rev_d) }}</td></tr>
-                    <tr><td style="color:#666; padding:3px 0">ROAS</td>
-                        <td style="text-align:right; font-weight:700; color:{% if blk.this.roas and blk.this.roas>=300 %}#27ae60{% elif blk.this.roas and blk.this.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if blk.this.roas is not none %}{{ blk.this.roas }}%{% else %}-{% endif %}</td>
-                        <td style="text-align:right">{{ deltabadge(blk.roas_d) }}</td></tr>
-                    <tr><td style="color:#666; padding:3px 0">구매</td>
-                        <td style="text-align:right; font-weight:600">{{ "{:,.0f}".format(blk.this.purch) }}건</td>
-                        <td style="text-align:right; color:#aaa; font-size:0.74rem">이전 {{ "{:,.0f}".format(blk.last.purch) }}</td></tr>
-                </table>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    {% if ad_eff.has_data %}
-    <!-- 실행 제안 (자동 인사이트) -->
-    <div class="card" style="background:#fffdf5; border:1px solid #f0e6c0">
-        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">💡 실행 제안
-            <span style="font-size:0.78rem; color:#888; font-weight:400">어제 광고 기준 · 목표 ROAS</span>
-            <form method="POST" action="/settings/target_roas" style="display:inline-flex; gap:4px; align-items:center; margin-left:auto">
-                <span style="font-size:0.78rem; color:#666">목표 ROAS</span>
-                <input name="target_roas" type="number" value="{{ target_roas }}" style="width:64px; font-size:0.8rem; padding:2px 4px">%
-                <button class="btn btn-sm" type="submit">저장</button>
-            </form>
-        </h2>
-        {% if ad_insights %}
-        <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px">
-            {% for ins in ad_insights %}
-            <div style="display:flex; gap:8px; padding:7px 10px; border-radius:6px; font-size:0.86rem;
-                background:{% if ins.kind=='up' %}#eafaf0{% elif ins.kind=='down' %}#fdeeee{% elif ins.kind=='fatigue' %}#fff4e6{% else %}#eef3fb{% endif %};
-                border-left:3px solid {% if ins.kind=='up' %}#27ae60{% elif ins.kind=='down' %}#e74c3c{% elif ins.kind=='fatigue' %}#e67e22{% else %}#4a90d9{% endif %}">
-                <span>{% if ins.kind=='up' %}📈{% elif ins.kind=='down' %}📉{% elif ins.kind=='fatigue' %}🔁{% else %}🔻{% endif %}</span>
-                <span><strong>{{ ins.label }}</strong> · <span style="color:#555">{{ ins.msg }}</span></span>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}<p class="empty" style="margin-top:6px; font-size:0.86rem">제안 없음 — 전 매장 목표 ROAS 충족 ✅</p>{% endif %}
-    </div>
-
-    {% set aey = ad_eff.yesterday %}
-    <!-- 광고 퍼널 -->
-    <div class="card">
-        <h2>🔻 광고 퍼널 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 ({{ aey.date }}) · 선택매장 합계</span></h2>
-        <p class="card-sub">노출 → 링크클릭 → 랜딩뷰 → 장바구니 → 결제시작 → 구매. 단계별 전환율로 이탈 구간 파악.</p>
-        {% set t = aey.tot %}
-        {% set steps = [('노출', t.imp), ('링크클릭', t.link_clk), ('랜딩뷰', t.lpv), ('장바구니', t.atc), ('결제시작', t.ic), ('구매', t.purch)] %}
-        <div style="display:flex; gap:6px; align-items:stretch; flex-wrap:wrap">
-            {% for name, val in steps %}
-            <div style="flex:1; min-width:90px; background:#f6f9fc; border-radius:8px; padding:8px 10px; text-align:center">
-                <div style="font-size:0.72rem; color:#888">{{ name }}</div>
-                <div style="font-size:1.05rem; font-weight:700; color:#4a90d9">{{ "{:,.0f}".format(val) }}</div>
-                {% if not loop.first and steps[loop.index0-1][1] %}
-                <div style="font-size:0.68rem; color:#27ae60">{{ "%.1f"|format(val / steps[loop.index0-1][1] * 100) }}%</div>
-                {% endif %}
-            </div>
-            {% if not loop.last %}<div style="align-self:center; color:#ccc">→</div>{% endif %}
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- 캠페인별 성과 -->
-    {% if ad_campaigns %}
-    <div class="card">
-        <h2>🎯 캠페인별 성과 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 · 광고비 큰 순</span></h2>
-        <table class="num" style="width:100%; font-size:0.82rem; border-collapse:collapse">
-            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
-                <th style="text-align:left;padding:4px 8px">매장</th><th style="text-align:left;padding:4px 8px">캠페인</th>
-                <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">매출</th>
-                <th style="padding:4px 8px">ROAS</th><th style="padding:4px 8px">구매</th>
-            </tr></thead>
-            <tbody>
-            {% for c in ad_campaigns %}
-            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
-                <td style="text-align:left;padding:3px 8px;color:#888">{{ c.store }}</td>
-                <td style="text-align:left;padding:3px 8px">{{ c.name }}</td>
-                <td style="padding:3px 8px">{{ "{:,.0f}".format(c.spend) }}</td>
-                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(c.rev) }}</td>
-                <td style="padding:3px 8px;font-weight:700;color:{% if c.roas and c.roas>=300 %}#27ae60{% elif c.roas and c.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if c.roas is not none %}{{ c.roas }}%{% else %}-{% endif %}</td>
-                <td style="padding:3px 8px;color:#666">{{ c.purch }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-
-    <!-- 광고(소재)별 성과 -->
-    {% if ad_creatives %}
-    <div class="card">
-        <h2>🖼 광고(소재)별 성과 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 · 광고비 큰 순 top 20</span></h2>
-        <p class="card-sub">어느 소재(광고)가 잘 나가는지. ROAS 낮은데 광고비 큰 소재는 끄거나 교체 후보.</p>
-        <table class="num" style="width:100%; font-size:0.8rem; border-collapse:collapse">
-            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
-                <th style="text-align:left;padding:4px 8px">매장</th><th style="text-align:left;padding:4px 8px">소재(광고)</th>
-                <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">매출</th>
-                <th style="padding:4px 8px">ROAS</th><th style="padding:4px 8px">구매</th>
-            </tr></thead>
-            <tbody>
-            {% for c in ad_creatives %}
-            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
-                <td style="text-align:left;padding:3px 8px;color:#888">{{ c.store }}</td>
-                <td style="text-align:left;padding:3px 8px" title="{{ c.campaign }}">{{ c.name[:34] }}</td>
-                <td style="padding:3px 8px">{{ "{:,.0f}".format(c.spend) }}</td>
-                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(c.rev) }}</td>
-                <td style="padding:3px 8px;font-weight:700;color:{% if c.roas and c.roas>=300 %}#27ae60{% elif c.roas and c.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if c.roas is not none %}{{ c.roas }}%{% else %}-{% endif %}</td>
-                <td style="padding:3px 8px;color:#666">{{ c.purch }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-
-    <!-- ROAS 추세 -->
-    {% if ad_trend %}
-    <div class="card">
-        <h2>📈 ROAS 추세 <span style="font-size:0.78rem;color:#888;font-weight:400">최근 8일 · 선택매장 합계</span></h2>
-        <table class="num" style="width:100%; font-size:0.8rem; border-collapse:collapse">
-            <thead><tr style="text-align:right;color:#888"><th style="text-align:left;padding:3px 6px">날짜</th>
-                <th style="padding:3px 6px">광고비</th><th style="padding:3px 6px">광고매출</th><th style="padding:3px 6px">ROAS</th><th style="padding:3px 6px;width:40%">　</th></tr></thead>
-            <tbody>
-            {% set maxroas = (ad_trend | map(attribute='roas') | select('!=', none) | list | max) or 100 %}
-            {% for d in ad_trend %}
-            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
-                <td style="text-align:left;padding:3px 6px">{{ d.date }}</td>
-                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.spend) }}</td>
-                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.rev) }}</td>
-                <td style="padding:3px 6px;font-weight:700;color:{% if d.roas and d.roas>=300 %}#27ae60{% elif d.roas and d.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if d.roas is not none %}{{ d.roas }}%{% else %}-{% endif %}</td>
-                <td style="padding:3px 6px"><div style="background:#eaf2fb;border-radius:3px;height:12px"><div style="background:#4a90d9;height:12px;border-radius:3px;width:{{ ((d.roas or 0)/maxroas*100)|round }}%"></div></div></td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
     </div>
     {% endif %}
 
@@ -1203,61 +1075,182 @@
     (function(){ var seen={}; document.querySelectorAll('.ch-tab').forEach(function(b){ var id=b.getAttribute('data-chid'); if(!seen[id]){ b.classList.add('active'); seen[id]=1; } }); })();
     </script>
 
-    <!-- 메타 광고 → 시트 자동입력 현황 -->
+    <!-- 쇼핑박스 PC/MO 상세 -->
+    {% if shopbox_detail and shopbox_detail.has_data %}
+    {% set sb = shopbox_detail %}
+    {% macro num(v) %}{% if v is not none %}{{ "{:,.0f}".format(v) }}{% else %}-{% endif %}{% endmacro %}
+    {% macro roas(v) %}<b style="color:{% if v and v>=300 %}#27ae60{% elif v and v<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if v is not none %}{{ v }}%{% else %}-{% endif %}</b>{% endmacro %}
     <div class="card">
-        <h2>📣 메타 광고 → 시트 자동입력
-            <span style="font-size:0.78rem; color:#888; font-weight:400">매일 07:00 자동 (최근 {{ meta_status.backfill_days }}일 보정)</span>
+        <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🛍 쇼핑박스 상세
+            <span style="font-size:0.76rem;color:#888;font-weight:400">PC 주간입찰 · MO 월간입찰 · 오늘(실시간) vs 어제</span>
         </h2>
-        <p class="card-sub">
-            Meta API로 매장별 광고성과(노출/클릭/광고비/전환/매출)를 끌어와 각 매장 <strong>효율 시트</strong>에 자동 기입합니다 (광고비 부가세 포함). 사람이 CSV 받아 입력하던 작업 대체.
-        </p>
-        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px; font-size:0.85rem">
-            <div>🔗 연결된 매장: <strong>{{ meta_status.connected }}/{{ meta_status.total }}</strong></div>
-            <div>⏱ 다음 수집: <strong>{{ meta_status.next_run or '-' }}</strong></div>
-            <div>✅ 마지막 수집: <strong>{{ meta_status.last_run or '아직 없음' }}</strong></div>
+        <!-- PC/MO 디바이스 타일 (오늘 vs 어제) -->
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px">
+            {% for dv, label, bg in [('pc','💻 PC (주간)','#f5f3ff'), ('mo','📱 MO (월간/트렌드픽)','#fff5fb')] %}
+            <div style="background:{{ bg }};border-radius:10px;padding:10px 12px">
+                <div style="font-weight:700;font-size:0.86rem;margin-bottom:6px">{{ label }}</div>
+                <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
+                    <thead><tr style="color:#aaa;font-size:.66rem;text-align:right">
+                        <th></th><th>노출</th><th>클릭</th><th>CTR</th><th>광고비</th><th>매출</th><th>ROAS</th></tr></thead>
+                    <tbody>
+                    {% for per, plab, pc in [('t','오늘','#7e57c2'), ('y','어제','#aaa')] %}{% set d = sb[per][dv] %}
+                    <tr style="text-align:right">
+                        <td style="text-align:left;font-weight:700;color:{{ pc }}">{{ plab }}{% if per=='t' %} <span style="font-size:.6rem;color:#bbb">실시간</span>{% endif %}</td>
+                        <td>{{ num(d.imp) }}</td><td>{{ num(d.clk) }}</td>
+                        <td>{% if d.ctr is not none %}{{ d.ctr }}%{% else %}-{% endif %}</td>
+                        <td>{{ num(d.cost) }}</td><td>{{ num(d.rev) }}</td><td>{{ roas(d.roas) }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
         </div>
-        <table style="font-size:0.8rem; width:100%; border-collapse:collapse">
-            <thead><tr style="border-bottom:1px solid #eee; color:#888; text-align:left">
-                <th style="padding:3px 6px">매장</th><th style="padding:3px 6px">광고계정 연결</th>
-                <th style="padding:3px 6px">시트</th><th style="padding:3px 6px">마지막 기입</th>
-            </tr></thead>
+        {% if sb.y.pc.cost == 0 and sb.y.mo.cost == 0 %}
+        <p style="font-size:0.72rem;color:#e67e22;margin:2px 0 8px">⚠ 광고비/ROAS는 <code>/admin</code>에서 낙찰가를 입력하면 채워집니다 (노출·클릭·매출은 자동 수집됨).</p>
+        {% endif %}
+        <!-- 매장별 (어제) -->
+        {% if sb.stores %}
+        <div style="overflow-x:auto">
+        <table class="num" style="width:100%;font-size:0.82rem;border-collapse:collapse;min-width:560px">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #eee">
+                <th style="text-align:left;padding:5px 8px">매장</th><th style="padding:5px 8px">구분</th>
+                <th style="padding:5px 8px">노출</th><th style="padding:5px 8px">클릭</th><th style="padding:5px 8px">CTR</th>
+                <th style="padding:5px 8px">광고비</th><th style="padding:5px 8px">매출</th><th style="padding:5px 8px">ROAS</th></tr></thead>
             <tbody>
-            {% for m in meta_status.accounts %}
-            <tr style="border-bottom:1px solid #f5f5f5">
-                <td style="padding:3px 6px">{{ m.label }}</td>
-                <td style="padding:3px 6px">{% if m.connected %}<span style="color:#27ae60">🟢 연결됨</span> <span style="color:#bbb; font-size:0.72rem">{{ m.meta_id }}</span>{% else %}<span style="color:#ccc">미연결</span>{% endif %}</td>
-                <td style="padding:3px 6px">{% if m.has_sheet %}✓{% else %}<span style="color:#ccc">없음</span>{% endif %}</td>
-                <td style="padding:3px 6px">{% if m.last %}<span style="color:#27ae60">{{ m.last }}</span>{% elif m.connected %}<span style="color:#e67e22">대기</span>{% else %}<span style="color:#ccc">-</span>{% endif %}</td>
+            {% for r in sb.stores %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:5px 8px;font-weight:600">{{ r.label }}</td>
+                <td style="padding:5px 8px;color:#888">{{ r.device }}</td>
+                <td style="padding:5px 8px">{{ num(r.imp) }}</td>
+                <td style="padding:5px 8px">{{ num(r.clk) }}</td>
+                <td style="padding:5px 8px;color:#666">{% if r.ctr is not none %}{{ r.ctr }}%{% else %}-{% endif %}</td>
+                <td style="padding:5px 8px">{{ num(r.cost) }}</td>
+                <td style="padding:5px 8px">{{ num(r.rev) }}</td>
+                <td style="padding:5px 8px">{{ roas(r.roas) }}</td>
             </tr>
             {% endfor %}
             </tbody>
         </table>
-        {% if meta_status.fill_log %}
-        <details style="margin-top:10px">
-            <summary style="cursor:pointer; font-size:0.8rem; color:#666; font-weight:600">📝 시트 입력 기록 (최근 {{ meta_status.fill_log|length }}건) — 문제 추적용</summary>
-            <table style="width:100%; font-size:0.76rem; margin-top:6px; border-collapse:collapse">
-                <thead><tr style="text-align:left; color:#999; border-bottom:1px solid #eee">
-                    <th style="padding:2px 6px">시각</th><th style="padding:2px 6px">매장</th><th style="padding:2px 6px">채널</th>
-                    <th style="padding:2px 6px">기간</th><th style="padding:2px 6px">기입</th><th style="padding:2px 6px">상태</th><th style="padding:2px 6px">상세</th>
-                </tr></thead>
-                <tbody>
-                {% for lg in meta_status.fill_log %}
-                <tr style="border-bottom:1px solid #f7f7f7; {% if lg.status=='fail' %}background:#fdeeee{% elif lg.status=='warn' %}background:#fff8ec{% endif %}">
-                    <td style="padding:2px 6px; color:#888">{{ lg.ts[5:16] }}</td>
-                    <td style="padding:2px 6px">{{ lg.account_id }}</td>
-                    <td style="padding:2px 6px">{{ lg.channel }}</td>
-                    <td style="padding:2px 6px; color:#888">{{ lg.date_range }}</td>
-                    <td style="padding:2px 6px; text-align:right">{{ lg.days_written }}일</td>
-                    <td style="padding:2px 6px">{% if lg.status=='ok' %}<span style="color:#27ae60">✓</span>{% elif lg.status=='warn' %}<span style="color:#e67e22">⚠</span>{% else %}<span style="color:#e74c3c">✗</span>{% endif %}</td>
-                    <td style="padding:2px 6px; color:#c0392b; font-size:0.72rem">{{ lg.detail[:60] }}</td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </details>
+        </div>
         {% endif %}
+        <!-- 최근 7일 추세 -->
+        <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:10px;padding:6px 10px;font-size:0.8rem">
+            <strong style="color:#555">📈 최근 7일</strong>
+            <span style="display:inline-flex;align-items:center;gap:6px">노출 {{ spark(sb.spark_imp, '#7e57c2') }}</span>
+            <span style="display:inline-flex;align-items:center;gap:6px">매출 {{ spark(sb.spark_rev, '#27ae60') }}</span>
+            <span style="color:#bbb;font-size:.7rem">{{ sb.spark_days[0] }} → {{ sb.spark_days[-1] }}</span>
+        </div>
+        <!-- 이번달 누적 -->
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:4px;padding:8px 10px;background:#fafafa;border-radius:8px;font-size:0.8rem">
+            <strong style="color:#555">📅 이번달 누적</strong>
+            {% for dv, lab in [('pc','PC'), ('mo','MO')] %}{% set d = sb.m[dv] %}
+            <span>{{ lab }} 노출 <b>{{ num(d.imp) }}</b> · 클릭 <b>{{ num(d.clk) }}</b> · 매출 <b>{{ num(d.rev) }}</b>{% if d.roas is not none %} · ROAS {{ roas(d.roas) }}{% endif %}</span>
+            {% endfor %}
+            {% if sb.last_run %}<span style="margin-left:auto;color:#aaa;font-size:.72rem">수집 {{ sb.last_run }}</span>{% endif %}
+        </div>
     </div>
+    {% endif %}
 
+    <div style="margin:14px 4px 6px;font-size:0.9rem;font-weight:700;color:#888">📈 메타 상세</div>
+    <!-- ROAS 추세 -->
+    {% if ad_trend %}
+    <div class="card">
+        <h2>📈 ROAS 추세 <span style="font-size:0.78rem;color:#888;font-weight:400">최근 8일 · 선택매장 합계</span></h2>
+        <table class="num" style="width:100%; font-size:0.8rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888"><th style="text-align:left;padding:3px 6px">날짜</th>
+                <th style="padding:3px 6px">광고비</th><th style="padding:3px 6px">광고매출</th><th style="padding:3px 6px">ROAS</th><th style="padding:3px 6px;width:40%">　</th></tr></thead>
+            <tbody>
+            {% set maxroas = (ad_trend | map(attribute='roas') | select('!=', none) | list | max) or 100 %}
+            {% for d in ad_trend %}
+            <tr style="text-align:right;border-bottom:1px solid #f7f7f7">
+                <td style="text-align:left;padding:3px 6px">{{ d.date }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.spend) }}</td>
+                <td style="padding:3px 6px;color:#666">{{ "{:,.0f}".format(d.rev) }}</td>
+                <td style="padding:3px 6px;font-weight:700;color:{% if d.roas and d.roas>=300 %}#27ae60{% elif d.roas and d.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if d.roas is not none %}{{ d.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 6px"><div style="background:#eaf2fb;border-radius:3px;height:12px"><div style="background:#4a90d9;height:12px;border-radius:3px;width:{{ ((d.roas or 0)/maxroas*100)|round }}%"></div></div></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- 광고 퍼널 -->
+    <div class="card">
+        <h2>🔻 광고 퍼널 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 ({{ aey.date }}) · 선택매장 합계</span></h2>
+        <p class="card-sub">노출 → 링크클릭 → 랜딩뷰 → 장바구니 → 결제시작 → 구매. 단계별 전환율로 이탈 구간 파악.</p>
+        {% set t = aey.tot %}
+        {% set steps = [('노출', t.imp), ('링크클릭', t.link_clk), ('랜딩뷰', t.lpv), ('장바구니', t.atc), ('결제시작', t.ic), ('구매', t.purch)] %}
+        <div style="display:flex; gap:6px; align-items:stretch; flex-wrap:wrap">
+            {% for name, val in steps %}
+            <div style="flex:1; min-width:90px; background:#f6f9fc; border-radius:8px; padding:8px 10px; text-align:center">
+                <div style="font-size:0.72rem; color:#888">{{ name }}</div>
+                <div style="font-size:1.05rem; font-weight:700; color:#4a90d9">{{ "{:,.0f}".format(val) }}</div>
+                {% if not loop.first and steps[loop.index0-1][1] %}
+                <div style="font-size:0.68rem; color:#27ae60">{{ "%.1f"|format(val / steps[loop.index0-1][1] * 100) }}%</div>
+                {% endif %}
+            </div>
+            {% if not loop.last %}<div style="align-self:center; color:#ccc">→</div>{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 캠페인별 성과 -->
+    {% if ad_campaigns %}
+    <div class="card">
+        <h2>🎯 캠페인별 성과 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 · 광고비 큰 순</span></h2>
+        <table class="num" style="width:100%; font-size:0.82rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="text-align:left;padding:4px 8px">캠페인</th>
+                <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">매출</th>
+                <th style="padding:4px 8px">ROAS</th><th style="padding:4px 8px">구매</th>
+            </tr></thead>
+            <tbody>
+            {% for c in ad_campaigns %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;color:#888">{{ c.store }}</td>
+                <td style="text-align:left;padding:3px 8px">{{ c.name }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(c.spend) }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(c.rev) }}</td>
+                <td style="padding:3px 8px;font-weight:700;color:{% if c.roas and c.roas>=300 %}#27ae60{% elif c.roas and c.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if c.roas is not none %}{{ c.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{{ c.purch }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- 광고(소재)별 성과 -->
+    {% if ad_creatives %}
+    <div class="card">
+        <h2>🖼 광고(소재)별 성과 <span style="font-size:0.78rem;color:#888;font-weight:400">어제 · 광고비 큰 순 top 20</span></h2>
+        <p class="card-sub">어느 소재(광고)가 잘 나가는지. ROAS 낮은데 광고비 큰 소재는 끄거나 교체 후보.</p>
+        <table class="num" style="width:100%; font-size:0.8rem; border-collapse:collapse">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="text-align:left;padding:4px 8px">소재(광고)</th>
+                <th style="padding:4px 8px">광고비</th><th style="padding:4px 8px">매출</th>
+                <th style="padding:4px 8px">ROAS</th><th style="padding:4px 8px">구매</th>
+            </tr></thead>
+            <tbody>
+            {% for c in ad_creatives %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;color:#888">{{ c.store }}</td>
+                <td style="text-align:left;padding:3px 8px" title="{{ c.campaign }}">{{ c.name[:34] }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(c.spend) }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(c.rev) }}</td>
+                <td style="padding:3px 8px;font-weight:700;color:{% if c.roas and c.roas>=300 %}#27ae60{% elif c.roas and c.roas<150 %}#e74c3c{% else %}#e67e22{% endif %}">{% if c.roas is not none %}{{ c.roas }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{{ c.purch }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <h2 class="dash-section" style="margin:30px 4px 12px;font-size:1.2rem;font-weight:800;color:#1f2d3d;border-bottom:2px solid #e8ebef;padding-bottom:8px">🏬 매장</h2>
     <!-- 카페24 상품 분석 (top 5) — 기간 탭 -->
     {% if product_periods %}
     {% set period_labels = {'today':'오늘 (진행중)', 'yesterday':'전일 (확정)', '7d':'최근 7일 (추세)'} %}
@@ -1911,78 +1904,35 @@
             </table>
         </div>
     </div>
-    <!-- 운영 상태 + 알람 -->
-    <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-        <div>
-            <h2 style="border-bottom:none;padding-bottom:0">⚙️ 운영 상태</h2>
-            <table style="font-size:0.88rem;margin-top:8px">
-                <tr><td style="padding:4px 8px;color:#666">라이브 인터벌</td>
-                    <td><strong>{{ ops_status.live_interval }}분</strong>
-                        {% if ops_status.live_active %}<span class="badge badge-on" style="margin-left:6px">활성</span>
-                        {% else %}<span class="badge badge-off" style="margin-left:6px">비활성</span>{% endif %}
-                    </td></tr>
-                <tr><td style="padding:4px 8px;color:#666">다음 라이브</td>
-                    <td><strong>{{ ops_status.next_live }}</strong></td></tr>
-                <tr><td style="padding:4px 8px;color:#666">오늘 실행</td>
-                    <td><strong style="color:#27ae60">{{ ops_status.today_success_runs }}건 성공</strong>
-                        {% if ops_status.today_failed_runs %}
-                            · <strong style="color:#e74c3c">{{ ops_status.today_failed_runs }}건 실패</strong>
-                        {% endif %}
-                    </td></tr>
-                <tr><td style="padding:4px 8px;color:#666">다음 시트 기록</td>
-                    <td><strong>{{ ops_status.next_daily }}</strong></td></tr>
-                {% if ops_status.last_run %}
-                <tr><td style="padding:4px 8px;color:#666">마지막 실행</td>
-                    <td>
-                        {{ ops_status.last_run.cafe24_id }}
-                        <span class="badge badge-{{ 'success' if ops_status.last_run.status == 'success' else ('error' if ops_status.last_run.status == 'error' else 'running') }}" style="margin-left:6px">{{ ops_status.last_run.status }}</span>
-                        <span class="label-sub" style="margin-left:6px;color:#aaa">{{ ops_status.last_run.started_at[5:16] if ops_status.last_run.started_at|length >= 16 else ops_status.last_run.started_at }}</span>
-                    </td></tr>
-                {% endif %}
-                <tr><td style="padding:4px 8px;color:#666">메타 광고 수집</td>
-                    <td>{% if ops_status.meta_last %}<span style="color:#27ae60">🟢 {{ ops_status.meta_last }}</span>{% else %}<span style="color:#aaa">대기</span>{% endif %}</td></tr>
-            </table>
-            <!-- 자동 스케줄 -->
-            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e0e0e0">
-                <div style="font-size:0.8rem; font-weight:600; color:#555; margin-bottom:4px">⏱ 자동 스케줄 (다음 실행)</div>
-                <table style="font-size:0.78rem; width:100%">
-                    {% for j in ops_status.jobs %}
-                    <tr><td style="padding:2px 8px; color:#666">{{ j.label }}</td>
-                        <td style="text-align:right; color:#888; font-variant-numeric:tabular-nums">{{ j.next }}</td></tr>
-                    {% endfor %}
-                </table>
-            </div>
-        </div>
-        <div>
-            <h2 style="border-bottom:none;padding-bottom:0">🚨 알람 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ alerts|length + ad_alerts|length + (validate_warnings|length) }}건</span></h2>
-            {% if alerts or ad_alerts or validate_warnings %}
-            <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:160px;overflow-y:auto">
-                {% for w in validate_warnings %}
-                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.84rem;background:#fef0f0;border-left:3px solid #c0392b">
-                    <span>🔬</span>
-                    <span><strong>{{ w.label }}</strong> 데이터 검증 경고 ({{ w.date }}) · <span style="color:#666">{{ w.warns|join(' / ') }}</span></span>
-                </div>
-                {% endfor %}
-                {% for a in ad_alerts %}
-                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;background:#fff0f5;border-left:3px solid #d63384">
-                    <span style="font-size:0.95rem">📣</span>
-                    <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
-                </div>
-                {% endfor %}
-                {% for a in alerts %}
-                <div style="display:flex;gap:8px;padding:6px 10px;border-radius:6px;font-size:0.86rem;
-                            background:{% if a.type == 'critical' %}#fee{% elif a.type == 'partial' %}#fff5e6{% elif a.type == 'down' %}#fff5f5{% elif a.type == 'missing' %}#fff9e6{% elif a.type == 'stuck' or a.type == 'timeout' %}#fef0f0{% else %}#f0f4ff{% endif %};
-                            border-left:3px solid {% if a.type == 'critical' %}#c0392b{% elif a.type == 'partial' %}#f39c12{% elif a.type == 'down' %}#e74c3c{% elif a.type == 'missing' %}#f0ad4e{% elif a.type == 'stuck' %}#8e44ad{% elif a.type == 'timeout' %}#c0392b{% else %}#4a90d9{% endif %}">
-                    <span style="font-size:0.95rem">{% if a.type == 'critical' %}🚨{% elif a.type == 'partial' %}⚠️{% elif a.type == 'down' %}📉{% elif a.type == 'missing' %}⏳{% elif a.type == 'stuck' %}🔧{% elif a.type == 'timeout' %}⏰{% else %}🤖{% endif %}</span>
-                    <span><strong>{{ a.label }}</strong> · <span style="color:#666">{{ a.msg }}</span></span>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="empty" style="margin-top:8px;font-size:0.86rem">이상 없음 ✅</p>
-            {% endif %}
-        </div>
+    <h2 class="dash-section" style="margin:30px 4px 12px;font-size:1.2rem;font-weight:800;color:#1f2d3d;border-bottom:2px solid #e8ebef;padding-bottom:8px">⚙️ 기타</h2>
+    <!-- 월 매출목표 달성률 -->
+    {% if goals %}
+    <div class="card">
+        <h2>🎯 월 매출목표 달성률 <span style="font-size:0.78rem;color:#888;font-weight:400">{{ goal_month }}월 · 이번달 누적(MTD)</span></h2>
+        <p class="card-sub">페이스 = 경과일 기준 진행 속도(100%=정상). 예상 = 현재 페이스로 추정한 월말 매출. 목표는 계정관리에서 설정.</p>
+        <table class="num" style="width:100%; font-size:0.85rem">
+            <thead><tr style="text-align:right;color:#888;border-bottom:1px solid #e5e5e5">
+                <th style="text-align:left;padding:4px 8px">매장</th><th style="padding:4px 8px">목표</th>
+                <th style="padding:4px 8px">누적</th><th style="padding:4px 8px">달성률</th>
+                <th style="padding:4px 8px;width:22%">진행</th><th style="padding:4px 8px">페이스</th><th style="padding:4px 8px">월말 예상</th>
+            </tr></thead>
+            <tbody>
+            {% for g in goals %}
+            <tr style="text-align:right;border-bottom:1px solid #f5f5f5">
+                <td style="text-align:left;padding:3px 8px;font-weight:600">{{ g.label }}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(g.goal) }}</td>
+                <td style="padding:3px 8px">{{ "{:,.0f}".format(g.actual) }}</td>
+                <td style="padding:3px 8px;font-weight:700;color:{% if g.pct>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#e67e22{% endif %}">{{ g.pct }}%</td>
+                <td style="padding:3px 8px"><div style="background:#eef2f7;border-radius:4px;height:14px;position:relative">
+                    <div style="background:{% if g.pct>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#4a90d9{% endif %};height:14px;border-radius:4px;width:{{ g.pct if g.pct<100 else 100 }}%"></div></div></td>
+                <td style="padding:3px 8px;color:{% if g.pace and g.pace>=100 %}#27ae60{% elif g.pace and g.pace<90 %}#e74c3c{% else %}#666{% endif %}">{% if g.pace is not none %}{{ g.pace }}%{% else %}-{% endif %}</td>
+                <td style="padding:3px 8px;color:#666">{{ "{:,.0f}".format(g.projected) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
     </div>
+    {% endif %}
 
     <!-- CapSolver 사용 현황 -->
     {% if capsolver %}
@@ -2024,6 +1974,61 @@
         </table>
     </div>
     {% endif %}
+
+    <!-- 메타 광고 → 시트 자동입력 현황 -->
+    <div class="card">
+        <h2>📣 메타 광고 → 시트 자동입력
+            <span style="font-size:0.78rem; color:#888; font-weight:400">매일 07:00 자동 (최근 {{ meta_status.backfill_days }}일 보정)</span>
+        </h2>
+        <p class="card-sub">
+            Meta API로 매장별 광고성과(노출/클릭/광고비/전환/매출)를 끌어와 각 매장 <strong>효율 시트</strong>에 자동 기입합니다 (광고비 부가세 포함). 사람이 CSV 받아 입력하던 작업 대체.
+        </p>
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px; font-size:0.85rem">
+            <div>🔗 연결된 매장: <strong>{{ meta_status.connected }}/{{ meta_status.total }}</strong></div>
+            <div>⏱ 다음 수집: <strong>{{ meta_status.next_run or '-' }}</strong></div>
+            <div>✅ 마지막 수집: <strong>{{ meta_status.last_run or '아직 없음' }}</strong></div>
+        </div>
+        <table style="font-size:0.8rem; width:100%; border-collapse:collapse">
+            <thead><tr style="border-bottom:1px solid #eee; color:#888; text-align:left">
+                <th style="padding:3px 6px">매장</th><th style="padding:3px 6px">광고계정 연결</th>
+                <th style="padding:3px 6px">시트</th><th style="padding:3px 6px">마지막 기입</th>
+            </tr></thead>
+            <tbody>
+            {% for m in meta_status.accounts %}
+            <tr style="border-bottom:1px solid #f5f5f5">
+                <td style="padding:3px 6px">{{ m.label }}</td>
+                <td style="padding:3px 6px">{% if m.connected %}<span style="color:#27ae60">🟢 연결됨</span> <span style="color:#bbb; font-size:0.72rem">{{ m.meta_id }}</span>{% else %}<span style="color:#ccc">미연결</span>{% endif %}</td>
+                <td style="padding:3px 6px">{% if m.has_sheet %}✓{% else %}<span style="color:#ccc">없음</span>{% endif %}</td>
+                <td style="padding:3px 6px">{% if m.last %}<span style="color:#27ae60">{{ m.last }}</span>{% elif m.connected %}<span style="color:#e67e22">대기</span>{% else %}<span style="color:#ccc">-</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if meta_status.fill_log %}
+        <details style="margin-top:10px">
+            <summary style="cursor:pointer; font-size:0.8rem; color:#666; font-weight:600">📝 시트 입력 기록 (최근 {{ meta_status.fill_log|length }}건) — 문제 추적용</summary>
+            <table style="width:100%; font-size:0.76rem; margin-top:6px; border-collapse:collapse">
+                <thead><tr style="text-align:left; color:#999; border-bottom:1px solid #eee">
+                    <th style="padding:2px 6px">시각</th><th style="padding:2px 6px">매장</th><th style="padding:2px 6px">채널</th>
+                    <th style="padding:2px 6px">기간</th><th style="padding:2px 6px">기입</th><th style="padding:2px 6px">상태</th><th style="padding:2px 6px">상세</th>
+                </tr></thead>
+                <tbody>
+                {% for lg in meta_status.fill_log %}
+                <tr style="border-bottom:1px solid #f7f7f7; {% if lg.status=='fail' %}background:#fdeeee{% elif lg.status=='warn' %}background:#fff8ec{% endif %}">
+                    <td style="padding:2px 6px; color:#888">{{ lg.ts[5:16] }}</td>
+                    <td style="padding:2px 6px">{{ lg.account_id }}</td>
+                    <td style="padding:2px 6px">{{ lg.channel }}</td>
+                    <td style="padding:2px 6px; color:#888">{{ lg.date_range }}</td>
+                    <td style="padding:2px 6px; text-align:right">{{ lg.days_written }}일</td>
+                    <td style="padding:2px 6px">{% if lg.status=='ok' %}<span style="color:#27ae60">✓</span>{% elif lg.status=='warn' %}<span style="color:#e67e22">⚠</span>{% else %}<span style="color:#e74c3c">✗</span>{% endif %}</td>
+                    <td style="padding:2px 6px; color:#c0392b; font-size:0.72rem">{{ lg.detail[:60] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+    </div>
 
 </div></div></div>
 {% include '_feedback_widget.html' %}
