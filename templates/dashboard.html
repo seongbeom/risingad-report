@@ -1055,17 +1055,17 @@
     {% endif %}
     {% endmacro %}
 
-    {{ channel_card('criteo',
-        '<span style="width:18px;height:18px;border-radius:5px;background:#f76b1c;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.62rem">C</span> 크리테오',
-        '#f76b1c', criteo_eff, criteo_trend, '크리테오',
-        '세션 연동 ' ~ criteo_eff.connected ~ '개 매장 · 클릭후7일 어트리뷰션',
-        '전환/매출은 클릭후 7일 기준(criteo sales_pc7d/revenue_pc7d). ROAS=광고매출/광고비.') }}
-
     {{ channel_card('gfa',
         '<span style="width:18px;height:18px;border-radius:5px;background:#2e7d32;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.62rem">N</span> 네이버 성과형(GFA)',
         '#2e7d32', gfa_eff, gfa_trend, '성과형',
         '세션 연동 ' ~ gfa_eff.connected ~ '개 매장 · 개별 광고계정 보고서',
         '전환=구매완료수, 매출=구매완료 전환매출액. 관리계정 합산이 아닌 개별계정 기준. ROAS=광고매출/광고비.') }}
+
+    {{ channel_card('criteo',
+        '<span style="width:18px;height:18px;border-radius:5px;background:#f76b1c;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.62rem">C</span> 크리테오',
+        '#f76b1c', criteo_eff, criteo_trend, '크리테오',
+        '세션 연동 ' ~ criteo_eff.connected ~ '개 매장 · 클릭후7일 어트리뷰션',
+        '전환/매출은 클릭후 7일 기준(criteo sales_pc7d/revenue_pc7d). ROAS=광고매출/광고비.') }}
 
     <script>
     function switchChTab(chid, k){
