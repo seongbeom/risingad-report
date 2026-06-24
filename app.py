@@ -4582,12 +4582,12 @@ SHEET_TARGETS = [
     # ── 효율탭: 공식 API 없음/제한 → 크롤러로 가능 ──
     {"tab": "네이버 쇼핑박스 PC", "group": "효율탭 광고채널", "what": "쇼핑박스 PC",
      "fields": "노출·클릭·광고비·전환·매출",
-     "way": "crawler", "status": "manual", "last_key": None,
-     "need": "공식 API 없음 → 보장형 관리자 크롤러 구축 필요"},
+     "way": "crawler", "status": "live", "last_key": "shopbox_last_run",
+     "need": "노출/클릭/매출 자동크롤, 광고비는 낙찰가 입력→일별분할(자동)"},
     {"tab": "네이버 쇼핑박스 MO (트렌드픽)", "group": "효율탭 광고채널", "what": "쇼핑박스 모바일",
      "fields": "노출·클릭·광고비·전환·매출",
-     "way": "crawler", "status": "manual", "last_key": None,
-     "need": "공식 API 없음 → 관리자 크롤러 구축 필요"},
+     "way": "crawler", "status": "live", "last_key": "shopbox_last_run",
+     "need": "노출/클릭/매출 자동크롤, 광고비는 낙찰가 입력→일별분할(자동)"},
     {"tab": "다음 쇼핑박스", "group": "효율탭 광고채널", "what": "다음 쇼핑박스",
      "fields": "노출·클릭·광고비·전환·매출",
      "way": "crawler", "status": "manual", "last_key": None,
@@ -4649,12 +4649,12 @@ CAFE24_SHEET_MAP = [
 CHANNEL_MODE = {
     "Total": "formula", "카페24": "formula",
     "메타": "auto", "네이버 검색광고": "auto",
-    "네이버성과형": "manual", "네이버 쇼핑박스 PC": "manual",
-    "네이버 쇼핑박스 MO (트렌드픽)": "manual", "다음 쇼핑박스": "manual",
+    "네이버성과형": "auto", "네이버 쇼핑박스 PC": "auto",
+    "네이버 쇼핑박스 MO (트렌드픽)": "auto", "다음 쇼핑박스": "manual",
     "틱톡": "manual", "카카오 DA": "manual", "카카오 모객": "manual",
     "카카오 메세지": "manual", "아이센드": "manual", "모비온": "manual",
     "네이트CPC": "manual", "구글": "todo",
-    "크리테오": "todo",
+    "크리테오": "auto",
 }
 
 # 효율시트 채널×지표 레이아웃은 '고정 구조'다. 한 번 추출해 DB(settings)에 스냅샷으로 저장하고,
