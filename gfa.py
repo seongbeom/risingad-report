@@ -121,34 +121,45 @@ _METRIC_SUBS = [("노출", "impressions"), ("클릭수", "clicks"), ("광고비"
 
 
 def _gfa_cols(ws):
-    """'네이버성과형' 블록의 {impressions,clicks,cost,conversions,revenue} 컬럼 letter. 없으면 None.
+    """효율시트 [일별 성과] 블록의 '네이버성과형' 지표 컬럼 letter 동적탐색.
+    효율탭은 [주차별]/[전일자성과비교]/[일별 성과] 여러 블록에 '네이버성과형'이 중복 등장 →
+    반드시 '일별 성과' 블록(날짜행이 따라오는)을 골라야 함(다른 블록 잡으면 엉뚱한 칸 기입).
     (Z=쇼핑박스PC, AJ=쇼핑박스MO 와 헷갈리지 않게 라벨 정확히 '네이버성과형' 매칭)"""
     from gspread.utils import rowcol_to_a1
-    grid = ws.get("A28:OZ34")
-    ch_row = None
+    grid = ws.get_all_values()
+    daily_anchor = 0
     for ri, row in enumerate(grid):
-        if any((c or "").strip() == CHANNEL_LABEL for c in row):
-            ch_row = ri
+        b = (row[1] if len(row) > 1 else "") or ""
+        if "일별" in b and "성과" in b and "비교" not in b:
+            daily_anchor = ri
+            break
+    ch_row = ch_col = None
+    for ri in range(daily_anchor, len(grid)):
+        for ci, c in enumerate(grid[ri]):
+            if (c or "").strip() == CHANNEL_LABEL:
+                ch_row, ch_col = ri, ci
+                break
+        if ch_row is not None:
             break
     if ch_row is None:
         return None
     ch = grid[ch_row]
-    c0 = next(i for i, c in enumerate(ch) if (c or "").strip() == CHANNEL_LABEL)
     nxt = len(ch)
-    for i in range(c0 + 1, len(ch)):
+    for i in range(ch_col + 1, len(ch)):
         if (ch[i] or "").strip():
             nxt = i
             break
-    met = grid[ch_row + 1] if ch_row + 1 < len(grid) else []
-    cols = {}
-    for i in range(c0, min(nxt, len(met))):
-        label = (met[i] or "").strip()
-        for sub, key in _METRIC_SUBS:
-            if key not in cols and sub in label:
-                cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
-    if not all(k in cols for _, k in _METRIC_SUBS):
-        return None
-    return cols
+    for mr in range(ch_row + 1, min(ch_row + 4, len(grid))):
+        met = grid[mr]
+        cols = {}
+        for i in range(ch_col, min(nxt, len(met))):
+            label = (met[i] or "").strip()
+            for sub, key in _METRIC_SUBS:
+                if key not in cols and sub in label:
+                    cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
+        if "cost" in cols:
+            return cols
+    return None
 
 
 def write_to_sheet(spreadsheet_id, daily):
@@ -184,9 +195,13 @@ def write_to_sheet(spreadsheet_id, daily):
             if not row:
                 errors.append(f"{d} 행없음")
                 continue
+            wrote_any = False
             for key in ("impressions", "clicks", "cost", "conversions", "revenue"):
-                data.append({"range": f"{cols[key]}{row}", "values": [[m[key]]]})
-            written += 1
+                if key in cols and m.get(key) is not None:
+                    data.append({"range": f"{cols[key]}{row}", "values": [[m[key]]]})
+                    wrote_any = True
+            if wrote_any:
+                written += 1
         if data:
             ws.batch_update(data, value_input_option="USER_ENTERED")
     return written, errors
