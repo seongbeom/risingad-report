@@ -345,6 +345,35 @@ def find_date_row(worksheet, dt):
     return None
 
 
+def verify_cells(ws, data):
+    """기입(batch_update) 직후 같은 셀을 읽어 우리가 쓴 값과 일치하는지 검증.
+    '조용한 실패'(엉뚱한 칸 기입돼도 ok로 넘어가던 문제) 방지 — 불일치 셀을
+    [(range, 기대값, 실제값)] 로 반환. data=[{"range":..,"values":[[v]]}].
+    검증 호출 자체가 실패하면 [] (쓰기는 됐을 수 있어 막지 않음)."""
+    if not data:
+        return []
+    ranges = [d["range"] for d in data]
+    try:
+        got = ws.batch_get(ranges)
+    except Exception:
+        return []
+
+    def _norm(x):
+        s = str(x).replace(",", "").replace("%", "").strip()
+        try:
+            return round(float(s))
+        except Exception:
+            return s
+
+    mism = []
+    for d, g in zip(data, got):
+        want = d["values"][0][0]
+        have = g[0][0] if (g and g[0]) else ""
+        if _norm(want) != _norm(have):
+            mism.append((d["range"], want, have))
+    return mism
+
+
 def _ensure_efficiency_sheet(spreadsheet, dt):
     """효율_26년X월이 없으면 효율_26년4월 복제 후 날짜·광고비 비움.
     월별 시트의 V열이 이 시트의 G33~G63을 참조하므로 월별 시트 생성 전에 호출돼야 함."""

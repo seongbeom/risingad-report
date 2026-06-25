@@ -927,6 +927,16 @@ def _retry_sheet_write(fn, *args, tries=3):
     raise last
 
 
+def _alert_sheet_verify(label, channel, errs):
+    """시트 기입검증 실패(엉뚱한 칸에 써진 '조용한 실패')가 errs 에 있으면 Slack 경보.
+    이걸로 사람이 패널을 안 봐도 즉시 인지 → 크리테오류 버그 재발 방지."""
+    bad = [e for e in (errs or []) if "검증실패" in e]
+    if bad:
+        _heartbeat_alert(f"sheetverify_{channel}_{label}",
+                         f"🔴 {label} · {channel} 시트 기입검증 실패(엉뚱한 칸 의심) — {bad[0][:180]}",
+                         severity="warn")
+
+
 def _meta_collect_job(days=META_BACKFILL_DAYS):
     """메타 광고 성과 수집 → 각 매장 효율시트 메타 칸 기입. 브라우저 없이 API.
     meta_account_id 설정된 매장만. 최근 days 일 재수집(어트리뷰션 보정)."""
@@ -1072,6 +1082,7 @@ def _criteo_collect_job(days=CRITEO_BACKFILL_DAYS):
                 db.set_setting(f"criteo_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
                 db.add_sheet_log(aid, "criteo", f"최근{days}일", wrote,
                                  "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+                _alert_sheet_verify(lbl, "크리테오", errs)
                 print(f"[criteo] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
                 ok_acct += 1
             except Exception as e:
@@ -1128,6 +1139,7 @@ def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
                 db.set_setting(f"gfa_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
                 db.add_sheet_log(aid, "gfa", f"최근{days}일", wrote,
                                  "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+                _alert_sheet_verify(lbl, "네이버성과형", errs)
                 print(f"[gfa] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
                 ok_acct += 1
             except Exception as e:
@@ -1208,6 +1220,7 @@ def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
             db.set_setting(f"shopbox_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             db.add_sheet_log(aid, "shopbox", f"최근{days}일", wrote,
                              "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+            _alert_sheet_verify(lbl, "쇼핑박스", errs)
             print(f"[shopbox] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
             ok_acct += 1
         except Exception as e:
