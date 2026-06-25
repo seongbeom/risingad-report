@@ -211,4 +211,8 @@ def write_to_sheet(spreadsheet_id, daily):
             written += 1
         if data:
             ws.batch_update(data, value_input_option="USER_ENTERED")
+            mism = sheets.verify_cells(ws, data)
+            if mism:
+                errors.append(f"⚠️기입검증실패 {len(mism)}셀(엉뚱한칸 의심): "
+                              + "; ".join(f"{r}={w}≠시트{h}" for r, w, h in mism[:3]))
     return written, errors

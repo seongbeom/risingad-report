@@ -930,7 +930,7 @@ def _retry_sheet_write(fn, *args, tries=3):
 def _alert_sheet_verify(label, channel, errs):
     """시트 기입검증 실패(엉뚱한 칸에 써진 '조용한 실패')가 errs 에 있으면 Slack 경보.
     이걸로 사람이 패널을 안 봐도 즉시 인지 → 크리테오류 버그 재발 방지."""
-    bad = [e for e in (errs or []) if "검증실패" in e]
+    bad = [e for e in (errs or []) if "검증실패" in e or "검증불일치" in e]
     if bad:
         _heartbeat_alert(f"sheetverify_{channel}_{label}",
                          f"🔴 {label} · {channel} 시트 기입검증 실패(엉뚱한 칸 의심) — {bad[0][:180]}",
@@ -981,6 +981,7 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
             print(f"[meta] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
             db.add_sheet_log(aid, "meta", f"{since}~{until}", wrote,
                              "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+            _alert_sheet_verify(lbl, "메타", errs)
             ok_acct += 1
         except Exception as e:
             fail.append(lbl)
@@ -1026,6 +1027,7 @@ def _naver_collect_job(days=META_BACKFILL_DAYS):
             db.set_setting(f"naver_last_{aid}", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
             db.add_sheet_log(aid, "naver", f"{since}~{until}", wrote, "ok" if not errs else "warn",
                              "; ".join(errs) if errs else "")
+            _alert_sheet_verify(lbl, "네이버검색", errs)
             print(f"[naver] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
             ok_acct += 1
         except Exception as e:
