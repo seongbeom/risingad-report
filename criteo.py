@@ -304,34 +304,49 @@ _METRIC_SUBS = [("노출", "impressions"), ("클릭수", "clicks"), ("광고비"
 
 
 def _criteo_cols(ws):
-    """시트에서 '크리테오' 블록의 {impressions,clicks,cost,conversions,revenue} 컬럼 letter 탐색.
-    헤더 영역(채널 라벨행 + 바로 아래 지표행) 기준. 없으면 None."""
+    """효율시트 [일별 성과] 블록의 '크리테오' 지표 컬럼 letter 동적탐색.
+    효율탭은 [주차별]/[전일자성과비교]/[일별 성과] 여러 블록에 '크리테오'가 중복 등장 →
+    반드시 '일별 성과' 블록(날짜행이 따라오는)을 골라야 함. 다른 블록 잡으면 엉뚱한 칸에 기입됨.
+    일별 블록 크리테오는 보통 광고비·매출만 있음 → 있는 지표만 반환(최소 cost 필요)."""
     from gspread.utils import rowcol_to_a1
-    grid = ws.get("A28:OZ34")  # 헤더 영역(일별성과 채널/지표 라벨)
-    ch_row = None
+    grid = ws.get_all_values()
+    # 1) [일별 성과] 섹션 시작행 (B열 마커, '비교' 블록 제외)
+    daily_anchor = 0
     for ri, row in enumerate(grid):
-        if any((c or "").strip() == CHANNEL_LABEL for c in row):
-            ch_row = ri
+        b = (row[1] if len(row) > 1 else "") or ""
+        if "일별" in b and "성과" in b and "비교" not in b:
+            daily_anchor = ri
+            break
+    # 2) anchor 이후 '크리테오' 라벨 행/열
+    ch_row = ch_col = None
+    for ri in range(daily_anchor, len(grid)):
+        for ci, c in enumerate(grid[ri]):
+            if (c or "").strip() == CHANNEL_LABEL:
+                ch_row, ch_col = ri, ci
+                break
+        if ch_row is not None:
             break
     if ch_row is None:
         return None
+    # 3) 블록 너비 = 다음 채널 라벨 전까지
     ch = grid[ch_row]
-    cri_c = next(i for i, c in enumerate(ch) if (c or "").strip() == CHANNEL_LABEL)
     nxt = len(ch)
-    for i in range(cri_c + 1, len(ch)):
-        if (ch[i] or "").strip():  # 다음 채널 라벨 → 블록 끝
+    for i in range(ch_col + 1, len(ch)):
+        if (ch[i] or "").strip():
             nxt = i
             break
-    met = grid[ch_row + 1] if ch_row + 1 < len(grid) else []
-    cols = {}
-    for i in range(cri_c, min(nxt, len(met))):
-        label = (met[i] or "").strip()
-        for sub, key in _METRIC_SUBS:
-            if key not in cols and sub in label:
-                cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
-    if not all(k in cols for _, k in _METRIC_SUBS):
-        return None
-    return cols
+    # 4) 지표 라벨 행 — 헤더 다음 1~3행 중 광고비/매출 있는 행
+    for mr in range(ch_row + 1, min(ch_row + 4, len(grid))):
+        met = grid[mr]
+        cols = {}
+        for i in range(ch_col, min(nxt, len(met))):
+            label = (met[i] or "").strip()
+            for sub, key in _METRIC_SUBS:
+                if key not in cols and sub in label:
+                    cols[key] = rowcol_to_a1(1, i + 1).rstrip("1")
+        if "cost" in cols:
+            return cols
+    return None
 
 
 def write_to_sheet(spreadsheet_id, daily):
@@ -368,9 +383,15 @@ def write_to_sheet(spreadsheet_id, daily):
             if not row:
                 errors.append(f"{d} 행없음")
                 continue
+            wrote_any = False
             for key in ("impressions", "clicks", "cost", "conversions", "revenue"):
-                data.append({"range": f"{cols[key]}{row}", "values": [[m[key]]]})
-            written += 1
+                if key in cols and m.get(key) is not None:
+                    # 시트 광고비는 부가세 10% 포함(메타 spend_vat 와 동일 기준). DB는 미포함 유지.
+                    val = round(m[key] * 1.1) if key == "cost" else m[key]
+                    data.append({"range": f"{cols[key]}{row}", "values": [[val]]})
+                    wrote_any = True
+            if wrote_any:
+                written += 1
         if data:
             ws.batch_update(data, value_input_option="USER_ENTERED")
     return written, errors
