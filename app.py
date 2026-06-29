@@ -1246,6 +1246,57 @@ def _kakao_session_check_job():
         traceback.print_exc()
 
 
+# 전 채널 metric 테이블 (노출, 광고비) — 자가점검 대상
+_AUDIT_TABLES = [
+    ("meta_metrics", "impressions", "spend", "메타"),
+    ("naver_metrics", "impressions", "cost", "네이버검색"),
+    ("criteo_metrics", "impressions", "cost", "크리테오"),
+    ("gfa_metrics", "impressions", "cost", "네이버성과형"),
+    ("shopbox_metrics", "impressions", "cost", "쇼핑박스"),
+]
+
+
+def _data_audit_job():
+    """매일 자가점검(수집 신뢰성): 전 채널에서
+      (1) '광고비>0 인데 노출=0' (오늘 쇼핑박스 같은 수집 누락/덮어쓰기 유형)
+      (2) 데이터 신선도(어제치 누락 = 수집 끊김)
+    이상 발견 시 Slack 경고, 정상이어도 콘솔 로그. 사람이 안 봐도 시스템이 먼저 잡게."""
+    import datetime as _dt
+    today = _dt.date.today()
+    cut = (today - _dt.timedelta(days=7)).isoformat()
+    yest = (today - _dt.timedelta(days=1)).isoformat()
+    issues = []
+    try:
+        with db.db_conn() as conn:
+            existing = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            for t, imp, cost, label in _AUDIT_TABLES:
+                if t not in existing:
+                    continue
+                rows = conn.execute(
+                    f"SELECT account_id, date FROM {t} "
+                    f"WHERE {cost}>0 AND COALESCE({imp},0)=0 AND date>=?", (cut,)).fetchall()
+                if rows:
+                    accts = sorted(set(r[0] for r in rows))
+                    issues.append(f"⚠️ {label}: 광고비>0인데 노출0 {len(rows)}건 "
+                                  f"({', '.join(accts[:6])}{'…' if len(accts) > 6 else ''})")
+                mx = conn.execute(f"SELECT MAX(date) FROM {t}").fetchone()[0]
+                if mx and mx < yest:
+                    issues.append(f"⚠️ {label}: 최신 데이터 {mx} (어제 {yest} 없음 — 수집 끊김 의심)")
+    except Exception as e:
+        print(f"[audit] 점검 실패: {repr(e)[:150]}", flush=True)
+        return
+    db.set_setting("data_audit_last", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} "
+                   f"({'이상 ' + str(len(issues)) + '건' if issues else '정상'})")
+    if issues:
+        print(f"[audit] 자가점검 이상 {len(issues)}건: " + " / ".join(issues), flush=True)
+        slack_notify("📋 데이터 자가점검 이상 감지:\n" + "\n".join(issues)
+                     + "\n→ 해당 채널 수집/시트 확인 필요", severity="warn")
+    else:
+        print("[audit] 자가점검: 전 채널 정상 (광고비-노출 정합 OK, 데이터 최신)", flush=True)
+    return issues
+
+
 SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장 일별분할 재계산
 
 
@@ -2008,6 +2059,14 @@ def reload_schedules():
     )
     print("[scheduler] kakao_session_check: 매일 09:10 (토큰 만료 10일 전 경고)")
 
+    # 전 채널 데이터 자가점검 (광고비>0 노출0 + 신선도) — 매일 09:30 (모든 수집 끝난 뒤)
+    scheduler.add_job(
+        _data_audit_job, "cron",
+        hour=9, minute=30,
+        id="data_audit", replace_existing=True,
+    )
+    print("[scheduler] data_audit: 매일 09:30 (전 채널 수집 정합성 자가점검)")
+
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
     scheduler.add_job(
@@ -2616,6 +2675,15 @@ def admin_kakao_collect():
         days = KAKAO_BACKFILL_DAYS
     threading.Thread(target=lambda: _kakao_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
+
+
+@app.route("/admin/data_audit", methods=["POST", "GET"])
+def admin_data_audit():
+    """데이터 자가점검 수동 실행 — 결과(이상 목록)를 즉시 반환."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    issues = _data_audit_job()
+    return jsonify({"ok": True, "issues": issues or [], "clean": not issues})
 
 
 @app.route("/accounts/<account_id>/shopbox_bid", methods=["POST"])
