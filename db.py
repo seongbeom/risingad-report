@@ -853,15 +853,23 @@ def shopbox_daily_cost(account_id, device, date):
 
 
 def upsert_shopbox_metric(account_id, date, device, m):
+    """m 에 '있는 키만' 갱신, 없는 키는 기존값 보존.
+    (예전엔 m.get(key,0) 으로 미제공 노출/클릭을 0으로 덮어써, fetch 실패 시 기존 노출이 wipe되던 버그.
+     present-keys-only 라야 '광고비만 기입'이 기존 노출을 0으로 만들지 않음.)"""
+    fields = [k for k in ("cost", "impressions", "clicks", "revenue") if k in m]
+    if not fields:
+        return
     with db_conn() as conn:
+        # INSERT 시 미제공 필드는 0 (신규행). ON CONFLICT 시엔 '제공된 필드만' 갱신 → 나머지 보존.
+        insert_vals = {k: m.get(k, 0) for k in ("cost", "impressions", "clicks", "revenue")}
+        set_clause = ", ".join(f"{k}=excluded.{k}" for k in fields)
         conn.execute(
-            """INSERT INTO shopbox_metrics (account_id,date,device,cost,impressions,clicks,revenue,updated_at)
+            f"""INSERT INTO shopbox_metrics (account_id,date,device,cost,impressions,clicks,revenue,updated_at)
                VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
                ON CONFLICT(account_id,date,device) DO UPDATE SET
-                 cost=excluded.cost, impressions=excluded.impressions, clicks=excluded.clicks,
-                 revenue=excluded.revenue, updated_at=excluded.updated_at""",
-            (account_id, date, device, m.get("cost", 0), m.get("impressions", 0),
-             m.get("clicks", 0), m.get("revenue", 0)))
+                 {set_clause}, updated_at=datetime('now','localtime')""",
+            (account_id, date, device, insert_vals["cost"], insert_vals["impressions"],
+             insert_vals["clicks"], insert_vals["revenue"]))
 
 
 def set_shopbox_cost(account_id, date, device, cost):
