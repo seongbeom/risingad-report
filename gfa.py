@@ -52,6 +52,13 @@ def mark_session_dead(reason=""):
         "refreshed_at": (datetime.date.today() - datetime.timedelta(days=999)).isoformat(),
         "valid_days": 30, "dead_reason": reason,
     }, ensure_ascii=False, indent=2))
+    # 만료 즉시 갱신요청 → 맥 도우미가 로그인창 자동 팝업 (방치 방지)
+    try:
+        import db
+        if not (db.get_setting("gfa_refresh_requested", "") or "").strip():
+            db.set_setting("gfa_refresh_requested", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    except Exception:
+        pass
 
 
 # ===== 수집 (개별 광고계정 stats API) =====

@@ -61,11 +61,41 @@ def _upload():
     return ok
 
 
+def _try_keep_logged_in(page):
+    """로그인 폼의 '로그인 유지 / Keep me signed in / 30 days' 체크박스 자동 선택(best-effort).
+    라벨/이름에 persistence 키워드 있는 체크박스만 → 엉뚱한 동의 체크박스는 안 건드림.
+    세션이 2~3일마다 풀리던 원인(이 옵션 수동 미체크) 보강."""
+    KW = ("keep me", "keep signed", "keep logged", "stay signed", "remember",
+          "logged in", "30 day", "로그인 유지", "유지")
+    for fr in [page] + list(page.frames):
+        try:
+            cbs = fr.query_selector_all("input[type=checkbox]")
+        except Exception:
+            continue
+        for cb in cbs:
+            try:
+                if cb.is_checked():
+                    continue
+                txt = ""
+                cid = cb.get_attribute("id")
+                if cid:
+                    lab = fr.query_selector(f'label[for="{cid}"]')
+                    if lab:
+                        txt += (lab.inner_text() or "")
+                txt = (txt + " " + (cb.get_attribute("name") or "")
+                       + " " + (cb.get_attribute("aria-label") or "")).lower()
+                if any(k in txt for k in KW):
+                    cb.check(timeout=800)
+                    print(f"  ✓ '로그인 유지' 체크박스 자동 선택")
+            except Exception:
+                pass
+
+
 def main():
     DATA.mkdir(exist_ok=True)
     PROFILE.mkdir(parents=True, exist_ok=True)
     print("브라우저를 띄웁니다. 크리테오에 로그인하세요 (이미 로그인돼 있으면 자동 진행).")
-    print("로그인 시 'Keep me logged in for 30 days' 체크 권장.\n")
+    print("로그인 시 'Keep me logged in for 30 days' — 자동 체크 시도하지만, 안 되면 수동으로 체크하세요.\n")
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             str(PROFILE), headless=False,
@@ -84,6 +114,7 @@ def main():
             if cur != last:
                 print(f"  현재 위치: {cur}")
                 last = cur
+            _try_keep_logged_in(page)  # 로그인 폼 뜰 때마다 '유지' 체크 시도
             if _logged_in(page):
                 page.wait_for_timeout(2000)
                 if _logged_in(page):

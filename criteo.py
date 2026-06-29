@@ -285,13 +285,21 @@ def session_status():
 
 
 def mark_session_dead(reason=""):
-    """크롤 중 로그인 페이지로 튕겼을 때 호출 — 메타를 만료 처리해 다음 상태체크가 경고."""
+    """크롤 중 로그인 페이지로 튕겼을 때 호출 — 메타를 만료 처리해 다음 상태체크가 경고.
+    + 즉시 '갱신요청' 플래그를 세워서 맥 백그라운드 도우미가 로그인창을 자동으로 띄우게 함
+    (며칠 방치되던 문제 방지). 재로그인 성공 시 _session_guard_payload 가 자동 해제."""
     import datetime
     SESSION_META.parent.mkdir(parents=True, exist_ok=True)
     SESSION_META.write_text(json.dumps({
         "refreshed_at": (datetime.date.today() - datetime.timedelta(days=999)).isoformat(),
         "valid_days": 30, "dead_reason": reason,
     }, ensure_ascii=False, indent=2))
+    try:
+        import db
+        if not (db.get_setting("criteo_refresh_requested", "") or "").strip():
+            db.set_setting("criteo_refresh_requested", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    except Exception:
+        pass
 
 
 # ===== 시트 쓰기 (효율 탭 크리테오 칸) =====
