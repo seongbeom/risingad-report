@@ -4083,6 +4083,42 @@ def dashboard():
                 "today": {"date": today, "rows": t, "tot": tt},
                 "connected": connected_n, "has_data": bool(y or t)}
 
+    def _build_window_eff(src_by_key):
+        """최근7일(오늘 제외) 매장별 합산 — 산발 집행 채널(카카오 등)이 어제뷰엔 안 보여서.
+        _build_simple_eff와 동일 스키마지만 여러 날을 매장별로 합산."""
+        wk = trend_dates[:-1]  # 7일 전 ~ 어제
+        out, tot = [], {"imp": 0, "clk": 0, "cost": 0, "conv": 0, "rev": 0, "sales": 0}
+        for aid in selected_ids:
+            a = {"imp": 0, "clk": 0, "cost": 0, "conv": 0, "rev": 0, "sales": 0}
+            for d in wk:
+                m = src_by_key.get((aid, d))
+                if m:
+                    a["imp"] += m["impressions"] or 0; a["clk"] += m["clicks"] or 0
+                    a["cost"] += m["cost"] or 0; a["conv"] += m["conversions"] or 0
+                    a["rev"] += m["revenue"] or 0
+                a["sales"] += (by_key.get((aid, d), {}) or {}).get("매출") or 0
+            if not (a["cost"] or a["imp"] or a["rev"]):
+                continue
+            out.append({
+                "label": label_by_id.get(aid, aid), "id": aid,
+                "imp": a["imp"], "clk": a["clk"], "cost": a["cost"], "conv": a["conv"],
+                "rev": a["rev"], "sales": a["sales"],
+                "ctr": round(a["clk"] / a["imp"] * 100, 2) if a["imp"] else None,
+                "cpc": round(a["cost"] / a["clk"]) if a["clk"] else None,
+                "cpa": round(a["cost"] / a["conv"]) if a["conv"] else None,
+                "roas": round(a["rev"] / a["cost"] * 100) if a["cost"] else None,
+                "broas": round(a["sales"] / a["cost"] * 100) if a["cost"] else None,
+            })
+            for kk in tot:
+                tot[kk] += a[kk]
+        out.sort(key=lambda x: x["cost"], reverse=True)
+        tot["ctr"] = round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else None
+        tot["cpc"] = round(tot["cost"] / tot["clk"]) if tot["clk"] else None
+        tot["cpa"] = round(tot["cost"] / tot["conv"]) if tot["conv"] else None
+        tot["roas"] = round(tot["rev"] / tot["cost"] * 100) if tot["cost"] else None
+        tot["broas"] = round(tot["sales"] / tot["cost"] * 100) if tot["cost"] else None
+        return {"date": "최근7일", "rows": out, "tot": tot}
+
     def _simple_trend(src_by_key):
         tr = []
         for d in trend_dates:
@@ -4110,6 +4146,10 @@ def dashboard():
     criteo_trend = _simple_trend(criteo_by_key)
     gfa_trend = _simple_trend(gfa_by_key)
     kakao_trend = _simple_trend(kakao_by_key)
+    # 최근7일 뷰(매장별 합산) — 산발 집행 채널이 어제뷰에 안 보이는 문제 보강
+    criteo_eff["week"] = _build_window_eff(criteo_by_key)
+    gfa_eff["week"] = _build_window_eff(gfa_by_key)
+    kakao_eff["week"] = _build_window_eff(kakao_by_key)
 
     # 쇼핑박스 — (account,date)별 PC+MO 합산 (device 차원 제거)
     shopbox_by_key = {}

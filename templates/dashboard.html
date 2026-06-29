@@ -968,10 +968,11 @@
         {% set ch_keys = [] %}
         {% if eff.today.rows %}{% set _ = ch_keys.append(('today','오늘')) %}{% endif %}
         {% set _ = ch_keys.append(('yesterday','어제')) %}
+        {% if eff.week and eff.week.rows %}{% set _ = ch_keys.append(('week','최근7일')) %}{% endif %}
         <div style="display:flex;gap:6px;margin-bottom:10px">
             {% for k,lbl in ch_keys %}
             <button type="button" class="ch-tab" data-chid="{{ chid }}" data-k="{{ k }}" onclick="switchChTab('{{ chid }}','{{ k }}')"
-                style="padding:4px 14px;border:1px solid #ddd;background:#fff;border-radius:14px;cursor:pointer;font-size:0.8rem">{{ lbl }} ({{ eff[k].date[5:] }})</button>
+                style="padding:4px 14px;border:1px solid #ddd;background:#fff;border-radius:14px;cursor:pointer;font-size:0.8rem">{{ lbl }}{% if k != 'week' %} ({{ eff[k].date[5:] }}){% endif %}</button>
             {% endfor %}
         </div>
         {% for k,lbl in ch_keys %}
