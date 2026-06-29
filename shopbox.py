@@ -17,6 +17,12 @@ _GROUPBY_URL = "https://adcenter.shopping.naver.com/p/report/ad/trendreport/grou
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
+# 모바일 트렌드픽 placement코드(노출위치) — 매장 공통 고정값. 소재(utm)로 학습 못한 경우 폴백 분류용.
+# (PC+MO 동시집행 매장은 대시보드가 PC코드만 필터로 보내 MO가 누락되던 버그 보강)
+_TRENDPICK_MO_CODES = {"000611", "000612", "000837", "000838",
+                       "001970", "001971", "001972", "001973", "001974",
+                       "001975", "001976", "001977", "001978"}
+
 
 def _load_accounts():
     try:
@@ -111,8 +117,11 @@ def fetch_metrics(account_id, days=14):
         body["strtDateTime"] = (today - _dt.timedelta(days=days)).strftime("%Y-%m-%dT00:00")
         body["endDateTime"] = (today + _dt.timedelta(days=1)).strftime("%Y-%m-%dT00:00")
         body["granularity"] = "DAY"
-        # slotNo + expsTrtrCd(placement코드) 차원. placement코드는 주차 무관 고정이라,
-        # 현재주 소재(utm)로 코드→device 를 학습해 과거주 슬롯(소재없음)도 PC/MO 판별 → cross-week 백필.
+        # ⚠️ 대시보드가 보내는 expsTrtrCd 는 'PC 쇼핑박스 노출위치'만 담긴 필터라,
+        #    PC+MO 동시집행 매장은 이 필터로 MO(트렌드픽)가 통째로 누락됨(노출 0 버그).
+        #    → PC 코드셋만 따로 보관하고, 필터는 제거해서 PC+MO 둘 다 응답받는다.
+        pc_codes = set(str(c) for c in (body.get("expsTrtrCd") or []))
+        body.pop("expsTrtrCd", None)
         body["dimensions"] = ["slotNo", "expsTrtrCd"]
         resp = ctx.request.post(_GROUPBY_URL, data=_json.dumps(body),
                                 headers={"content-type": "application/json"})
@@ -124,12 +133,18 @@ def fetch_metrics(account_id, days=14):
             code = str(r.get("expsTrtrCd") or "")
             if dev and code:
                 code_dev.setdefault(code, dev)
-        # 2) 집계: 소재 utm(현재주) 우선, 없으면 학습된 placement코드로 device 판별(과거주)
+        # 2) 집계: 소재 utm(slot) > 학습 placement코드 > PC필터셋(pc) / 트렌드픽코드셋(mo) 폴백
         for r in recs:
             sn = str(r.get("slotNo") or "")
-            dev = slot_dev.get(sn) or code_dev.get(str(r.get("expsTrtrCd") or ""))
+            code = str(r.get("expsTrtrCd") or "")
+            dev = slot_dev.get(sn) or code_dev.get(code)
             if not dev:
-                continue  # device 매핑 실패(소재없고 placement코드도 미학습) 스킵
+                if code in _TRENDPICK_MO_CODES:
+                    dev = "mo"
+                elif code in pc_codes:
+                    dev = "pc"
+            if not dev:
+                continue  # 분류 불가(쇼핑박스/트렌드픽 외 노출위치 등) → 스킵
             ymdhm = r.get("ymdhm") or ""
             if len(ymdhm) < 8:
                 continue
