@@ -866,6 +866,31 @@ def _auto_backfill_missing(today, deadline=None):
     _kill_leftover_chromium()
 
 
+# ===== 수집잡 중복 실행 차단 (버튼 연타·스케줄 겹침으로 구글 쿼터 폭주/세션 충돌 방지) =====
+_collect_running = set()
+_collect_guard_lock = threading.Lock()
+
+
+def _single_run(name):
+    """같은 수집잡이 이미 돌고 있으면 중복 실행을 스킵하는 데코레이터.
+    원인: 짧은 시간에 같은 수집을 여러 번 트리거하면 시트 읽기가 몰려 구글 API 429(쿼터)·세션 충돌."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrap(*a, **kw):
+            with _collect_guard_lock:
+                if name in _collect_running:
+                    print(f"[{name}] 이미 수집 중 — 중복 실행 스킵", flush=True)
+                    return
+                _collect_running.add(name)
+            try:
+                return fn(*a, **kw)
+            finally:
+                with _collect_guard_lock:
+                    _collect_running.discard(name)
+        return wrap
+    return deco
+
+
 def _product_collect_job(periods=("7d", "yesterday")):
     """카페24 '상품 분석' top 5 수집. periods 각 기간을 계정별로 수집.
     '7d'=최근7일(페이지 기본), 'yesterday'=전일, 'today'=오늘.
@@ -911,8 +936,9 @@ def _product_collect_job(periods=("7d", "yesterday")):
 META_BACKFILL_DAYS = 4  # 매 실행 시 최근 N일 재수집 (어트리뷰션 보정)
 
 
-def _retry_sheet_write(fn, *args, tries=3):
-    """구글시트 일시적 5xx(500/503)·rate limit 시 짧게 재시도. 최종 실패는 그대로 raise."""
+def _retry_sheet_write(fn, *args, tries=6):
+    """구글시트 일시적 5xx(500/503)·rate limit(429) 시 재시도. 최종 실패는 그대로 raise.
+    429(읽기 쿼터)는 분당 한도라 회복에 시간이 걸려 → 백오프를 길게(최대 60s)·여러 번."""
     last = None
     for i in range(tries):
         try:
@@ -920,11 +946,12 @@ def _retry_sheet_write(fn, *args, tries=3):
         except Exception as e:
             msg = repr(e)
             transient = any(c in msg for c in ("[500]", "[503]", "[429]", "InternalError",
-                                               "Internal error", "currently unavailable", "RATE_LIMIT"))
+                                               "Internal error", "currently unavailable",
+                                               "RATE_LIMIT", "Quota exceeded"))
             last = e
             if not transient or i == tries - 1:
                 raise
-            time.sleep(2 * (i + 1))  # 2s, 4s 백오프
+            time.sleep(min(60, 4 * (2 ** i)))  # 4,8,16,32,60s 백오프 (429 쿼터 회복 대기)
     raise last
 
 
@@ -938,6 +965,7 @@ def _alert_sheet_verify(label, channel, errs):
                          severity="warn")
 
 
+@_single_run("meta")
 def _meta_collect_job(days=META_BACKFILL_DAYS):
     """메타 광고 성과 수집 → 각 매장 효율시트 메타 칸 기입. 브라우저 없이 API.
     meta_account_id 설정된 매장만. 최근 days 일 재수집(어트리뷰션 보정)."""
@@ -1000,6 +1028,7 @@ def _meta_collect_job(days=META_BACKFILL_DAYS):
     )
 
 
+@_single_run("naver")
 def _naver_collect_job(days=META_BACKFILL_DAYS):
     """네이버 검색광고 성과 수집 → 효율시트 네이버칸(KH~KO) 기입 + DB 저장. API라 chromium 무관."""
     today = datetime.now()
@@ -1046,6 +1075,7 @@ def _naver_collect_job(days=META_BACKFILL_DAYS):
 CRITEO_BACKFILL_DAYS = 7  # 클릭후7일 어트리뷰션 보정 위해 최근 7일 재수집
 
 
+@_single_run("criteo")
 def _criteo_collect_job(days=CRITEO_BACKFILL_DAYS):
     """크리테오 성과 수집(세션 크롤) → 효율시트 크리테오칸 기입 + DB.
     JWT 1회 확보 후 advertiser 루프. chromium 쓰므로 _live_lock 으로 cafe24 와 직렬화."""
@@ -1101,6 +1131,7 @@ def _criteo_collect_job(days=CRITEO_BACKFILL_DAYS):
 GFA_BACKFILL_DAYS = 7  # 최근 7일 재수집 (전환/매출 후속 보정 대비)
 
 
+@_single_run("gfa")
 def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
     """네이버 성과형(GFA) 성과 수집(세션 크롤) → 효율시트 네이버성과형칸 기입 + DB.
     개별 광고계정 stats API 호출. chromium 쓰므로 _live_lock 으로 cafe24 와 직렬화.
@@ -1158,6 +1189,7 @@ def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
 KAKAO_BACKFILL_DAYS = 7
 
 
+@_single_run("kakao")
 def _kakao_collect_job(days=KAKAO_BACKFILL_DAYS):
     """카카오모먼트 성과 수집(비즈니스 토큰 API, chromium 없음 → _live_lock 불필요).
     캠페인 유형별(DA/모객/메세지) 일별 노출/클릭/광고비 → 효율시트 기입.
@@ -1217,6 +1249,7 @@ def _kakao_session_check_job():
 SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장 일별분할 재계산
 
 
+@_single_run("shopbox")
 def _shopbox_collect_job(days=SHOPBOX_BACKFILL_DAYS):
     """쇼핑박스: 광고비(입찰 일별분할) + 노출/클릭(쇼핑파트너센터 groupBy.nhn 크롤) → shopbox_metrics + 시트.
     크롬 쓰므로(노출/클릭 수집) _live_lock 으로 cafe24 와 직렬화. 매출은 v2(cafe24 유입분석).
