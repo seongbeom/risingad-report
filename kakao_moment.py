@@ -187,18 +187,28 @@ class _Api:
                                  "revenue": round(float(m.get("conv_purchase_p_7d", 0) or 0))}
         return st, out
 
-    def account_report(self, acc, day, group="BASIC"):
-        """계정 단위 일별 cost. group=BASIC=전체총합(spend유무 판단), MESSAGE=메시지 광고비.
-        (메시지·정액은 캠페인단위 리포트로 안 나와 계정단위로만 잡힘 — 2026-06-29 검증)
-        반환 cost(int) 또는 None(조회실패)."""
+    def account_report(self, acc, day):
+        """계정 총합 cost(BASIC) — 전체 광고비(spend유무 판단·잔차 계산용). 반환 int 또는 None."""
         st, body = self._req(
-            f"/adAccounts/report?start={day}&end={day}&metricsGroup={group}", acc, throttle=True)
+            f"/adAccounts/report?start={day}&end={day}&metricsGroup=BASIC", acc, throttle=True)
         if st != 200:
             return None
         data = json.loads(body).get("data", [])
         if not data:
             return 0
         return round(float((data[0].get("metrics") or {}).get("cost", 0) or 0))
+
+    def account_msg_send(self, acc, day):
+        """계정 단위 메시지 발송수(msg_send). ⚠️ MESSAGE 그룹의 cost는 메시지전용이 아니라
+        계정총합이라 못 씀 → 발송수만 신호로 사용, 메시지 광고비는 잔차로 계산."""
+        st, body = self._req(
+            f"/adAccounts/report?start={day}&end={day}&metricsGroup=MESSAGE", acc, throttle=True)
+        if st != 200:
+            return 0
+        data = json.loads(body).get("data", [])
+        if not data:
+            return 0
+        return int((data[0].get("metrics") or {}).get("msg_send", 0) or 0)
 
 
 def _classify(campaign_type, detail_type):
@@ -280,13 +290,15 @@ def fetch_all(days=7, account_map=None):
                                                    "conversions": 0, "revenue": 0})
                     p["impressions"] += imp; p["clicks"] += clk; p["cost"] += cst
                     p["conversions"] += cn; p["revenue"] += rv
-            # 메시지 광고비: 캠페인단위엔 0이라 계정단위 MESSAGE 그룹으로만 잡힘 (검증완료)
-            msg_cost = api.account_report(kakao_acc, day, group="MESSAGE") or 0
-            if msg_cost:
+            # 메시지 광고비: 캠페인엔 안 잡히고 계정 잔차로만 존재. msg_send>0(발송 있던 날)의
+            # 잔차(계정총합 − 캠페인합)를 메세지로 귀속 → 절대 계정총합 초과 안 함(이중집계 방지).
+            # (잔차에 다음쇼핑박스 정액이 섞일 수 있으나, 발송 있는 날만 잡아 과대만 차단)
+            residual = total - captured
+            if residual > 0 and api.account_msg_send(kakao_acc, day) > 0:
                 p = day_prod.setdefault("msg", {"impressions": 0, "clicks": 0, "cost": 0,
                                                 "conversions": 0, "revenue": 0})
-                p["cost"] = msg_cost
-                captured += msg_cost
+                p["cost"] = residual
+                captured += residual
             # 정합성: 계정총합 vs 분류합(DA+모객+메세지) 차이(=다음쇼핑박스 정액 등). 미분류 기록.
             gap = total - captured
             recon.append((store, d, total, captured, gap))
