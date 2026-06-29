@@ -170,10 +170,12 @@ class _Api:
                                  "cost": round(float(m.get("cost", 0) or 0))}
         return st, out
 
-    def account_report(self, acc, day):
-        """계정 총합(해당일 spend 있는지 판단용). 반환 cost(int) 또는 None."""
+    def account_report(self, acc, day, group="BASIC"):
+        """계정 단위 일별 cost. group=BASIC=전체총합(spend유무 판단), MESSAGE=메시지 광고비.
+        (메시지·정액은 캠페인단위 리포트로 안 나와 계정단위로만 잡힘 — 2026-06-29 검증)
+        반환 cost(int) 또는 None(조회실패)."""
         st, body = self._req(
-            f"/adAccounts/report?start={day}&end={day}&metricsGroup=BASIC", acc, throttle=True)
+            f"/adAccounts/report?start={day}&end={day}&metricsGroup={group}", acc, throttle=True)
         if st != 200:
             return None
         data = json.loads(body).get("data", [])
@@ -257,7 +259,12 @@ def fetch_all(days=7, account_map=None):
                     p["impressions"] += m["impressions"]
                     p["clicks"] += m["clicks"]
                     p["cost"] += m["cost"]
-            # 정합성: 계정총합 vs 캠페인합 차이(=다음쇼핑박스 정액 등) 기록. 큰 미분류는 알림.
+            # 메시지 광고비: 캠페인단위엔 0이라 계정단위 MESSAGE 그룹으로만 잡힘 (검증완료)
+            msg_cost = api.account_report(kakao_acc, day, group="MESSAGE") or 0
+            if msg_cost:
+                day_prod.setdefault("msg", {"impressions": 0, "clicks": 0, "cost": 0})["cost"] = msg_cost
+                captured += msg_cost
+            # 정합성: 계정총합 vs 분류합(DA+모객+메세지) 차이(=다음쇼핑박스 정액 등). 미분류 기록.
             gap = total - captured
             recon.append((store, d, total, captured, gap))
     out["_recon"] = recon
