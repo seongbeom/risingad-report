@@ -23,6 +23,7 @@ import naver
 import criteo
 import gfa
 import shopbox
+import kakao_moment
 
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -1154,6 +1155,65 @@ def _gfa_collect_job(days=GFA_BACKFILL_DAYS):
         _live_lock.release()
 
 
+KAKAO_BACKFILL_DAYS = 7
+
+
+def _kakao_collect_job(days=KAKAO_BACKFILL_DAYS):
+    """카카오모먼트 성과 수집(비즈니스 토큰 API, chromium 없음 → _live_lock 불필요).
+    캠페인 유형별(DA/모객/메세지) 일별 노출/클릭/광고비 → 효율시트 기입.
+    리포트 5초 throttle이라 전체 수 분 소요. access token 만료시 자동 refresh."""
+    accounts_by_id = {a["id"]: a for a in db.list_accounts()}
+    print(f"[kakao] 최근 {days}일 수집 시작 (광고계정 {len(kakao_moment.ACCOUNT_MAP)}개)")
+    try:
+        data = kakao_moment.fetch_all(days=days)
+    except Exception as e:
+        print(f"[kakao] 수집 실패: {repr(e)[:160]}")
+        slack_notify(f"카카오모먼트 수집 실패: {repr(e)[:120]} → 토큰 재인증 확인(/kakao/start)",
+                     severity="warn")
+        return
+    recon = data.pop("_recon", [])
+    ok_acct, fail = 0, []
+    for store, daily in data.items():
+        a = accounts_by_id.get(store)
+        if not a or not daily:
+            continue
+        lbl = a.get("label") or store
+        ssid = a.get("spreadsheet_id") or ""
+        if not ssid:
+            continue
+        try:
+            wrote, errs = _retry_sheet_write(kakao_moment.write_to_sheet, ssid, daily)
+            db.set_setting(f"kakao_last_{store}",
+                           f"{datetime.now().strftime('%Y-%m-%d %H:%M')} ({wrote}일)")
+            db.add_sheet_log(store, "kakao", f"최근{days}일", wrote,
+                             "ok" if not errs else "warn", "; ".join(errs) if errs else "")
+            _alert_sheet_verify(lbl, "카카오모먼트", errs)
+            print(f"[kakao] {lbl} {wrote}일 기입" + (f" · 경고 {errs}" if errs else ""))
+            ok_acct += 1
+        except Exception as e:
+            fail.append(lbl)
+            db.add_sheet_log(store, "kakao", f"최근{days}일", 0, "fail", repr(e)[:280])
+            print(f"[kakao] {lbl} 실패: {repr(e)[:160]}")
+    # 정합성: 미분류 광고비(다음쇼핑박스 정액 등) 큰 gap 로그 (조용한 누락 방지)
+    big = [(s, d, g) for (s, d, t, c, g) in recon if g and g > 50000]
+    if big:
+        print(f"[kakao] ℹ️ 미분류 광고비(다음쇼핑박스 추정) {len(big)}건: {big[:5]}")
+    db.set_setting("kakao_last_run", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    print(f"[kakao] done — 성공 {ok_acct} / 실패 {len(fail)}")
+
+
+def _kakao_session_check_job():
+    """카카오모먼트 토큰 만료 임박/만료 시 Slack 경고 (재인증: /kakao/start)."""
+    try:
+        st = kakao_moment.session_status()
+        print(f"[kakao] session check: {st['message']}", flush=True)
+        if st["severity"] in ("warn", "critical"):
+            slack_notify(st["message"] + " → http://52.79.112.252:9090/kakao/start (재대행사 계정 로그인)",
+                         severity=st["severity"])
+    except Exception:
+        traceback.print_exc()
+
+
 SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장 일별분할 재계산
 
 
@@ -1900,6 +1960,21 @@ def reload_schedules():
     )
     print(f"[scheduler] shopbox_collect: 매일 07:30 (광고비 분할 + 노출/클릭 크롤, 최근 {SHOPBOX_BACKFILL_DAYS}일)")
 
+    # 카카오모먼트(DA/모객/메세지) API 수집 → 시트 — 매일 08:10 (chromium 없음, throttle로 수분)
+    scheduler.add_job(
+        _kakao_collect_job, "cron",
+        hour=8, minute=10,
+        id="kakao_collect", replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    print(f"[scheduler] kakao_collect: 매일 08:10 (카카오모먼트 API, 최근 {KAKAO_BACKFILL_DAYS}일)")
+    scheduler.add_job(
+        _kakao_session_check_job, "cron",
+        hour=9, minute=10,
+        id="kakao_session_check", replace_existing=True,
+    )
+    print("[scheduler] kakao_session_check: 매일 09:10 (토큰 만료 10일 전 경고)")
+
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
     scheduler.add_job(
@@ -2494,6 +2569,19 @@ def admin_gfa_collect():
     except ValueError:
         days = GFA_BACKFILL_DAYS
     threading.Thread(target=lambda: _gfa_collect_job(days=days), daemon=True).start()
+    return jsonify({"ok": True, "days": days})
+
+
+@app.route("/admin/kakao_collect", methods=["POST"])
+def admin_kakao_collect():
+    """localhost 전용 카카오모먼트 수집 수동 트리거. body: days(선택)."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        days = int(request.form.get("days", str(KAKAO_BACKFILL_DAYS)))
+    except ValueError:
+        days = KAKAO_BACKFILL_DAYS
+    threading.Thread(target=lambda: _kakao_collect_job(days=days), daemon=True).start()
     return jsonify({"ok": True, "days": days})
 
 
