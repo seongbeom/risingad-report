@@ -170,6 +170,23 @@ class _Api:
                                  "cost": round(float(m.get("cost", 0) or 0))}
         return st, out
 
+    def campaign_conv(self, acc, cids, day):
+        """campaignId 배치의 일별 전환/매출 (PIXEL_SDK_CONVERSION).
+        전환수=conv_purchase_7d, 매출=conv_purchase_p_7d (클릭후 7일 어트리뷰션, criteo/gfa와 통일).
+        반환 {campaign_id: {conversions, revenue}}."""
+        csv = ",".join(str(i) for i in cids)
+        st, body = self._req(
+            f"/campaigns/report?campaignId={csv}&start={day}&end={day}&metricsGroup=PIXEL_SDK_CONVERSION",
+            acc, throttle=True)
+        out = {}
+        if st == 200:
+            for row in json.loads(body).get("data", []):
+                cid = (row.get("dimensions") or {}).get("campaign_id")
+                m = row.get("metrics") or {}
+                out[str(cid)] = {"conversions": int(m.get("conv_purchase_7d", 0) or 0),
+                                 "revenue": round(float(m.get("conv_purchase_p_7d", 0) or 0))}
+        return st, out
+
     def account_report(self, acc, day, group="BASIC"):
         """계정 단위 일별 cost. group=BASIC=전체총합(spend유무 판단), MESSAGE=메시지 광고비.
         (메시지·정액은 캠페인단위 리포트로 안 나와 계정단위로만 잡힘 — 2026-06-29 검증)
@@ -247,22 +264,28 @@ def fetch_all(days=7, account_map=None):
             captured = 0
             for i in range(0, len(all_ids), BATCH):
                 batch = all_ids[i:i + BATCH]
-                st, rep = api.campaign_report(kakao_acc, batch, day)
-                for cid, m in rep.items():
-                    if not (m["impressions"] or m["clicks"] or m["cost"]):
+                st, rep = api.campaign_report(kakao_acc, batch, day)       # 노출/클릭/광고비
+                stc, conv = api.campaign_conv(kakao_acc, batch, day)       # 전환/매출
+                for cid in (set(rep) | set(conv)):
+                    b = rep.get(cid, {}); cv = conv.get(cid, {})
+                    imp = b.get("impressions", 0); clk = b.get("clicks", 0); cst = b.get("cost", 0)
+                    cn = cv.get("conversions", 0); rv = cv.get("revenue", 0)
+                    if not (imp or clk or cst or cn or rv):
                         continue
-                    captured += m["cost"]
+                    captured += cst
                     prod = prod_of.get(cid, "da")
                     if prod == "daum":
                         continue  # 다음쇼핑박스(정액)는 카카오 채널 아님 → 미기입
-                    p = day_prod.setdefault(prod, {"impressions": 0, "clicks": 0, "cost": 0})
-                    p["impressions"] += m["impressions"]
-                    p["clicks"] += m["clicks"]
-                    p["cost"] += m["cost"]
+                    p = day_prod.setdefault(prod, {"impressions": 0, "clicks": 0, "cost": 0,
+                                                   "conversions": 0, "revenue": 0})
+                    p["impressions"] += imp; p["clicks"] += clk; p["cost"] += cst
+                    p["conversions"] += cn; p["revenue"] += rv
             # 메시지 광고비: 캠페인단위엔 0이라 계정단위 MESSAGE 그룹으로만 잡힘 (검증완료)
             msg_cost = api.account_report(kakao_acc, day, group="MESSAGE") or 0
             if msg_cost:
-                day_prod.setdefault("msg", {"impressions": 0, "clicks": 0, "cost": 0})["cost"] = msg_cost
+                p = day_prod.setdefault("msg", {"impressions": 0, "clicks": 0, "cost": 0,
+                                                "conversions": 0, "revenue": 0})
+                p["cost"] = msg_cost
                 captured += msg_cost
             # 정합성: 계정총합 vs 분류합(DA+모객+메세지) 차이(=다음쇼핑박스 정액 등). 미분류 기록.
             gap = total - captured
@@ -277,9 +300,9 @@ _METRIC_SUBS = [("노출", "impressions"), ("클릭", "clicks"), ("광고비", "
                 ("전환", "conversions"), ("매출", "revenue"), ("친구추가", "friends")]
 # 각 상품이 기입 시도하는 키 (시트에 없는 칸은 자동 스킵)
 _PRODUCT_KEYS = {
-    "da":   ["impressions", "clicks", "cost"],
+    "da":   ["impressions", "clicks", "cost", "conversions", "revenue"],
     "moac": ["impressions", "clicks", "cost"],
-    "msg":  ["cost"],
+    "msg":  ["cost", "revenue"],
 }
 
 

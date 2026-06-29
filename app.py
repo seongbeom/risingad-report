@@ -1211,6 +1211,18 @@ def _kakao_collect_job(days=KAKAO_BACKFILL_DAYS):
             continue
         lbl = a.get("label") or store
         ssid = a.get("spreadsheet_id") or ""
+        # DB 적재 (DA+모객+메세지 합산 → 대시보드 채널요약·자가점검용)
+        for d, prods in daily.items():
+            if d.startswith("_"):
+                continue
+            agg = {"impressions": 0, "clicks": 0, "cost": 0, "conversions": 0, "revenue": 0}
+            for pm in prods.values():
+                for k in agg:
+                    agg[k] += pm.get(k, 0) or 0
+            try:
+                db.upsert_kakao_metric(store, d, agg)
+            except Exception:
+                traceback.print_exc()
         if not ssid:
             continue
         try:
@@ -1246,13 +1258,15 @@ def _kakao_session_check_job():
         traceback.print_exc()
 
 
-# 전 채널 metric 테이블 (노출, 광고비) — 자가점검 대상
+# 전 채널 metric 테이블 (table, 노출, 광고비, 표시명, 노출0체크여부)
+# 카카오는 메시지 광고비가 노출 개념 없이 과금돼(cost>0 노출=0이 정상) 노출0 체크 제외 — 신선도만.
 _AUDIT_TABLES = [
-    ("meta_metrics", "impressions", "spend", "메타"),
-    ("naver_metrics", "impressions", "cost", "네이버검색"),
-    ("criteo_metrics", "impressions", "cost", "크리테오"),
-    ("gfa_metrics", "impressions", "cost", "네이버성과형"),
-    ("shopbox_metrics", "impressions", "cost", "쇼핑박스"),
+    ("meta_metrics", "impressions", "spend", "메타", True),
+    ("naver_metrics", "impressions", "cost", "네이버검색", True),
+    ("criteo_metrics", "impressions", "cost", "크리테오", True),
+    ("gfa_metrics", "impressions", "cost", "네이버성과형", True),
+    ("kakao_metrics", "impressions", "cost", "카카오모먼트", False),
+    ("shopbox_metrics", "impressions", "cost", "쇼핑박스", True),
 ]
 
 
@@ -1270,16 +1284,17 @@ def _data_audit_job():
         with db.db_conn() as conn:
             existing = {r[0] for r in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-            for t, imp, cost, label in _AUDIT_TABLES:
+            for t, imp, cost, label, check_imp in _AUDIT_TABLES:
                 if t not in existing:
                     continue
-                rows = conn.execute(
-                    f"SELECT account_id, date FROM {t} "
-                    f"WHERE {cost}>0 AND COALESCE({imp},0)=0 AND date>=?", (cut,)).fetchall()
-                if rows:
-                    accts = sorted(set(r[0] for r in rows))
-                    issues.append(f"⚠️ {label}: 광고비>0인데 노출0 {len(rows)}건 "
-                                  f"({', '.join(accts[:6])}{'…' if len(accts) > 6 else ''})")
+                if check_imp:
+                    rows = conn.execute(
+                        f"SELECT account_id, date FROM {t} "
+                        f"WHERE {cost}>0 AND COALESCE({imp},0)=0 AND date>=?", (cut,)).fetchall()
+                    if rows:
+                        accts = sorted(set(r[0] for r in rows))
+                        issues.append(f"⚠️ {label}: 광고비>0인데 노출0 {len(rows)}건 "
+                                      f"({', '.join(accts[:6])}{'…' if len(accts) > 6 else ''})")
                 mx = conn.execute(f"SELECT MAX(date) FROM {t}").fetchone()[0]
                 if mx and mx < yest:
                     issues.append(f"⚠️ {label}: 최신 데이터 {mx} (어제 {yest} 없음 — 수집 끊김 의심)")
@@ -2239,6 +2254,8 @@ def index():
         "naver_collect": ("🟢 네이버 검색광고 수집", f"매일 07:10 (최근 {META_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("naver_last_run", None)),
         "criteo_collect": ("🟠 크리테오 수집", f"매일 06:40 (최근 {CRITEO_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("criteo_last_run", None)),
         "gfa_collect": ("🟢 네이버 성과형(GFA) 수집", f"매일 06:50 (최근 {GFA_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("gfa_last_run", None)),
+        "kakao_collect": ("💛 카카오모먼트 수집", f"매일 08:10 (DA+모객+메세지 API, 최근 {KAKAO_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("kakao_last_run", None)),
+        "data_audit": ("📋 데이터 자가점검", "매일 09:30 (전 채널 광고비-노출 정합/신선도)", db.get_setting("data_audit_last", None)),
         "shopbox_collect": ("🛍 쇼핑박스 (광고비+노출/클릭+매출)", f"매일 07:30 (입찰분할 + 네이버 노출/클릭 + cafe24 UTM 매출 → 효율시트, 최근 {SHOPBOX_BACKFILL_DAYS}일)", db.get_setting("shopbox_last_run", None)),
         "db_backup": ("💾 DB 백업", "매일 04:00", None),
         "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
@@ -4083,10 +4100,16 @@ def dashboard():
                   db.list_gfa_metrics(account_ids=selected_ids, start_date=_window_start, end_date=today)}
     criteo_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and (a.get("criteo_advertiser_id") or "").strip())
     gfa_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and (a.get("naver_gfa_account_no") or "").strip())
+    kakao_by_key = {(r["account_id"], r["date"]): r for r in
+                    db.list_kakao_metrics(account_ids=selected_ids, start_date=_window_start, end_date=today)}
+    _kakao_stores = set(kakao_moment.ACCOUNT_MAP.values())
+    kakao_conn = sum(1 for a in all_accounts if a["id"] in selected_ids and a["id"] in _kakao_stores)
     criteo_eff = _eff_bundle(criteo_by_key, criteo_conn)
     gfa_eff = _eff_bundle(gfa_by_key, gfa_conn)
+    kakao_eff = _eff_bundle(kakao_by_key, kakao_conn)
     criteo_trend = _simple_trend(criteo_by_key)
     gfa_trend = _simple_trend(gfa_by_key)
+    kakao_trend = _simple_trend(kakao_by_key)
 
     # 쇼핑박스 — (account,date)별 PC+MO 합산 (device 차원 제거)
     shopbox_by_key = {}
@@ -4101,6 +4124,7 @@ def dashboard():
     # ===== 전 채널 한눈 요약 — 어제 + 통합(블렌디드) + 전주동요일 대비 + MTD =====
     _mt = ad_eff["yesterday"]["tot"]; _nt = naver_eff["yesterday"]["tot"]
     _ct = criteo_eff["yesterday"]["tot"]; _gt = gfa_eff["yesterday"]["tot"]
+    _kt = kakao_eff["yesterday"]["tot"]
 
     def _ch_daysum(src, ck, rk, d):
         c = sum((src.get((aid, d), {}) or {}).get(ck) or 0 for aid in selected_ids)
@@ -4122,12 +4146,13 @@ def dashboard():
         ("네이버 검색", "#03c75a", naver_by_key, "cost", "revenue", naver_eff["connected"], _nt.get("conv")),
         ("크리테오", "#f76b1c", criteo_by_key, "cost", "revenue", criteo_eff["connected"], _ct.get("conv")),
         ("네이버 성과형", "#2e7d32", gfa_by_key, "cost", "revenue", gfa_eff["connected"], _gt.get("conv")),
+        ("카카오모먼트", "#ffcd00", kakao_by_key, "cost", "revenue", kakao_eff["connected"], _kt.get("conv")),
         ("쇼핑박스", "#7e57c2", shopbox_by_key, "cost", "revenue", shopbox_conn, None),
     ]
     _mstart = now.replace(day=1).strftime("%Y-%m-%d")
     _mtd_fn = {"메타": db.list_meta_metrics, "네이버 검색": db.list_naver_metrics,
                "크리테오": db.list_criteo_metrics, "네이버 성과형": db.list_gfa_metrics,
-               "쇼핑박스": db.list_shopbox_metrics}
+               "카카오모먼트": db.list_kakao_metrics, "쇼핑박스": db.list_shopbox_metrics}
     _cs_rows = []
     for name, color, src, ck, rk, conn, conv in _CH:
         cy, ry = _ch_daysum(src, ck, rk, yesterday)
@@ -4304,6 +4329,7 @@ def dashboard():
     _roas_drop_alerts(ne_y, naver_by_key, "네이버검색")
     _roas_drop_alerts(criteo_eff["yesterday"]["rows"], criteo_by_key, "크리테오")
     _roas_drop_alerts(gfa_eff["yesterday"]["rows"], gfa_by_key, "네이버성과형")
+    _roas_drop_alerts(kakao_eff["yesterday"]["rows"], kakao_by_key, "카카오모먼트")
 
     # 실행 제안(자동 인사이트) — 어제 기준 + 목표 ROAS 대비
     target_roas = int(db.get_setting("target_roas", "300") or 300)
@@ -4339,6 +4365,7 @@ def dashboard():
     _channel_insights(ne_y, "네이버검색")
     _channel_insights(criteo_eff["yesterday"]["rows"], "크리테오")
     _channel_insights(gfa_eff["yesterday"]["rows"], "네이버성과형")
+    _channel_insights(kakao_eff["yesterday"]["rows"], "카카오모먼트")
 
     # 정렬: 기회(up) 먼저, 그다음 경고
     _order = {"up": 0, "down": 1, "fatigue": 2, "funnel": 3}
@@ -4495,6 +4522,8 @@ def dashboard():
         criteo_trend=criteo_trend,
         gfa_eff=gfa_eff,
         gfa_trend=gfa_trend,
+        kakao_eff=kakao_eff,
+        kakao_trend=kakao_trend,
         channel_summary=channel_summary,
         shopbox_detail=shopbox_detail,
         goals=goals,

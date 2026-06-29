@@ -1067,6 +1067,12 @@
         '세션 연동 ' ~ criteo_eff.connected ~ '개 매장 · 클릭후7일 어트리뷰션',
         '전환/매출은 클릭후 7일 기준(criteo sales_pc7d/revenue_pc7d). ROAS=광고매출/광고비.') }}
 
+    {{ channel_card('kakao',
+        '<span style="width:18px;height:18px;border-radius:5px;background:#ffcd00;color:#3c1e1e;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.62rem">k</span> 카카오모먼트',
+        '#ffcd00', kakao_eff, kakao_trend, '카카오',
+        '연동 ' ~ kakao_eff.connected ~ '개 매장 · DA(배너/비즈보드)+모객+메세지 합산',
+        '광고비=DA(캠페인)+메세지(계정단위 MESSAGE). 전환/매출=구매 클릭후7일. 메시지는 노출 없이 발송 과금. 다음쇼핑박스 정액은 미포함.') }}
+
     <script>
     function switchChTab(chid, k){
         document.querySelectorAll('.ch-pane[data-chid="'+chid+'"]').forEach(function(p){ p.style.display = p.getAttribute('data-k')===k ? '' : 'none'; });

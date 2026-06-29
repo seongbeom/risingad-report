@@ -208,6 +208,21 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_gfa_metrics_date ON gfa_metrics(date);
 
+            -- 카카오모먼트 (DA+모객+메세지 합산, 매장·일자별). 대시보드/자가점검용.
+            CREATE TABLE IF NOT EXISTS kakao_metrics (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                impressions INTEGER DEFAULT 0,
+                clicks INTEGER DEFAULT 0,
+                cost INTEGER DEFAULT 0,
+                conversions INTEGER DEFAULT 0,
+                revenue INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (account_id, date),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_kakao_metrics_date ON kakao_metrics(date);
+
             -- 네이버 쇼핑박스 입찰 원장 (정액 낙찰가 — PC주간/MO월간). 일별분할의 원천.
             CREATE TABLE IF NOT EXISTS shopbox_bids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -804,6 +819,23 @@ def list_criteo_metrics(account_ids=None, start_date=None, end_date=None):
 
 def list_gfa_metrics(account_ids=None, start_date=None, end_date=None):
     return _list_simple_metrics("gfa_metrics", account_ids, start_date, end_date)
+
+
+def upsert_kakao_metric(account_id, date, m):
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO kakao_metrics (account_id,date,impressions,clicks,cost,conversions,revenue,updated_at)
+               VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(account_id,date) DO UPDATE SET
+                 impressions=excluded.impressions, clicks=excluded.clicks, cost=excluded.cost,
+                 conversions=excluded.conversions, revenue=excluded.revenue, updated_at=excluded.updated_at""",
+            (account_id, date, m.get("impressions", 0), m.get("clicks", 0), m.get("cost", 0),
+             m.get("conversions", 0), m.get("revenue", 0)),
+        )
+
+
+def list_kakao_metrics(account_ids=None, start_date=None, end_date=None):
+    return _list_simple_metrics("kakao_metrics", account_ids, start_date, end_date)
 
 
 # ===== 쇼핑박스 (입찰 원장 + 일별분할 + 일별 성과) =====
