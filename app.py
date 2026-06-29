@@ -2216,17 +2216,22 @@ def _kakao_cfg():
 
 @app.route("/kakao/start")
 def kakao_start():
-    """카카오모먼트 동의화면으로 보냄. redirect_uri는 kakao_app.json 값 그대로 사용."""
+    """카카오모먼트 동의화면으로 보냄. redirect_uri는 kakao_app.json 값 그대로 사용.
+    resource_ids(예: moment:*)를 주면 한 번의 동의로 여러/전체 광고계정 인가."""
     import urllib.parse as _up
     cfg = _kakao_cfg()
     if not cfg or not (cfg.get("rest_api_key") or "").strip():
         return "kakao_app.json(REST 키) 없음", 500
-    auth = KAKAO_AUTH_URL + "?" + _up.urlencode({
-        "client_id": cfg["rest_api_key"].strip(),
-        "response_type": "code",
-        "redirect_uri": cfg.get("redirect_uri", "").strip(),
-        "scope": cfg.get("scope", "moment_management"),
-    })
+    params = [
+        ("client_id", cfg["rest_api_key"].strip()),
+        ("response_type", "code"),
+        ("redirect_uri", cfg.get("redirect_uri", "").strip()),
+        ("scope", cfg.get("scope", "moment_management")),
+    ]
+    # resource_ids 반복 파라미터 (moment:* = 접근 가능한 전체 광고계정)
+    for rid in (cfg.get("resource_ids") or ["moment:*"]):
+        params.append(("resource_ids", rid))
+    auth = KAKAO_AUTH_URL + "?" + _up.urlencode(params)
     return redirect(auth)
 
 
