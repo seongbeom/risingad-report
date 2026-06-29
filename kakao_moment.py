@@ -299,6 +299,11 @@ def fetch_all(days=7, account_map=None):
                                                 "conversions": 0, "revenue": 0})
                 p["cost"] = residual
                 captured += residual
+            # spend 있는 날은 미등장 상품을 0으로 채워 옛 stale 값 덮어쓰기(이전 버그성 수집 잔재 제거).
+            # (present-keys-only라 안 채우면 옛 잘못된 메세지/DA 값이 시트에 남음)
+            for prod in ("da", "moac", "msg"):
+                day_prod.setdefault(prod, {"impressions": 0, "clicks": 0, "cost": 0,
+                                           "conversions": 0, "revenue": 0})
             # 정합성: 계정총합 vs 분류합(DA+모객+메세지) 차이(=다음쇼핑박스 정액 등). 미분류 기록.
             gap = total - captured
             recon.append((store, d, total, captured, gap))
