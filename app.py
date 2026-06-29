@@ -2200,6 +2200,96 @@ def healthz():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ===== 카카오모먼트 비즈니스 토큰 OAuth (서버 redirect — localhost 회피) =====
+KAKAO_AUTH_URL = "https://kauth.kakao.com/oauth/business/authorize"
+KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/business/token"
+KAKAO_TOKENINFO_URL = "https://kapi.kakao.com/v1/business/tokeninfo"
+
+
+def _kakao_cfg():
+    import json as _json
+    p = Path("data/kakao_app.json")
+    if not p.exists():
+        return None
+    return _json.loads(p.read_text())
+
+
+@app.route("/kakao/start")
+def kakao_start():
+    """카카오모먼트 동의화면으로 보냄. redirect_uri는 kakao_app.json 값 그대로 사용."""
+    import urllib.parse as _up
+    cfg = _kakao_cfg()
+    if not cfg or not (cfg.get("rest_api_key") or "").strip():
+        return "kakao_app.json(REST 키) 없음", 500
+    auth = KAKAO_AUTH_URL + "?" + _up.urlencode({
+        "client_id": cfg["rest_api_key"].strip(),
+        "response_type": "code",
+        "redirect_uri": cfg.get("redirect_uri", "").strip(),
+        "scope": cfg.get("scope", "moment_management"),
+    })
+    return redirect(auth)
+
+
+@app.route("/kakao/oauth")
+def kakao_oauth():
+    """동의 후 카카오가 인가코드를 들고 돌아오는 redirect 엔드포인트.
+    여기서 비즈니스 토큰(access+refresh) 발급 → data/kakao_token.json 저장."""
+    import json as _json
+    import urllib.parse as _up
+    import urllib.request as _ur
+    import urllib.error as _ue
+    code = request.args.get("code")
+    if not code:
+        err = {k: request.args.get(k) for k in request.args}
+        return f"<h3>인가코드 없음</h3><pre>{_json.dumps(err, ensure_ascii=False, indent=2)}</pre>", 400
+    cfg = _kakao_cfg()
+    rest = cfg["rest_api_key"].strip()
+    secret = (cfg.get("client_secret") or "").strip()
+    redirect_uri = cfg.get("redirect_uri", "").strip()
+    form = {"grant_type": "authorization_code", "client_id": rest,
+            "redirect_uri": redirect_uri, "code": code}
+    if secret:
+        form["client_secret"] = secret
+    try:
+        body = _up.urlencode(form).encode()
+        req = _ur.Request(KAKAO_TOKEN_URL, data=body, method="POST")
+        with _ur.urlopen(req, timeout=30) as r:
+            tok = _json.loads(r.read().decode())
+    except _ue.HTTPError as e:
+        msg = e.read().decode()
+        hint = ""
+        if "client_secret" in msg.lower():
+            hint = "<p>→ 이 앱은 Client Secret 필수. 콘솔에서 발급+'사용함' 후 kakao_app.json에 넣으세요.</p>"
+        return f"<h3>토큰 발급 실패 {e.code}</h3><pre>{msg}</pre>{hint}", 400
+    except Exception as e:
+        return f"<h3>토큰 발급 오류</h3><pre>{e}</pre>", 500
+
+    Path("data").mkdir(exist_ok=True)
+    Path("data/kakao_token.json").write_text(_json.dumps(tok, ensure_ascii=False, indent=2))
+    rt_exp = tok.get("refresh_token_expires_in")
+    valid_days = int(rt_exp // 86400) if rt_exp else 60
+    Path("data/kakao_token_meta.json").write_text(_json.dumps({
+        "refreshed_at": datetime.now().strftime("%Y-%m-%d"),
+        "valid_days": valid_days,
+    }, ensure_ascii=False, indent=2))
+
+    # 접근 가능한 광고계정/스코프 확인
+    info_html = ""
+    try:
+        req2 = _ur.Request(KAKAO_TOKENINFO_URL,
+                           headers={"Authorization": "Bearer " + tok["access_token"]})
+        with _ur.urlopen(req2, timeout=30) as r2:
+            info = _json.loads(r2.read().decode())
+        info_html = f"<h4>접근 가능 정보(tokeninfo)</h4><pre>{_json.dumps(info, ensure_ascii=False, indent=2)}</pre>"
+    except Exception as e:
+        info_html = f"<p>(tokeninfo 조회 실패: {e})</p>"
+
+    return (f"<h2 style='font-family:sans-serif'>카카오모먼트 인증 완료 ✅</h2>"
+            f"<p style='font-family:sans-serif'>비즈니스 토큰 저장됨 (scope={tok.get('scope')}, "
+            f"refresh 유효 약 {valid_days}일). 이 화면 캡처해서 알려주시면 수집기 붙입니다.</p>"
+            f"<div style='font-family:monospace;font-size:12px'>{info_html}</div>")
+
+
 @app.route("/admin/backfill_dates", methods=["POST"])
 def admin_backfill_dates():
     """localhost 전용 백필 트리거. _run_lock 으로 라이브 잡과 자동 직렬화.
