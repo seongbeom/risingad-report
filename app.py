@@ -1490,6 +1490,81 @@ def _anomaly_scan_job():
     return findings
 
 
+def _month_ad_spend_by_account(mstart, mend):
+    """월 광고비를 매장별 합산 {aid: spend}. 메타=spend, 그외=cost, 쇼핑박스 device 합산."""
+    spend = {}
+
+    def _acc(rows, key):
+        for r in rows:
+            spend[r["account_id"]] = spend.get(r["account_id"], 0) + (r.get(key) or 0)
+    _acc(db.list_meta_metrics(start_date=mstart, end_date=mend), "spend")
+    _acc(db.list_naver_metrics(start_date=mstart, end_date=mend), "cost")
+    _acc(db.list_criteo_metrics(start_date=mstart, end_date=mend), "cost")
+    _acc(db.list_gfa_metrics(start_date=mstart, end_date=mend), "cost")
+    _acc(db.list_kakao_metrics(start_date=mstart, end_date=mend), "cost")
+    _acc(db.list_shopbox_metrics(start_date=mstart, end_date=mend), "cost")
+    return spend
+
+
+def _budget_pace_job():
+    """매일 광고 예산 페이싱 점검 — 월예산 대비 월말예상이 초과/심한미달인 매장 Slack.
+    예산(adbudget_{aid}_{YYYY-MM})이 설정된 매장만 대상. 추가 수집 없음."""
+    try:
+        now = datetime.now()
+        month_key = now.strftime("%Y-%m")
+        mstart = now.replace(day=1).strftime("%Y-%m-%d")
+        yest = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        dim = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
+        dom = now.day
+        spend = _month_ad_spend_by_account(mstart, yest)
+        labels = {a["id"]: (a.get("label") or a["id"]) for a in db.list_accounts()}
+        findings = []
+        for aid, lbl in labels.items():
+            try:
+                budget = int(db.get_setting(f"adbudget_{aid}_{month_key}", "0") or 0)
+            except ValueError:
+                budget = 0
+            if budget <= 0:
+                continue
+            sp = spend.get(aid, 0)
+            projected = round(sp / dom * dim) if dom else 0
+            pace = round(projected / budget * 100) if budget else 0
+            if pace >= 110:
+                findings.append({
+                    "sev": "critical" if pace >= 130 else "warn", "aid": aid, "type": "over",
+                    "msg": f"💰 예산 초과 예상 — {lbl}: 현재 {sp:,}원/예산 {budget:,}원, "
+                           f"이 속도면 월말 {projected:,}원 ({pace}%)"})
+            elif pace <= 70 and dom >= 15:
+                findings.append({
+                    "sev": "warn", "aid": aid, "type": "under",
+                    "msg": f"🐢 예산 소진 부진 — {lbl}: 현재 {sp:,}원/예산 {budget:,}원, "
+                           f"이 속도면 월말 {projected:,}원 ({pace}%) — 집행 점검"})
+        findings.sort(key=lambda f: 0 if f["sev"] == "critical" else 1)
+        db.set_setting("budget_pace_last", f"{now.strftime('%Y-%m-%d %H:%M')} "
+                       f"({'이상 ' + str(len(findings)) + '건' if findings else '정상'})")
+        if not findings:
+            print("[budget] 예산 페이싱 정상(또는 예산 미설정)", flush=True)
+            return []
+        ts = time.time()
+        fresh = []
+        for f in findings:
+            key = f"budget:{f['type']}:{f['aid']}:{month_key}"
+            if ts - _heartbeat_last_alert.get(key, 0) >= HEARTBEAT_ALERT_COOLDOWN_SEC:
+                _heartbeat_last_alert[key] = ts
+                fresh.append(f)
+        print(f"[budget] 예산 페이싱 이상 {len(findings)}건(신규 {len(fresh)})", flush=True)
+        if fresh:
+            crit = sum(1 for f in fresh if f["sev"] == "critical")
+            head = f"📊 광고예산 페이싱 알림 {len(fresh)}건" + (f" (긴급 {crit})" if crit else "")
+            slack_notify(head + ":\n" + "\n".join(f["msg"] for f in fresh)
+                         + "\n→ 예산 집행 속도 조정 검토", severity="critical" if crit else "warn")
+        return findings
+    except Exception as e:
+        print(f"[budget] 점검 실패: {repr(e)[:150]}", flush=True)
+        traceback.print_exc()
+        return []
+
+
 SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장 일별분할 재계산
 
 
@@ -2268,6 +2343,14 @@ def reload_schedules():
     )
     print("[scheduler] anomaly_scan: 매일 09:40 (캠페인 이상 감지 → Slack/대시보드)")
 
+    # 광고예산 페이싱 (월예산 대비 월말예상 초과/미달) — 매일 09:45
+    scheduler.add_job(
+        _budget_pace_job, "cron",
+        hour=9, minute=45,
+        id="budget_pace", replace_existing=True,
+    )
+    print("[scheduler] budget_pace: 매일 09:45 (광고예산 페이싱 → Slack)")
+
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
     scheduler.add_job(
@@ -2443,6 +2526,7 @@ def index():
         "kakao_collect": ("💛 카카오모먼트 수집", f"매일 08:10 (DA+모객+메세지 API, 최근 {KAKAO_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("kakao_last_run", None)),
         "data_audit": ("📋 데이터 자가점검", "매일 09:30 (전 채널 광고비-노출 정합/신선도)", db.get_setting("data_audit_last", None)),
         "anomaly_scan": ("📣 캠페인 이상 감지", "매일 09:40 (픽셀깨짐/ROAS급락/광고비급증/노출중단)", db.get_setting("anomaly_last", None)),
+        "budget_pace": ("📊 광고예산 페이싱", "매일 09:45 (월예산 대비 월말예상 초과/미달)", db.get_setting("budget_pace_last", None)),
         "shopbox_collect": ("🛍 쇼핑박스 (광고비+노출/클릭+매출)", f"매일 07:30 (입찰분할 + 네이버 노출/클릭 + cafe24 UTM 매출 → 효율시트, 최근 {SHOPBOX_BACKFILL_DAYS}일)", db.get_setting("shopbox_last_run", None)),
         "db_backup": ("💾 DB 백업", "매일 04:00", None),
         "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
@@ -4791,6 +4875,9 @@ def portfolio():
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
     last_week_same = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     mstart = now.replace(day=1).strftime("%Y-%m-%d")
+    month_key = now.strftime("%Y-%m")
+    days_in_month = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
+    day_of_month = now.day
     accounts = db.list_accounts()
     labels = {a["id"]: (a.get("label") or a["id"]) for a in accounts}
 
@@ -4841,6 +4928,20 @@ def portfolio():
         sr_y = srev_by.get((aid, yesterday), 0); sr_w = srev_by.get((aid, last_week_same), 0)
         sp_m = sum(v for (acc, d), v in spend_by.items() if acc == aid)
         sr_m = sum(v for (acc, d), v in srev_by.items() if acc == aid)
+        # 광고 예산 페이싱 — 이달 약속 예산 대비 소진속도/월말예상
+        try:
+            budget = int(db.get_setting(f"adbudget_{aid}_{month_key}", "0") or 0)
+        except ValueError:
+            budget = 0
+        projected = round(sp_m / day_of_month * days_in_month) if day_of_month else 0
+        burn = round(sp_m / budget * 100) if budget else None          # 현재 소진률
+        pace = round(projected / budget * 100) if budget else None     # 월말예상/예산 (100=딱맞음)
+        if budget and pace is not None:
+            if pace >= 110: pace_status = "over"        # 초과 예상
+            elif pace <= 80 and day_of_month >= 10: pace_status = "under"  # 미달(월중순+ 부터만)
+            else: pace_status = "ok"
+        else:
+            pace_status = None
         anoms = anom_by_store.get(lbl, [])
         has_crit = any(x["sev"] == "critical" for x in anoms)
         # 주의 점수: 이상감지(긴급>일반) > 의존도 높음(광고비/실매출) > 고지출
@@ -4857,8 +4958,9 @@ def portfolio():
             "srev_y": sr_y, "srev_w": sr_w, "srev_wow": _delta(sr_y, sr_w),
             "broas_y": broas_y, "dep_y": dep_y,
             "spend_m": sp_m, "srev_m": sr_m, "broas_m": _roas(sr_m, sp_m), "dep_m": _dep(sp_m, sr_m),
+            "budget": budget, "burn": burn, "projected": projected, "pace": pace, "pace_status": pace_status,
             "anoms": anoms, "has_crit": has_crit,
-            "active": sp_m > 0, "score": score,
+            "active": sp_m > 0 or budget > 0, "score": score,
         })
     # 활성 매장(이번달 집행) 우선, 주의 점수순. 비활성은 뒤로.
     rows.sort(key=lambda r: (not r["active"], -r["score"], -r["spend_y"]))
@@ -4870,8 +4972,11 @@ def portfolio():
         "srev_y": sum(r["srev_y"] for r in active_rows),
         "spend_m": sum(r["spend_m"] for r in active_rows),
         "srev_m": sum(r["srev_m"] for r in active_rows),
+        "budget": sum(r["budget"] for r in active_rows),
+        "projected": sum(r["projected"] for r in active_rows),
         "alerts": sum(len(r["anoms"]) for r in active_rows),
         "crit": sum(1 for r in active_rows if r["has_crit"]),
+        "n_over": sum(1 for r in active_rows if r["pace_status"] == "over"),
         "n_active": len(active_rows),
     }
     tot["broas_y"] = _roas(tot["srev_y"], tot["spend_y"])
@@ -4880,9 +4985,25 @@ def portfolio():
     return render_template(
         "portfolio.html", active="portfolio",
         active_rows=active_rows, inactive_rows=inactive_rows, tot=tot,
-        yesterday=yesterday, last_week_same=last_week_same,
+        yesterday=yesterday, last_week_same=last_week_same, month_key=month_key,
+        day_of_month=day_of_month, days_in_month=days_in_month,
         anomaly_ts=_anomaly_findings["ts"], now=now.strftime("%H:%M"),
     )
+
+
+@app.route("/portfolio/budget", methods=["POST"])
+@login_required
+def set_ad_budget():
+    """매장 월 광고예산 입력(페이싱 기준). settings adbudget_{aid}_{YYYY-MM}."""
+    aid = (request.form.get("account_id") or "").strip()
+    month = (request.form.get("month") or datetime.now().strftime("%Y-%m")).strip()
+    try:
+        amount = int((request.form.get("amount") or "0").replace(",", "").strip() or 0)
+    except ValueError:
+        amount = 0
+    if aid:
+        db.set_setting(f"adbudget_{aid}_{month}", str(max(0, amount)))
+    return redirect(url_for("portfolio"))
 
 
 @app.route("/dashboard/range")

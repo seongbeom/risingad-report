@@ -30,6 +30,10 @@
   .up{color:#1e8e4e} .down{color:#c0392b} .muted{color:#bbb}
   .roas-good{color:#1e8e4e; font-weight:700} .roas-mid{color:#a07700; font-weight:700} .roas-bad{color:#c0392b; font-weight:700}
   .dep-hi{color:#c0392b; font-weight:600}
+  .pace-over{color:#c0392b; font-weight:700} .pace-under{color:#a07700; font-weight:700} .pace-ok{color:#1e8e4e}
+  .bud-form{display:flex; gap:3px; align-items:center; justify-content:flex-end}
+  .bud-in{width:82px; text-align:right; border:1px solid #d8dde2; border-radius:5px; padding:3px 6px; font-size:.78rem}
+  .bud-save{border:none; background:#5a8; color:#fff; border-radius:5px; padding:3px 7px; cursor:pointer; font-size:.72rem}
   .chip{display:inline-block; font-size:.68rem; font-weight:700; color:#fff; border-radius:5px; padding:1px 6px; margin:1px 2px}
   .c-crit{background:#c0392b} .c-warn{background:#e07b39}
   .pf-foot{font-size:.74rem; color:#aaa; margin-top:10px}
@@ -56,6 +60,7 @@
         <div class="pf-kpi"><div class="k">어제 총 실매출</div><div class="v">{{ won(tot.srev_y) }}</div></div>
         <div class="pf-kpi"><div class="k">블렌디드 ROAS</div><div class="v">{% if tot.broas_y is not none %}{{ tot.broas_y }}%{% else %}—{% endif %}</div></div>
         <div class="pf-kpi {{ 'warn' if tot.alerts else '' }}"><div class="k">캠페인 이상감지</div><div class="v">{{ tot.alerts }}건{% if tot.crit %} <span style="font-size:.78rem">긴급 {{ tot.crit }}</span>{% endif %}</div></div>
+        {% if tot.budget %}<div class="pf-kpi {{ 'warn' if tot.n_over else '' }}"><div class="k">예산 ({{ month_key }}, {{ day_of_month }}/{{ days_in_month }}일)</div><div class="v">{{ won(tot.spend_m) }} <span style="font-size:.72rem;color:#999">/ {{ won(tot.budget) }}</span>{% if tot.n_over %} <span style="font-size:.74rem">초과예상 {{ tot.n_over }}곳</span>{% endif %}</div></div>{% endif %}
     </div>
 
     <div class="pf-wrap">
@@ -71,10 +76,12 @@
             <th class="l" data-c="7" data-t="t">이상감지</th>
             <th data-c="8" data-t="n">MTD 광고비</th>
             <th data-c="9" data-t="n">MTD ROAS</th>
+            <th data-c="10" data-t="n">월 광고예산</th>
+            <th data-c="11" data-t="n">월말 예상</th>
         </tr></thead>
         <tbody>
         {% for r in active_rows %}
-        <tr class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or (r.dep_y is not none and r.dep_y>=30) else '') }}">
+        <tr class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or r.pace_status=='over' or (r.dep_y is not none and r.dep_y>=30) else '') }}">
             <td class="l"><a href="/?accounts={{ r.id }}" style="text-decoration:none"><span class="store">{{ r.label }}</span></a></td>
             <td class="num" data-v="{{ r.spend_y }}">{{ won(r.spend_y) }}</td>
             <td data-v="{{ r.spend_wow if r.spend_wow is not none else -99999 }}">{{ wow(r.spend_wow) }}</td>
@@ -85,6 +92,20 @@
             <td class="l" data-v="{{ r.anoms|length }}">{% for x in r.anoms %}<span class="chip {{ 'c-crit' if x.sev=='critical' else 'c-warn' }}">{{ x.rule }}</span>{% endfor %}{% if not r.anoms %}<span class="muted">—</span>{% endif %}</td>
             <td class="num" data-v="{{ r.spend_m }}">{{ won(r.spend_m) }}</td>
             <td data-v="{{ r.broas_m if r.broas_m is not none else -1 }}">{{ roas(r.broas_m) }}</td>
+            <td class="num" data-v="{{ r.budget }}">
+                <form class="bud-form" method="POST" action="/portfolio/budget">
+                    <input type="hidden" name="account_id" value="{{ r.id }}">
+                    <input type="hidden" name="month" value="{{ month_key }}">
+                    <input class="bud-in" name="amount" value="{{ r.budget or '' }}" placeholder="예산 입력" inputmode="numeric">
+                    <button class="bud-save" type="submit" title="저장">✓</button>
+                </form>
+                {% if r.burn is not none %}<div style="font-size:.66rem; color:#999; text-align:right; margin-top:1px">소진 {{ r.burn }}%</div>{% endif %}
+            </td>
+            <td data-v="{{ r.pace if r.pace is not none else -1 }}">
+                {% if r.budget %}<span class="num">{{ won(r.projected) }}</span>
+                <div style="font-size:.68rem"><span class="pace-{{ r.pace_status }}">{{ r.pace }}%{% if r.pace_status=='over' %} 초과{% elif r.pace_status=='under' %} 부진{% endif %}</span></div>
+                {% else %}<span class="muted">—</span>{% endif %}
+            </td>
         </tr>
         {% endfor %}
         </tbody>
@@ -96,6 +117,8 @@
             <td></td><td></td>
             <td class="num">{{ won(tot.spend_m) }}</td>
             <td>{% if tot.broas_m is not none %}{{ tot.broas_m }}%{% endif %}</td>
+            <td class="num">{{ won(tot.budget) }}</td>
+            <td class="num">{% if tot.budget %}{{ won(tot.projected) }}{% endif %}</td>
         </tr></tfoot>
     </table>
     </div>
