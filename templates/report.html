@@ -14,6 +14,10 @@
   .rep-head .brand{font-size:.78rem; opacity:.85; letter-spacing:.04em; margin-bottom:6px}
   .rep-head h1{margin:0; font-size:1.5rem}
   .rep-head .per{margin-top:6px; font-size:.9rem; opacity:.92}
+  .rep-head .topline{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .hgrade{flex-shrink:0; text-align:center; background:rgba(255,255,255,.18); border-radius:12px; padding:8px 14px}
+  .hgrade .g{font-size:1.9rem; font-weight:800; line-height:1}
+  .hgrade .s{font-size:.66rem; opacity:.9; margin-top:2px}
   .toolbar{display:flex; gap:8px; padding:12px 32px; background:#f6f8fa; border-bottom:1px solid #eaedf0; align-items:center}
   .toolbar a{font-size:.82rem; text-decoration:none; color:#456; padding:5px 12px; border-radius:7px; border:1px solid #d8dde2}
   .toolbar a.on{background:#2a6bb3; color:#fff; border-color:#2a6bb3}
@@ -55,9 +59,14 @@
 <body>
 <div class="sheet">
   <div class="rep-head">
-    <div class="brand">RisingAd · 광고 성과 리포트</div>
-    <h1>{{ label }}</h1>
-    <div class="per">{{ start }} ~ {{ end }} · {{ period_ko }} ({{ span }}일간)</div>
+    <div class="topline">
+      <div>
+        <div class="brand">RisingAd · 광고 성과 리포트</div>
+        <h1>{{ label }}</h1>
+        <div class="per">{{ start }} ~ {{ end }} · {{ period_ko }} ({{ span }}일간)</div>
+      </div>
+      {% if health and health.grade %}<div class="hgrade"><div class="g">{{ health.grade }}</div><div class="s">건강점수 {{ health.score }}</div></div>{% endif %}
+    </div>
   </div>
 
   <div class="toolbar">

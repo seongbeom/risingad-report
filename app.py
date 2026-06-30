@@ -1400,23 +1400,30 @@ def _anomaly_scan(today=None):
                     if (t["cost"] >= _ANOMALY_MIN_COST * 5 and b["cost_avg"] > 0
                             and t["cost"] >= b["cost_avg"] * 3):
                         ratio = t["cost"] / b["cost_avg"]
+                        excess = round(t["cost"] - b["cost_avg"])
                         findings.append({
                             "sev": "critical" if ratio >= 5 else "warn", "rule": "광고비급증",
                             "store": store, "channel": label, "date": day_imm,
+                            "impact": excess, "impact_label": f"초과 지출 약 {excess:,}원",
                             "msg": f"💸 광고비 급증 — {store}/{label} {day_imm[5:]}: "
                                    f"{t['cost']:,.0f}원 (평소 일평균 {b['cost_avg']:,.0f}원의 {ratio:.1f}배)"})
                     # 노출 중단 / 급감
                     if imp_ok and b["imp_avg"] >= 1000:
+                        rev_avg = b["rev_sum"] / b["n"] if b["n"] else 0
                         if t["imp"] == 0:
+                            lost = round(rev_avg)
                             findings.append({
                                 "sev": "warn", "rule": "노출중단", "store": store,
                                 "channel": label, "date": day_imm,
+                                "impact": lost, "impact_label": f"예상 매출 손실 약 {lost:,}원/일",
                                 "msg": f"🛑 노출 중단 — {store}/{label} {day_imm[5:]}: 노출 0 "
                                        f"(평소 일평균 {b['imp_avg']:,.0f}). 계정정지·심사반려·예산소진 의심"})
                         elif t["imp"] < b["imp_avg"] * 0.2 and t["cost"] >= _ANOMALY_MIN_COST:
+                            lost = round(rev_avg * (1 - t["imp"] / b["imp_avg"]))
                             findings.append({
                                 "sev": "warn", "rule": "노출급감", "store": store,
                                 "channel": label, "date": day_imm,
+                                "impact": lost, "impact_label": f"예상 매출 손실 약 {lost:,}원/일",
                                 "msg": f"📉 노출 급감 — {store}/{label} {day_imm[5:]}: 노출 {t['imp']:,} "
                                        f"(평소 {b['imp_avg']:,.0f}, {t['imp'] / b['imp_avg'] * 100:.0f}%)"})
 
@@ -1435,9 +1442,11 @@ def _anomaly_scan(today=None):
                     reliable = (conv_col and bs["conv_avg"] >= 1.0
                                 and bs["conv_days"] >= max(_ANOMALY_MIN_ACTIVE, round(bs["n"] * 0.6)))
                     if reliable and _zero_spend_day(ts) and _zero_spend_day(tp):
+                        untracked = round(ts["cost"] + (tp["cost"] if tp else 0))
                         findings.append({
                             "sev": "warn", "rule": "전환추적깨짐", "store": store,
                             "channel": label, "date": day_set,
+                            "impact": untracked, "impact_label": f"추적 누락 광고비 약 {untracked:,}원",
                             "msg": f"🧩 전환추적 깨짐 의심 — {store}/{label} {day_prev[5:]}~{day_set[5:]}: "
                                    f"광고비 쓰는데 전환·매출 2일 연속 0 "
                                    f"(평소 전환 일평균 {bs['conv_avg']:.1f}건). 픽셀/전환연동 점검"})
@@ -1445,9 +1454,11 @@ def _anomaly_scan(today=None):
                         # ROAS 급락(매출 0은 위 픽셀룰이 커버): 평소 효율 좋던 채널이 절반 이하로 추락
                         t_roas = ts["rev"] / ts["cost"] * 100
                         if t_roas < bs["roas"] * 0.4:
+                            lost_rev = round((bs["roas"] - t_roas) / 100 * ts["cost"])
                             findings.append({
                                 "sev": "warn", "rule": "ROAS급락", "store": store,
                                 "channel": label, "date": day_set,
+                                "impact": lost_rev, "impact_label": f"매출 손실 추정 약 {lost_rev:,}원",
                                 "msg": f"🔻 ROAS 급락 — {store}/{label} {day_set[5:]}: ROAS {t_roas:.0f}% "
                                        f"(평소 {bs['roas']:.0f}%) 광고비 {ts['cost']:,.0f}/매출 {ts['rev']:,.0f}"})
     order = {"critical": 0, "warn": 1, "info": 2}
@@ -1482,8 +1493,12 @@ def _anomaly_scan_job():
           + " / ".join(f"{f['rule']}·{f['store']}" for f in findings[:12]), flush=True)
     if fresh:
         crit = sum(1 for f in fresh if f["sev"] == "critical")
+        tot_impact = sum(f.get("impact") or 0 for f in fresh)
         head = f"📣 캠페인 이상 감지 {len(fresh)}건" + (f" (긴급 {crit})" if crit else "")
-        body = "\n".join(f["msg"] for f in fresh[:15])
+        if tot_impact > 0:
+            head += f" · 추정 영향 약 {tot_impact:,}원"
+        body = "\n".join(f["msg"] + (f"\n   └ {f['impact_label']}" if f.get("impact_label") else "")
+                         for f in fresh[:15])
         more = f"\n…외 {len(fresh) - 15}건" if len(fresh) > 15 else ""
         slack_notify(head + ":\n" + body + more + "\n→ 해당 광고계정 점검 필요",
                      severity="critical" if crit else "warn")
@@ -4901,6 +4916,11 @@ def portfolio():
     srev_by = {(m["account_id"], m["date"]): (m.get("매출") or 0)
                for m in db.list_metrics(start_date=mstart, end_date=yesterday)}
 
+    # 메타 노출 빈도(어제) — 건강점수 점검용
+    meta_freq_by = {r["account_id"]: (r.get("frequency") or 0)
+                    for r in db.list_meta_metrics(start_date=yesterday, end_date=yesterday)
+                    if (r.get("frequency") or 0) > 0}
+
     # 캠페인 이상감지 — 재시작 후 비었으면 lazy 1회
     if not _anomaly_findings["ts"]:
         try:
@@ -4910,7 +4930,8 @@ def portfolio():
             traceback.print_exc()
     anom_by_store = {}
     for f in _anomaly_findings["items"]:
-        anom_by_store.setdefault(f["store"], []).append({"rule": f["rule"], "sev": f["sev"]})
+        anom_by_store.setdefault(f["store"], []).append(
+            {"rule": f["rule"], "sev": f["sev"], "impact_label": f.get("impact_label", "")})
 
     def _roas(rev, cost):
         return round(rev / cost * 100) if cost else None
@@ -4944,14 +4965,13 @@ def portfolio():
             pace_status = None
         anoms = anom_by_store.get(lbl, [])
         has_crit = any(x["sev"] == "critical" for x in anoms)
-        # 주의 점수: 이상감지(긴급>일반) > 의존도 높음(광고비/실매출) > 고지출
         broas_y = _roas(sr_y, sp_y)
         dep_y = _dep(sp_y, sr_y)
-        score = 0
-        if has_crit: score += 10000
-        score += len(anoms) * 1000
-        if dep_y is not None and dep_y >= 30: score += 200   # 광고비가 실매출의 30%+ = 의존도 경고
-        score += min(sp_y / 10000, 100)                       # 고지출 약가중
+        # 매장 건강 점수 (A~F) — 우리 신호를 심각도 가중 채점
+        health = _health_score({
+            "roas": broas_y, "anoms": anoms, "pace_status": pace_status,
+            "dep": dep_y, "wow": _delta(sr_y, sr_w), "meta_freq": meta_freq_by.get(aid),
+        })
         rows.append({
             "id": aid, "label": lbl,
             "spend_y": sp_y, "spend_w": sp_w, "spend_wow": _delta(sp_y, sp_w),
@@ -4959,11 +4979,13 @@ def portfolio():
             "broas_y": broas_y, "dep_y": dep_y,
             "spend_m": sp_m, "srev_m": sr_m, "broas_m": _roas(sr_m, sp_m), "dep_m": _dep(sp_m, sr_m),
             "budget": budget, "burn": burn, "projected": projected, "pace": pace, "pace_status": pace_status,
-            "anoms": anoms, "has_crit": has_crit,
-            "active": sp_m > 0 or budget > 0, "score": score,
+            "anoms": anoms, "has_crit": has_crit, "health": health,
+            "active": sp_m > 0 or budget > 0,
         })
-    # 활성 매장(이번달 집행) 우선, 주의 점수순. 비활성은 뒤로.
-    rows.sort(key=lambda r: (not r["active"], -r["score"], -r["spend_y"]))
+    # 활성 매장 우선, 건강 점수 낮은(주의 필요한) 순. 점수 없으면 뒤로. 비활성은 맨 뒤.
+    rows.sort(key=lambda r: (not r["active"], r["health"]["score"] is None,
+                             r["health"]["score"] if r["health"]["score"] is not None else 999,
+                             -r["spend_y"]))
     active_rows = [r for r in rows if r["active"]]
     inactive_rows = [r for r in rows if not r["active"]]
 
@@ -4978,9 +5000,16 @@ def portfolio():
         "crit": sum(1 for r in active_rows if r["has_crit"]),
         "n_over": sum(1 for r in active_rows if r["pace_status"] == "over"),
         "n_active": len(active_rows),
+        "impact": sum(f.get("impact") or 0 for f in _anomaly_findings["items"]),
     }
     tot["broas_y"] = _roas(tot["srev_y"], tot["spend_y"])
     tot["broas_m"] = _roas(tot["srev_m"], tot["spend_m"])
+    # 등급 분포 + 평균 점수 (활성 매장)
+    _gscores = [r["health"]["score"] for r in active_rows if r["health"]["score"] is not None]
+    tot["avg_score"] = round(sum(_gscores) / len(_gscores)) if _gscores else None
+    tot["grade_dist"] = {g: sum(1 for r in active_rows if r["health"]["grade"] == g)
+                         for g in ("A", "B", "C", "D", "F")}
+    tot["n_low"] = sum(1 for r in active_rows if r["health"]["grade"] in ("D", "F"))
 
     return render_template(
         "portfolio.html", active="portfolio",
@@ -5004,6 +5033,96 @@ def set_ad_budget():
     if aid:
         db.set_setting(f"adbudget_{aid}_{month}", str(max(0, amount)))
     return redirect(url_for("portfolio"))
+
+
+# ===== 매장 건강 점수 (claude-ads 심각도 가중 채점 차용) =====
+# 우리가 이미 가진 신호(ROAS·이상감지·예산페이스·의존도·추세·메타빈도)를 점검항목으로 묶어
+# 0~100 점수 + A~F 등급. 각 점검은 통과(1.0)/주의(0.5)/실패(0.0)/해당없음(None).
+# 점수 = Σ(결과×심각도) / Σ(심각도) × 100. (단순화: 카테고리 가중 생략, 심각도만)
+_HEALTH_SEV = {"critical": 5.0, "high": 3.0, "medium": 1.5, "low": 0.5}
+
+
+def _health_score(m):
+    """m: {roas, anoms(list), pace_status, dep, wow, meta_freq} → {score, grade, checks}."""
+    checks = []
+
+    def add(name, sev, result, detail):
+        checks.append({"name": name, "sev": sev, "result": result, "detail": detail})
+
+    r = m.get("roas")
+    active = r is not None  # 집행(매출 데이터) 있는 매장만 채점
+    add("광고 효율(ROAS)", "high",
+        None if r is None else (1.0 if r >= 400 else 0.5 if r >= 200 else 0.0),
+        f"{r}%" if r is not None else "데이터 없음")
+    anoms = m.get("anoms") or []
+    has_crit = any(a.get("sev") == "critical" for a in anoms)
+    add("캠페인 이상 없음", "critical",
+        0.0 if has_crit else (0.5 if anoms else (1.0 if active else None)),
+        f"{len(anoms)}건" if anoms else ("없음" if active else "미집행"))
+    ps = m.get("pace_status")
+    add("예산 페이스", "high",
+        None if ps is None else (1.0 if ps == "ok" else 0.0 if ps == "over" else 0.5),
+        {"ok": "정상", "over": "초과예상", "under": "미달"}.get(ps, "미설정"))
+    dep = m.get("dep")
+    add("광고 의존도", "medium",
+        None if dep is None else (1.0 if dep < 25 else 0.5 if dep < 40 else 0.0),
+        f"{dep}%" if dep is not None else "—")
+    w = m.get("wow")
+    add("매출 추세(전주대비)", "medium",
+        None if w is None else (1.0 if w >= -10 else 0.5 if w >= -30 else 0.0),
+        f"{'+' if w >= 0 else ''}{w}%" if w is not None else "—")
+    fq = m.get("meta_freq")
+    add("메타 노출 빈도", "medium",
+        None if fq is None else (1.0 if fq < 3 else 0.5 if fq <= 5 else 0.0),
+        f"{fq:.1f}회" if fq is not None else "—")
+    num = sum(c["result"] * _HEALTH_SEV[c["sev"]] for c in checks if c["result"] is not None)
+    den = sum(_HEALTH_SEV[c["sev"]] for c in checks if c["result"] is not None)
+    score = round(num / den * 100) if den else None
+    grade = None
+    if score is not None:
+        grade = ("A" if score >= 90 else "B" if score >= 75 else "C" if score >= 60
+                 else "D" if score >= 40 else "F")
+    return {"score": score, "grade": grade, "checks": checks}
+
+
+def _store_health_snapshot(aid, label):
+    """단일 매장의 어제 기준 건강점수(리포트 등). _health_score 입력을 직접 조회해 구성."""
+    now = datetime.now()
+    y = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    w = (now - timedelta(days=8)).strftime("%Y-%m-%d")
+    mk = now.strftime("%Y-%m")
+    mstart = now.replace(day=1).strftime("%Y-%m-%d")
+    dim = ((now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)).day
+    dom = now.day
+    sp_y = _month_ad_spend_by_account(y, y).get(aid, 0)
+    sp_m = _month_ad_spend_by_account(mstart, y).get(aid, 0)
+    sr_y = sum((m.get("매출") or 0) for m in db.list_metrics(account_id=aid, start_date=y, end_date=y))
+    sr_w = sum((m.get("매출") or 0) for m in db.list_metrics(account_id=aid, start_date=w, end_date=w))
+    if not _anomaly_findings["ts"]:
+        try:
+            _anomaly_findings["items"] = _anomaly_scan()
+            _anomaly_findings["ts"] = now.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            traceback.print_exc()
+    anoms = [{"rule": f["rule"], "sev": f["sev"]} for f in _anomaly_findings["items"] if f["store"] == label]
+    try:
+        budget = int(db.get_setting(f"adbudget_{aid}_{mk}", "0") or 0)
+    except ValueError:
+        budget = 0
+    pace_status = None
+    if budget > 0:
+        proj = round(sp_m / dom * dim) if dom else 0
+        pace = round(proj / budget * 100) if budget else 0
+        pace_status = "over" if pace >= 110 else ("under" if pace <= 80 and dom >= 10 else "ok")
+    mf = next((r.get("frequency") for r in db.list_meta_metrics(account_ids=[aid], start_date=y, end_date=y)
+               if (r.get("frequency") or 0) > 0), None)
+    return _health_score({
+        "roas": round(sr_y / sp_y * 100) if sp_y else None,
+        "anoms": anoms, "pace_status": pace_status,
+        "dep": round(sp_y / sr_y * 100, 1) if sr_y else None,
+        "wow": round((sr_y - sr_w) / sr_w * 100) if sr_w else None,
+        "meta_freq": mf,
+    })
 
 
 # 클라이언트 리포트용 채널 표시명(비전문가용 — 영어·약어 최소화)
@@ -5092,9 +5211,11 @@ def client_report(account_id):
         if best["roas"]:
             comments.append(f"가장 효율이 좋은 채널은 ‘{best['name']}’(효율 {best['roas']}%)였습니다.")
 
+    health = _store_health_snapshot(account_id, label)
+
     return render_template(
         "report.html", label=label, account_id=account_id, period=period,
-        period_ko=period_ko, start=s, end=e, span=span,
+        period_ko=period_ko, start=s, end=e, span=span, health=health,
         rows=rows, tot={"spend": tot_s, "rev": tot_r, "roas": roas, "proas": proas,
                         "d_spend": _pct(tot_s, ptot_s), "d_rev": _pct(tot_r, ptot_r),
                         "srev": srev, "contrib": contrib},

@@ -34,8 +34,13 @@
   .bud-form{display:flex; gap:3px; align-items:center; justify-content:flex-end}
   .bud-in{width:82px; text-align:right; border:1px solid #d8dde2; border-radius:5px; padding:3px 6px; font-size:.78rem}
   .bud-save{border:none; background:#5a8; color:#fff; border-radius:5px; padding:3px 7px; cursor:pointer; font-size:.72rem}
-  .chip{display:inline-block; font-size:.68rem; font-weight:700; color:#fff; border-radius:5px; padding:1px 6px; margin:1px 2px}
+  .chip{display:inline-block; font-size:.68rem; font-weight:700; color:#fff; border-radius:5px; padding:1px 6px; margin:1px 2px; cursor:help}
   .c-crit{background:#c0392b} .c-warn{background:#e07b39}
+  .grade{display:inline-block; font-weight:800; font-size:.92rem; width:26px; height:26px; line-height:26px;
+    text-align:center; border-radius:7px; color:#fff; cursor:help}
+  .g-A{background:#1e8e4e} .g-B{background:#5aa84f} .g-C{background:#d6a417} .g-D{background:#e07b39} .g-F{background:#c0392b}
+  .g-none{background:#cfd6dd; color:#fff}
+  .gscore{font-size:.66rem; color:#999; display:block; text-align:center; margin-top:1px}
   .pf-foot{font-size:.74rem; color:#aaa; margin-top:10px}
   details.inact{margin-top:14px; font-size:.82rem; color:#888}
   details.inact summary{cursor:pointer; color:#789}
@@ -56,10 +61,11 @@
     <!-- 요약 -->
     <div class="pf-sum">
         <div class="pf-kpi"><div class="k">활성 매장</div><div class="v">{{ tot.n_active }}</div></div>
+        {% if tot.avg_score is not none %}<div class="pf-kpi {{ 'warn' if tot.n_low else '' }}"><div class="k">평균 건강점수</div><div class="v">{{ tot.avg_score }}{% if tot.n_low %} <span style="font-size:.74rem">D·F {{ tot.n_low }}곳</span>{% endif %}</div></div>{% endif %}
         <div class="pf-kpi"><div class="k">어제 총 광고비</div><div class="v">{{ won(tot.spend_y) }}</div></div>
         <div class="pf-kpi"><div class="k">어제 총 실매출</div><div class="v">{{ won(tot.srev_y) }}</div></div>
         <div class="pf-kpi"><div class="k">블렌디드 ROAS</div><div class="v">{% if tot.broas_y is not none %}{{ tot.broas_y }}%{% else %}—{% endif %}</div></div>
-        <div class="pf-kpi {{ 'warn' if tot.alerts else '' }}"><div class="k">캠페인 이상감지</div><div class="v">{{ tot.alerts }}건{% if tot.crit %} <span style="font-size:.78rem">긴급 {{ tot.crit }}</span>{% endif %}</div></div>
+        <div class="pf-kpi {{ 'warn' if tot.alerts else '' }}"><div class="k">캠페인 이상감지</div><div class="v">{{ tot.alerts }}건{% if tot.crit %} <span style="font-size:.78rem">긴급 {{ tot.crit }}</span>{% endif %}</div>{% if tot.impact %}<div style="font-size:.7rem;color:#cf5b2a;margin-top:2px">추정 영향 ~{{ "{:,}".format(tot.impact|int) }}원</div>{% endif %}</div>
         {% if tot.budget %}<div class="pf-kpi {{ 'warn' if tot.n_over else '' }}"><div class="k">예산 ({{ month_key }}, {{ day_of_month }}/{{ days_in_month }}일)</div><div class="v">{{ won(tot.spend_m) }} <span style="font-size:.72rem;color:#999">/ {{ won(tot.budget) }}</span>{% if tot.n_over %} <span style="font-size:.74rem">초과예상 {{ tot.n_over }}곳</span>{% endif %}</div></div>{% endif %}
     </div>
 
@@ -67,29 +73,35 @@
     <table class="pf" id="pfTable">
         <thead><tr>
             <th class="l" data-c="0" data-t="t">매장</th>
-            <th data-c="1" data-t="n">어제 광고비</th>
-            <th data-c="2" data-t="n">전주대비</th>
-            <th data-c="3" data-t="n">어제 실매출</th>
-            <th data-c="4" data-t="n">전주대비</th>
-            <th data-c="5" data-t="n">블렌디드 ROAS</th>
-            <th data-c="6" data-t="n">광고 의존도</th>
-            <th class="l" data-c="7" data-t="t">이상감지</th>
-            <th data-c="8" data-t="n">MTD 광고비</th>
-            <th data-c="9" data-t="n">MTD ROAS</th>
-            <th data-c="10" data-t="n">월 광고예산</th>
-            <th data-c="11" data-t="n">월말 예상</th>
+            <th data-c="1" data-t="n">건강</th>
+            <th data-c="2" data-t="n">어제 광고비</th>
+            <th data-c="3" data-t="n">전주대비</th>
+            <th data-c="4" data-t="n">어제 실매출</th>
+            <th data-c="5" data-t="n">전주대비</th>
+            <th data-c="6" data-t="n">블렌디드 ROAS</th>
+            <th data-c="7" data-t="n">광고 의존도</th>
+            <th class="l" data-c="8" data-t="t">이상감지</th>
+            <th data-c="9" data-t="n">MTD 광고비</th>
+            <th data-c="10" data-t="n">MTD ROAS</th>
+            <th data-c="11" data-t="n">월 광고예산</th>
+            <th data-c="12" data-t="n">월말 예상</th>
         </tr></thead>
         <tbody>
         {% for r in active_rows %}
         <tr class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or r.pace_status=='over' or (r.dep_y is not none and r.dep_y>=30) else '') }}">
             <td class="l"><a href="/?accounts={{ r.id }}" style="text-decoration:none"><span class="store">{{ r.label }}</span></a> <a href="/report/{{ r.id }}" title="클라이언트 리포트" style="font-size:.72rem; color:#5a8; text-decoration:none">📄</a></td>
+            <td data-v="{{ r.health.score if r.health.score is not none else -1 }}">
+                {% set h = r.health %}
+                <span class="grade {{ 'g-' + h.grade if h.grade else 'g-none' }}" title="{% for c in h.checks %}{{ c.name }}: {{ '✓' if c.result==1.0 else ('△' if c.result==0.5 else ('✗' if c.result==0.0 else '–')) }} {{ c.detail }}&#10;{% endfor %}">{{ h.grade or '–' }}</span>
+                {% if h.score is not none %}<span class="gscore">{{ h.score }}</span>{% endif %}
+            </td>
             <td class="num" data-v="{{ r.spend_y }}">{{ won(r.spend_y) }}</td>
             <td data-v="{{ r.spend_wow if r.spend_wow is not none else -99999 }}">{{ wow(r.spend_wow) }}</td>
             <td class="num" data-v="{{ r.srev_y }}">{{ won(r.srev_y) }}</td>
             <td data-v="{{ r.srev_wow if r.srev_wow is not none else -99999 }}">{{ wow(r.srev_wow) }}</td>
             <td data-v="{{ r.broas_y if r.broas_y is not none else -1 }}">{{ roas(r.broas_y) }}</td>
             <td data-v="{{ r.dep_y if r.dep_y is not none else -1 }}">{% if r.dep_y is not none %}<span class="{{ 'dep-hi' if r.dep_y>=30 else '' }}">{{ r.dep_y }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td class="l" data-v="{{ r.anoms|length }}">{% for x in r.anoms %}<span class="chip {{ 'c-crit' if x.sev=='critical' else 'c-warn' }}">{{ x.rule }}</span>{% endfor %}{% if not r.anoms %}<span class="muted">—</span>{% endif %}</td>
+            <td class="l" data-v="{{ r.anoms|length }}">{% for x in r.anoms %}<span class="chip {{ 'c-crit' if x.sev=='critical' else 'c-warn' }}"{% if x.impact_label %} title="{{ x.impact_label }}"{% endif %}>{{ x.rule }}</span>{% endfor %}{% if not r.anoms %}<span class="muted">—</span>{% endif %}</td>
             <td class="num" data-v="{{ r.spend_m }}">{{ won(r.spend_m) }}</td>
             <td data-v="{{ r.broas_m if r.broas_m is not none else -1 }}">{{ roas(r.broas_m) }}</td>
             <td class="num" data-v="{{ r.budget }}">
@@ -111,6 +123,7 @@
         </tbody>
         <tfoot><tr style="font-weight:700; background:#f5f7fa">
             <td class="l">합계 ({{ tot.n_active }})</td>
+            <td>{% if tot.avg_score is not none %}<span style="font-size:.74rem; color:#888">평균 {{ tot.avg_score }}</span>{% endif %}</td>
             <td class="num">{{ won(tot.spend_y) }}</td><td></td>
             <td class="num">{{ won(tot.srev_y) }}</td><td></td>
             <td>{% if tot.broas_y is not none %}{{ tot.broas_y }}%{% endif %}</td>
