@@ -140,6 +140,26 @@
     {% macro spark(vals, color) %}{% if vals and vals|length > 1 and (vals|max) > 0 %}{% set mx = vals|max %}{% set n = vals|length %}<svg width="78" height="20" viewBox="0 0 78 20" preserveAspectRatio="none" style="vertical-align:middle"><polyline fill="none" stroke="{{ color }}" stroke-width="1.4" stroke-linejoin="round" points="{% for v in vals %}{{ (loop.index0 * (78.0/(n-1)))|round(1) }},{{ (19 - (v/mx*18))|round(1) }} {% endfor %}"/><circle cx="78" cy="{{ (19 - (vals[-1]/mx*18))|round(1) }}" r="1.7" fill="{{ color }}"/></svg>{% else %}<span style="color:#ccc;font-size:.7rem">—</span>{% endif %}{% endmacro %}
     <h1 style="margin-top:0">데일리 대시보드</h1>
     <p class="subtitle">{{ today }} <span class="live-pill" style="display:inline-block; background:#ff6b6b; color:#fff; padding:1px 7px; border-radius:8px; font-size:0.7rem; font-weight:600">LIVE</span> · 마지막 갱신 {{ now }} · <a class="refresh-link" onclick="location.reload()">새로고침</a></p>
+    {# ===== 캠페인 이상 감지 배너 (대행사가 직접 챙겨야 할 광고계정 상태) ===== #}
+    {% if campaign_alerts and campaign_alerts.items %}
+    {% set ca_crit = campaign_alerts.items | selectattr('sev','equalto','critical') | list %}
+    <div class="card" style="padding:12px 16px; margin-bottom:12px; background:{% if ca_crit %}#fdecec{% else %}#fff4f0{% endif %}; border:1px solid {% if ca_crit %}#f1a9a0{% else %}#f3c6b3{% endif %}">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px">
+            <strong style="color:{% if ca_crit %}#c0392b{% else %}#cf5b2a{% endif %}; font-size:0.95rem">
+                📣 캠페인 이상 감지 {{ campaign_alerts.items|length }}건{% if ca_crit %} <span style="color:#c0392b">· 긴급 {{ ca_crit|length }}</span>{% endif %}
+            </strong>
+            <span style="font-size:0.72rem; color:#aaa">광고계정 직접 점검 필요 · 스캔 {{ campaign_alerts.ts or '—' }}</span>
+        </div>
+        {% for f in campaign_alerts.items[:12] %}
+        <div style="font-size:0.83rem; padding:3px 0; color:#444; border-top:1px solid rgba(0,0,0,0.04)">
+            <span style="display:inline-block; min-width:74px; font-size:0.68rem; font-weight:700; color:#fff; text-align:center; border-radius:5px; padding:1px 6px; margin-right:7px; background:{% if f.sev=='critical' %}#c0392b{% else %}#e07b39{% endif %}">{{ f.rule }}</span>
+            {{ f.msg }}
+        </div>
+        {% endfor %}
+        {% if campaign_alerts.items|length > 12 %}<div style="font-size:0.74rem; color:#999; padding-top:4px">…외 {{ campaign_alerts.items|length - 12 }}건</div>{% endif %}
+    </div>
+    {% endif %}
+
     {% if freshness %}
     {% set fresh_bad = freshness | selectattr('status','equalto','bad') | list %}
     {% set fresh_warn = freshness | selectattr('status','equalto','warn') | list %}

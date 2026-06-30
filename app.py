@@ -1312,6 +1312,177 @@ def _data_audit_job():
     return issues
 
 
+# ===== 캠페인 이상 감지 (계정 단위 광고 성과 이상) =====
+# 시스템 장애(수집 끊김)와 별개로, 대행사가 직접 챙겨야 할 '광고 계정 상태'를 매일 자동 점검.
+# 데이터는 이미 채널별 *_metrics 에 있으므로 추가 수집 없이 규칙만 적용.
+# 잡는 4종: 전환추적 깨짐 / ROAS 급락 / 광고비 급증 / 노출 중단·급감.
+_ANOMALY_MIN_COST = 10000      # 이 미만 광고비 날은 노이즈 — 룰 제외
+_ANOMALY_BASELINE_DAYS = 7     # 비교 기준 직전 N일
+_ANOMALY_MIN_ACTIVE = 3        # 기준 N일 중 집행(광고비>0)일이 이만큼은 있어야 안정 비교
+
+# (라벨, 테이블, 광고비컬럼, 전환컬럼 or None, 정착지연일, 노출신뢰)
+#  정착지연일: 전환/매출이 어트리뷰션으로 며칠 뒤까지 채워지는 채널은 '정착된 날'만 본다(오탐 방지).
+#   크리테오·카카오=클릭후7일 → 7. 메타=2. 네이버검색/성과형=1. 쇼핑박스(UTM)=2.
+#  노출신뢰: 카카오는 노출 보고가 성기어 노출0 룰 제외(_AUDIT_TABLES 와 동일 기조).
+_ANOMALY_CHANNELS = [
+    ("메타", "meta_metrics", "spend", "purchases", 2, True),
+    ("네이버 검색", "naver_metrics", "cost", "conversions", 1, True),
+    ("크리테오", "criteo_metrics", "cost", "conversions", 7, True),
+    ("네이버 성과형", "gfa_metrics", "cost", "conversions", 1, True),
+    ("카카오모먼트", "kakao_metrics", "cost", "conversions", 7, False),
+    ("쇼핑박스", "shopbox_metrics", "cost", None, 2, True),
+]
+
+# 최근 1회 스캔 결과 (대시보드 표시용) — Slack 과 별개로 화면엔 항상 현재 전체 노출
+_anomaly_findings = {"ts": None, "items": []}
+
+
+def _anomaly_series(conn, table, cost_col, conv_col, account_id, start, end):
+    """채널 한 개의 계정 일별 시계열 → {date: {cost,imp,clk,conv,rev}}.
+    date 로 SUM 집계 → 쇼핑박스(device 2행)도 자동 합산. 컬럼명은 상수에서만 와 안전."""
+    conv_expr = f"SUM(COALESCE({conv_col},0))" if conv_col else "0"
+    sql = (f"SELECT date, SUM(COALESCE(impressions,0)), SUM(COALESCE(clicks,0)), "
+           f"SUM(COALESCE({cost_col},0)), {conv_expr}, SUM(COALESCE(revenue,0)) "
+           f"FROM {table} WHERE account_id=? AND date BETWEEN ? AND ? GROUP BY date")
+    out = {}
+    for d, imp, clk, cost, conv, rev in conn.execute(sql, (account_id, start, end)).fetchall():
+        out[d] = {"cost": cost or 0, "imp": imp or 0, "clk": clk or 0,
+                  "conv": conv or 0, "rev": rev or 0}
+    return out
+
+
+def _anomaly_baseline(series, target_date, days=_ANOMALY_BASELINE_DAYS):
+    """target_date 직전 days일 중 '집행(광고비>0)일'만 모아 평균/합 계산. 없으면 None."""
+    import datetime as _dt
+    t = _dt.date.fromisoformat(target_date)
+    active = [series[d] for d in (
+        (t - _dt.timedelta(days=i)).isoformat() for i in range(1, days + 1))
+        if series.get(d) and series[d]["cost"] > 0]
+    n = len(active)
+    if n == 0:
+        return None
+    _s = lambda k: sum(m[k] for m in active)
+    cost_sum = _s("cost")
+    return {
+        "n": n, "cost_avg": cost_sum / n, "imp_avg": _s("imp") / n,
+        "conv_avg": _s("conv") / n, "rev_sum": _s("rev"), "cost_sum": cost_sum,
+        "conv_days": sum(1 for m in active if m["conv"] > 0 or m["rev"] > 0),
+        "roas": (_s("rev") / cost_sum * 100) if cost_sum else 0,
+    }
+
+
+def _anomaly_scan(today=None):
+    """전 매장×채널 이상 점검 → finding dict 리스트(심각도순). Slack 안 보냄(호출부가 결정)."""
+    import datetime as _dt
+    today = today or _dt.date.today()
+    labels = {a["id"]: (a.get("label") or a["id"]) for a in db.list_accounts()}
+    findings = []
+    win_start = (today - _dt.timedelta(days=_ANOMALY_BASELINE_DAYS + 12)).isoformat()
+    win_end = today.isoformat()
+    day_imm = (today - _dt.timedelta(days=1)).isoformat()
+    with db.db_conn() as conn:
+        existing = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        for label, table, cost_col, conv_col, lag, imp_ok in _ANOMALY_CHANNELS:
+            if table not in existing:
+                continue
+            day_set = (today - _dt.timedelta(days=lag)).isoformat()
+            for aid, store in labels.items():
+                series = _anomaly_series(conn, table, cost_col, conv_col, aid, win_start, win_end)
+                if not series:
+                    continue
+
+                # --- 즉시지표(광고비/노출): 어제 기준 (어트리뷰션 지연 없음) ---
+                b = _anomaly_baseline(series, day_imm)
+                t = series.get(day_imm)
+                if b and b["n"] >= _ANOMALY_MIN_ACTIVE and t:
+                    # 광고비 급증
+                    if (t["cost"] >= _ANOMALY_MIN_COST * 5 and b["cost_avg"] > 0
+                            and t["cost"] >= b["cost_avg"] * 3):
+                        ratio = t["cost"] / b["cost_avg"]
+                        findings.append({
+                            "sev": "critical" if ratio >= 5 else "warn", "rule": "광고비급증",
+                            "store": store, "channel": label, "date": day_imm,
+                            "msg": f"💸 광고비 급증 — {store}/{label} {day_imm[5:]}: "
+                                   f"{t['cost']:,.0f}원 (평소 일평균 {b['cost_avg']:,.0f}원의 {ratio:.1f}배)"})
+                    # 노출 중단 / 급감
+                    if imp_ok and b["imp_avg"] >= 1000:
+                        if t["imp"] == 0:
+                            findings.append({
+                                "sev": "warn", "rule": "노출중단", "store": store,
+                                "channel": label, "date": day_imm,
+                                "msg": f"🛑 노출 중단 — {store}/{label} {day_imm[5:]}: 노출 0 "
+                                       f"(평소 일평균 {b['imp_avg']:,.0f}). 계정정지·심사반려·예산소진 의심"})
+                        elif t["imp"] < b["imp_avg"] * 0.2 and t["cost"] >= _ANOMALY_MIN_COST:
+                            findings.append({
+                                "sev": "warn", "rule": "노출급감", "store": store,
+                                "channel": label, "date": day_imm,
+                                "msg": f"📉 노출 급감 — {store}/{label} {day_imm[5:]}: 노출 {t['imp']:,} "
+                                       f"(평소 {b['imp_avg']:,.0f}, {t['imp'] / b['imp_avg'] * 100:.0f}%)"})
+
+                # --- 전환/매출지표(픽셀/ROAS): 정착된 날 기준 (오탐 방지) ---
+                bs = _anomaly_baseline(series, day_set)
+                ts = series.get(day_set)
+                if bs and bs["n"] >= _ANOMALY_MIN_ACTIVE and ts and ts["cost"] >= _ANOMALY_MIN_COST:
+                    normally_converts = bs["conv_days"] >= _ANOMALY_MIN_ACTIVE
+                    t_conv = ts["conv"] if conv_col else ts["rev"]
+                    if normally_converts and t_conv == 0 and ts["rev"] == 0:
+                        # 전환추적 깨짐 의심: 평소 전환되던 채널이 광고비 쓰고도 전환·매출 0
+                        findings.append({
+                            "sev": "warn", "rule": "전환추적깨짐", "store": store,
+                            "channel": label, "date": day_set,
+                            "msg": f"🧩 전환추적 깨짐 의심 — {store}/{label} {day_set[5:]}: "
+                                   f"광고비 {ts['cost']:,.0f}원 집행됐는데 전환·매출 0 "
+                                   f"(평소 전환 일평균 {bs['conv_avg']:.1f}). 픽셀/전환연동 점검"})
+                    elif (bs["roas"] >= 150 and bs["cost_avg"] >= _ANOMALY_MIN_COST and ts["rev"] > 0):
+                        # ROAS 급락(매출 0은 위 픽셀룰이 커버): 평소 효율 좋던 채널이 절반 이하로 추락
+                        t_roas = ts["rev"] / ts["cost"] * 100
+                        if t_roas < bs["roas"] * 0.4:
+                            findings.append({
+                                "sev": "warn", "rule": "ROAS급락", "store": store,
+                                "channel": label, "date": day_set,
+                                "msg": f"🔻 ROAS 급락 — {store}/{label} {day_set[5:]}: ROAS {t_roas:.0f}% "
+                                       f"(평소 {bs['roas']:.0f}%) 광고비 {ts['cost']:,.0f}/매출 {ts['rev']:,.0f}"})
+    order = {"critical": 0, "warn": 1, "info": 2}
+    findings.sort(key=lambda f: (order.get(f["sev"], 9), f["store"], f["channel"]))
+    return findings
+
+
+def _anomaly_scan_job():
+    """매일 캠페인 이상 점검 → 대시보드 갱신 + (신규 건만) Slack 1건 통합 알림."""
+    try:
+        findings = _anomaly_scan()
+    except Exception as e:
+        print(f"[anomaly] 점검 실패: {repr(e)[:150]}", flush=True)
+        traceback.print_exc()
+        return []
+    _anomaly_findings["ts"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    _anomaly_findings["items"] = findings
+    db.set_setting("anomaly_last", f"{_anomaly_findings['ts']} "
+                   f"({'이상 ' + str(len(findings)) + '건' if findings else '정상'})")
+    if not findings:
+        print("[anomaly] 캠페인 이상 없음 (전 매장×채널 정상)", flush=True)
+        return []
+    # 신규 건만 Slack(6h 쿨다운) — 매일 1회라 보통 전건, 재실행·재시작 시 중복 억제
+    now = time.time()
+    fresh = []
+    for f in findings:
+        key = f"anomaly:{f['rule']}:{f['store']}:{f['channel']}:{f['date']}"
+        if now - _heartbeat_last_alert.get(key, 0) >= HEARTBEAT_ALERT_COOLDOWN_SEC:
+            _heartbeat_last_alert[key] = now
+            fresh.append(f)
+    print(f"[anomaly] 이상 {len(findings)}건(신규 {len(fresh)}): "
+          + " / ".join(f"{f['rule']}·{f['store']}" for f in findings[:12]), flush=True)
+    if fresh:
+        crit = sum(1 for f in fresh if f["sev"] == "critical")
+        head = f"📣 캠페인 이상 감지 {len(fresh)}건" + (f" (긴급 {crit})" if crit else "")
+        body = "\n".join(f["msg"] for f in fresh[:15])
+        more = f"\n…외 {len(fresh) - 15}건" if len(fresh) > 15 else ""
+        slack_notify(head + ":\n" + body + more + "\n→ 해당 광고계정 점검 필요",
+                     severity="critical" if crit else "warn")
+    return findings
+
+
 SHOPBOX_BACKFILL_DAYS = 14  # 주간/월간 정액이라 넓게 — 입찰원장 일별분할 재계산
 
 
@@ -2082,6 +2253,14 @@ def reload_schedules():
     )
     print("[scheduler] data_audit: 매일 09:30 (전 채널 수집 정합성 자가점검)")
 
+    # 캠페인 이상 감지 (픽셀깨짐/ROAS급락/광고비급증/노출중단) — 매일 09:40 (수집·정합점검 끝난 뒤)
+    scheduler.add_job(
+        _anomaly_scan_job, "cron",
+        hour=9, minute=40,
+        id="anomaly_scan", replace_existing=True,
+    )
+    print("[scheduler] anomaly_scan: 매일 09:40 (캠페인 이상 감지 → Slack/대시보드)")
+
     # 매일 04:30 service self-restart - playwright/chromium 누적 상태 리셋.
     # daily_finalize(03:00) + db_backup(04:00) 끝난 뒤. startup catch-up 으로 자동 회복.
     scheduler.add_job(
@@ -2256,6 +2435,7 @@ def index():
         "gfa_collect": ("🟢 네이버 성과형(GFA) 수집", f"매일 06:50 (최근 {GFA_BACKFILL_DAYS}일, 세션크롤 → 효율시트)", db.get_setting("gfa_last_run", None)),
         "kakao_collect": ("💛 카카오모먼트 수집", f"매일 08:10 (DA+모객+메세지 API, 최근 {KAKAO_BACKFILL_DAYS}일 → 효율시트)", db.get_setting("kakao_last_run", None)),
         "data_audit": ("📋 데이터 자가점검", "매일 09:30 (전 채널 광고비-노출 정합/신선도)", db.get_setting("data_audit_last", None)),
+        "anomaly_scan": ("📣 캠페인 이상 감지", "매일 09:40 (픽셀깨짐/ROAS급락/광고비급증/노출중단)", db.get_setting("anomaly_last", None)),
         "shopbox_collect": ("🛍 쇼핑박스 (광고비+노출/클릭+매출)", f"매일 07:30 (입찰분할 + 네이버 노출/클릭 + cafe24 UTM 매출 → 효율시트, 최근 {SHOPBOX_BACKFILL_DAYS}일)", db.get_setting("shopbox_last_run", None)),
         "db_backup": ("💾 DB 백업", "매일 04:00", None),
         "daily_restart": ("🔄 정기 재시작", "매일 04:30", None),
@@ -2701,6 +2881,15 @@ def admin_data_audit():
         return jsonify({"error": "forbidden"}), 403
     issues = _data_audit_job()
     return jsonify({"ok": True, "issues": issues or [], "clean": not issues})
+
+
+@app.route("/admin/anomaly_scan", methods=["POST", "GET"])
+def admin_anomaly_scan():
+    """캠페인 이상 감지 수동 실행 — 결과(이상 목록)를 즉시 반환."""
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "forbidden"}), 403
+    findings = _anomaly_scan_job()
+    return jsonify({"ok": True, "findings": findings or [], "clean": not findings})
 
 
 @app.route("/accounts/<account_id>/shopbox_bid", methods=["POST"])
@@ -4505,8 +4694,20 @@ def dashboard():
         traceback.print_exc()
     product_data = product_by_period.get(product_periods[0], {}) if product_periods else {}
 
+    # 캠페인 이상 감지 — 앱 재시작 후 아직 안 돌았으면 1회 lazy 스캔(가벼운 DB 집계). 이후는 09:40 잡이 갱신.
+    if not _anomaly_findings["ts"]:
+        try:
+            _anomaly_findings["items"] = _anomaly_scan()
+            _anomaly_findings["ts"] = now.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            traceback.print_exc()
+    campaign_alerts = {"ts": _anomaly_findings["ts"],
+                       "items": [f for f in _anomaly_findings["items"]
+                                 if f["store"] in {(_label_map().get(i, i)) for i in selected_ids}]}
+
     return render_template(
         "dashboard.html",
+        campaign_alerts=campaign_alerts,
         accounts=accounts,
         rows=rows,
         mega=mega,
