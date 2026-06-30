@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>전체 매장 트리아지</title>
+<title>매장 우선순위</title>
 <style>
   h1{margin:0 0 2px}
   .subtitle{color:#888; font-size:.82rem; margin:0 0 16px}
@@ -46,7 +46,7 @@
 <div class="app">
 {% include '_sidebar.html' %}
 <div class="main"><div class="main-inner">
-    <h1>전체 매장 트리아지</h1>
+    <h1>매장 우선순위</h1>
     <p class="subtitle">{{ yesterday }} 기준 · 주의 필요한 매장부터 정렬 · 캠페인 이상감지 스캔 {{ anomaly_ts or '—' }} · 갱신 {{ now }} · <a onclick="location.reload()" style="cursor:pointer;color:#5a8">새로고침</a></p>
 
     {% macro won(v) %}{{ "{:,}".format(v|int) }}{% endmacro %}
