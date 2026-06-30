@@ -4708,9 +4708,10 @@ def dashboard():
             _anomaly_findings["ts"] = now.strftime("%Y-%m-%d %H:%M")
         except Exception:
             traceback.print_exc()
+    # 키를 'rows'로 — Jinja 에서 dict.items 는 메서드와 충돌(.items() 로 해석)되므로 회피
     campaign_alerts = {"ts": _anomaly_findings["ts"],
-                       "items": [f for f in _anomaly_findings["items"]
-                                 if f["store"] in {(_label_map().get(i, i)) for i in selected_ids}]}
+                       "rows": [f for f in _anomaly_findings["items"]
+                                if f["store"] in {(_label_map().get(i, i)) for i in selected_ids}]}
 
     return render_template(
         "dashboard.html",
