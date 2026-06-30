@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ label }} 광고 성과 리포트 ({{ period_ko }})</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    margin:0; background:#eef1f4; color:#2a3540}
+  .sheet{max-width:760px; margin:22px auto; background:#fff; border-radius:14px; overflow:hidden;
+    box-shadow:0 2px 18px rgba(0,0,0,.08)}
+  .rep-head{background:linear-gradient(135deg,#2a6bb3,#3b8) ; color:#fff; padding:26px 32px}
+  .rep-head .brand{font-size:.78rem; opacity:.85; letter-spacing:.04em; margin-bottom:6px}
+  .rep-head h1{margin:0; font-size:1.5rem}
+  .rep-head .per{margin-top:6px; font-size:.9rem; opacity:.92}
+  .toolbar{display:flex; gap:8px; padding:12px 32px; background:#f6f8fa; border-bottom:1px solid #eaedf0; align-items:center}
+  .toolbar a{font-size:.82rem; text-decoration:none; color:#456; padding:5px 12px; border-radius:7px; border:1px solid #d8dde2}
+  .toolbar a.on{background:#2a6bb3; color:#fff; border-color:#2a6bb3}
+  .toolbar .sp{flex:1}
+  .btn-print{background:#2a6bb3; color:#fff; border:none; cursor:pointer}
+  .body{padding:26px 32px}
+  .kpis{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:22px}
+  .kpi{flex:1; min-width:150px; background:#f7f9fb; border:1px solid #e9edf1; border-radius:11px; padding:15px 18px}
+  .kpi .k{font-size:.76rem; color:#8794a1; margin-bottom:5px}
+  .kpi .v{font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums}
+  .kpi .v small{font-size:.9rem; font-weight:600; color:#8794a1}
+  .kpi .d{font-size:.76rem; margin-top:3px}
+  .up{color:#1e8e4e} .down{color:#c0392b} .muted{color:#aab2bb}
+  h2.sec{font-size:1rem; margin:24px 0 10px; padding-bottom:6px; border-bottom:2px solid #eef1f4}
+  table.ch{width:100%; border-collapse:collapse; font-size:.86rem}
+  table.ch th,table.ch td{padding:10px 12px; text-align:right; border-bottom:1px solid #eef1f4; white-space:nowrap}
+  table.ch th{font-size:.76rem; color:#8794a1; font-weight:600}
+  table.ch td.l,table.ch th.l{text-align:left}
+  table.ch .nm{font-weight:600}
+  table.ch tfoot td{font-weight:800; border-top:2px solid #e2e7ec; border-bottom:none}
+  .roas-good{color:#1e8e4e; font-weight:700} .roas-mid{color:#a07700; font-weight:700} .roas-bad{color:#c0392b; font-weight:700}
+  .comments{background:#f3f8fc; border-left:4px solid #2a6bb3; border-radius:0 9px 9px 0; padding:14px 18px; margin-top:6px}
+  .comments li{font-size:.9rem; line-height:1.7; margin:0; list-style:none}
+  .bars{display:flex; gap:4px; align-items:flex-end; height:90px; margin-top:8px; padding:0 2px}
+  .bars .col{flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:2px}
+  .bars .bar{width:60%; background:#9cc2e8; border-radius:3px 3px 0 0}
+  .bars .barr{width:60%; background:#3b8; border-radius:3px 3px 0 0}
+  .bars .lbl{font-size:.6rem; color:#aab2bb; margin-top:3px}
+  .legend{font-size:.74rem; color:#8794a1; margin-top:6px}
+  .legend b{display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:middle}
+  .foot{padding:16px 32px; font-size:.72rem; color:#aab2bb; border-top:1px solid #eef1f4; text-align:center}
+  @media print{
+    body{background:#fff} .sheet{box-shadow:none; margin:0; max-width:100%}
+    .toolbar{display:none} @page{margin:14mm}
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="rep-head">
+    <div class="brand">RisingAd · 광고 성과 리포트</div>
+    <h1>{{ label }}</h1>
+    <div class="per">{{ start }} ~ {{ end }} · {{ period_ko }} ({{ span }}일간)</div>
+  </div>
+
+  <div class="toolbar">
+    <a href="/report/{{ account_id }}?period=week" class="{{ 'on' if period=='week' }}">주간</a>
+    <a href="/report/{{ account_id }}?period=month" class="{{ 'on' if period=='month' }}">월간</a>
+    <span class="sp"></span>
+    <a href="/portfolio">← 트리아지</a>
+    <a class="btn-print" onclick="window.print()">🖨 인쇄 / PDF 저장</a>
+  </div>
+
+  {% macro won(v) %}{{ "{:,}".format(v|int) }}{% endmacro %}
+  {% macro delta(d) %}{% if d is not none %}<span class="{{ 'up' if d>=0 else 'down' }}">{{ '▲' if d>=0 else '▼' }} {{ d|abs }}%</span>{% else %}<span class="muted">신규</span>{% endif %}{% endmacro %}
+  {% macro roasc(v) %}{% if v is not none %}<span class="{{ 'roas-good' if v>=400 else ('roas-mid' if v>=200 else 'roas-bad') }}">{{ v }}%</span>{% else %}<span class="muted">—</span>{% endif %}{% endmacro %}
+
+  <div class="body">
+    <!-- 핵심 KPI -->
+    <div class="kpis">
+      <div class="kpi"><div class="k">광고비</div><div class="v">{{ won(tot.spend) }}<small> 원</small></div><div class="d">{{ delta(tot.d_spend) }} <span class="muted">vs 전기</span></div></div>
+      <div class="kpi"><div class="k">광고로 만든 매출</div><div class="v">{{ won(tot.rev) }}<small> 원</small></div><div class="d">{{ delta(tot.d_rev) }} <span class="muted">vs 전기</span></div></div>
+      <div class="kpi"><div class="k">광고 효율 (ROAS)</div><div class="v">{% if tot.roas is not none %}{{ tot.roas }}<small>%</small>{% else %}—{% endif %}</div><div class="d">{% if tot.proas %}<span class="muted">전기 {{ tot.proas }}%</span>{% endif %}</div></div>
+      {% if tot.contrib is not none %}<div class="kpi"><div class="k">매장 매출 중 광고 기여</div><div class="v">{{ tot.contrib }}<small>%</small></div><div class="d"><span class="muted">전체매출 {{ won(tot.srev) }}원</span></div></div>{% endif %}
+    </div>
+
+    <!-- 자동 코멘트 -->
+    {% if comments %}
+    <ul class="comments">{% for c in comments %}<li>· {{ c }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <!-- 채널별 -->
+    <h2 class="sec">채널별 성과</h2>
+    <table class="ch">
+      <thead><tr><th class="l">채널</th><th>광고비</th><th>광고 매출</th><th>효율(ROAS)</th><th>광고비 증감</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="l nm">{{ r.name }}</td>
+          <td>{{ won(r.spend) }}</td>
+          <td>{{ won(r.rev) }}</td>
+          <td>{{ roasc(r.roas) }}</td>
+          <td>{{ delta(r.d_spend) }}</td>
+        </tr>
+      {% endfor %}
+      {% if not rows %}<tr><td colspan="5" class="muted" style="text-align:center; padding:20px">이 기간 집행된 광고가 없습니다.</td></tr>{% endif %}
+      </tbody>
+      {% if rows %}<tfoot><tr><td class="l">합계</td><td>{{ won(tot.spend) }}</td><td>{{ won(tot.rev) }}</td><td>{{ roasc(tot.roas) }}</td><td></td></tr></tfoot>{% endif %}
+    </table>
+
+    <!-- 일별 추이 -->
+    {% if daily_series and daily_series|length > 1 %}
+    <h2 class="sec">일별 추이</h2>
+    {% set smax = (daily_series | map(attribute='s') | max) or 1 %}
+    {% set rmax = (daily_series | map(attribute='r') | max) or 1 %}
+    {% set dmax = [smax, rmax] | max %}
+    <div class="bars">
+      {% for d in daily_series %}
+      <div class="col" title="{{ d.date }} · 광고비 {{ won(d.s) }} / 매출 {{ won(d.r) }}">
+        <div class="barr" style="height:{{ (d.r / dmax * 84)|round(1) }}px"></div>
+        <div class="bar" style="height:{{ (d.s / dmax * 84)|round(1) }}px"></div>
+        <div class="lbl">{{ d.date[5:] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="legend"><b style="background:#9cc2e8"></b> 광고비 &nbsp; <b style="background:#3b8"></b> 광고 매출</div>
+    {% endif %}
+  </div>
+
+  <div class="foot">RisingAd 광고 대행 · 생성 {{ generated }} · 광고 효율(ROAS) = 광고로 만든 매출 ÷ 광고비</div>
+</div>
+</body>
+</html>

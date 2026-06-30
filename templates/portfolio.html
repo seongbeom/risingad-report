@@ -82,7 +82,7 @@
         <tbody>
         {% for r in active_rows %}
         <tr class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or r.pace_status=='over' or (r.dep_y is not none and r.dep_y>=30) else '') }}">
-            <td class="l"><a href="/?accounts={{ r.id }}" style="text-decoration:none"><span class="store">{{ r.label }}</span></a></td>
+            <td class="l"><a href="/?accounts={{ r.id }}" style="text-decoration:none"><span class="store">{{ r.label }}</span></a> <a href="/report/{{ r.id }}" title="클라이언트 리포트" style="font-size:.72rem; color:#5a8; text-decoration:none">📄</a></td>
             <td class="num" data-v="{{ r.spend_y }}">{{ won(r.spend_y) }}</td>
             <td data-v="{{ r.spend_wow if r.spend_wow is not none else -99999 }}">{{ wow(r.spend_wow) }}</td>
             <td class="num" data-v="{{ r.srev_y }}">{{ won(r.srev_y) }}</td>

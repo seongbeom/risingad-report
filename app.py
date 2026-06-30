@@ -5006,6 +5006,103 @@ def set_ad_budget():
     return redirect(url_for("portfolio"))
 
 
+# 클라이언트 리포트용 채널 표시명(비전문가용 — 영어·약어 최소화)
+_REPORT_CH = [
+    ("메타 (페이스북·인스타그램)", db.list_meta_metrics, "spend"),
+    ("네이버 검색광고", db.list_naver_metrics, "cost"),
+    ("크리테오 (재방문 타겟팅)", db.list_criteo_metrics, "cost"),
+    ("네이버 성과형 디스플레이", db.list_gfa_metrics, "cost"),
+    ("카카오모먼트", db.list_kakao_metrics, "cost"),
+    ("네이버 쇼핑박스", db.list_shopbox_metrics, "cost"),
+]
+
+
+@app.route("/report/<account_id>")
+@login_required
+def client_report(account_id):
+    """클라이언트 전달용 깔끔한 성과 리포트(주간/월간). 인쇄→PDF/캡처해 전달.
+    광고비·매출·효율(ROAS)·채널별 기여 + 전기 대비 + 자동 코멘트(쉬운 말)."""
+    acct = next((a for a in db.list_accounts() if a["id"] == account_id), None)
+    if not acct:
+        return redirect(url_for("portfolio"))
+    label = acct.get("label") or account_id
+    period = "month" if request.args.get("period") == "month" else "week"
+    now = datetime.now()
+    yest = (now - timedelta(days=1)).date()
+    if period == "month":
+        start = now.replace(day=1).date()
+        if start > yest:
+            start = yest
+        period_ko, prev_ko = "월간", "지난달 같은 기간"
+    else:
+        start = yest - timedelta(days=6)
+        period_ko, prev_ko = "주간", "지난주"
+    end = yest
+    span = (end - start).days + 1
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=span - 1)
+    s, e, ps, pe = start.isoformat(), end.isoformat(), prev_start.isoformat(), prev_end.isoformat()
+
+    def _pct(cur, prev):
+        return round((cur - prev) / prev * 100) if prev else None
+
+    def _chan_sum(fn, key, a, b):
+        sp = rv = 0
+        daily = {}
+        for r in fn(account_ids=[account_id], start_date=a, end_date=b):
+            c = r.get(key) or 0; v = r.get("revenue") or 0
+            sp += c; rv += v
+            dd = daily.setdefault(r["date"], {"s": 0, "r": 0}); dd["s"] += c; dd["r"] += v
+        return sp, rv, daily
+
+    rows = []
+    tot_s = tot_r = ptot_s = ptot_r = 0
+    daily_all = {}
+    for name, fn, key in _REPORT_CH:
+        cs, cr, cd = _chan_sum(fn, key, s, e)
+        psp, prv, _ = _chan_sum(fn, key, ps, pe)
+        if cs == 0 and cr == 0 and psp == 0:
+            continue
+        rows.append({"name": name, "spend": cs, "rev": cr,
+                     "roas": round(cr / cs * 100) if cs else None,
+                     "d_spend": _pct(cs, psp), "d_rev": _pct(cr, prv)})
+        tot_s += cs; tot_r += cr; ptot_s += psp; ptot_r += prv
+        for d, v in cd.items():
+            x = daily_all.setdefault(d, {"s": 0, "r": 0}); x["s"] += v["s"]; x["r"] += v["r"]
+    rows.sort(key=lambda r: r["spend"], reverse=True)
+    roas = round(tot_r / tot_s * 100) if tot_s else None
+    proas = round(ptot_r / ptot_s * 100) if ptot_s else None
+    srev = sum((m.get("매출") or 0) for m in
+               db.list_metrics(account_id=account_id, start_date=s, end_date=e))
+    contrib = round(tot_r / srev * 100) if srev else None
+    daily_series = [{"date": d, "s": daily_all[d]["s"], "r": daily_all[d]["r"]} for d in sorted(daily_all)]
+
+    comments = []
+    if tot_s:
+        comments.append(f"이번 {period_ko} 광고비 {tot_s:,}원을 집행해 광고로 약 {tot_r:,}원의 매출이 발생했습니다. "
+                        f"광고비 1원당 매출 {roas/100:.1f}원(효율 {roas}%) 수준입니다.")
+    if roas is not None and proas:
+        dp = roas - proas
+        comments.append(f"광고 효율은 {prev_ko}({proas}%) 대비 {abs(dp)}%포인트 "
+                        f"{'올랐습니다' if dp >= 0 else '내렸습니다'} (현재 {roas}%).")
+    if contrib is not None:
+        comments.append(f"같은 기간 매장 전체 매출의 약 {contrib}%가 광고를 통해 발생했습니다.")
+    if rows:
+        best = max(rows, key=lambda r: (r["roas"] or 0))
+        if best["roas"]:
+            comments.append(f"가장 효율이 좋은 채널은 ‘{best['name']}’(효율 {best['roas']}%)였습니다.")
+
+    return render_template(
+        "report.html", label=label, account_id=account_id, period=period,
+        period_ko=period_ko, start=s, end=e, span=span,
+        rows=rows, tot={"spend": tot_s, "rev": tot_r, "roas": roas, "proas": proas,
+                        "d_spend": _pct(tot_s, ptot_s), "d_rev": _pct(tot_r, ptot_r),
+                        "srev": srev, "contrib": contrib},
+        daily_series=daily_series, comments=comments,
+        generated=now.strftime("%Y-%m-%d %H:%M"),
+    )
+
+
 @app.route("/dashboard/range")
 @login_required
 def dashboard_range():
