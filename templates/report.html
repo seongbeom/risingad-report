@@ -37,11 +37,12 @@
   .roas-good{color:#1e8e4e; font-weight:700} .roas-mid{color:#a07700; font-weight:700} .roas-bad{color:#c0392b; font-weight:700}
   .comments{background:#f3f8fc; border-left:4px solid #2a6bb3; border-radius:0 9px 9px 0; padding:14px 18px; margin-top:6px}
   .comments li{font-size:.9rem; line-height:1.7; margin:0; list-style:none}
-  .bars{display:flex; gap:4px; align-items:flex-end; height:90px; margin-top:8px; padding:0 2px}
-  .bars .col{flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:2px}
-  .bars .bar{width:60%; background:#9cc2e8; border-radius:3px 3px 0 0}
-  .bars .barr{width:60%; background:#3b8; border-radius:3px 3px 0 0}
-  .bars .lbl{font-size:.6rem; color:#aab2bb; margin-top:3px}
+  .bars{display:flex; gap:5px; align-items:flex-end; margin-top:8px; padding:0 2px}
+  .bars .col{flex:1; display:flex; flex-direction:column; align-items:center; min-width:0}
+  .bars .pair{display:flex; gap:2px; align-items:flex-end; height:84px; width:100%; justify-content:center}
+  .bars .bar{flex:1; max-width:13px; background:#9cc2e8; border-radius:3px 3px 0 0}
+  .bars .barr{flex:1; max-width:13px; background:#3b8; border-radius:3px 3px 0 0}
+  .bars .lbl{font-size:.6rem; color:#aab2bb; margin-top:3px; white-space:nowrap}
   .legend{font-size:.74rem; color:#8794a1; margin-top:6px}
   .legend b{display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:middle}
   .foot{padding:16px 32px; font-size:.72rem; color:#aab2bb; border-top:1px solid #eef1f4; text-align:center}
@@ -113,8 +114,10 @@
     <div class="bars">
       {% for d in daily_series %}
       <div class="col" title="{{ d.date }} · 광고비 {{ won(d.s) }} / 매출 {{ won(d.r) }}">
-        <div class="barr" style="height:{{ (d.r / dmax * 84)|round(1) }}px"></div>
-        <div class="bar" style="height:{{ (d.s / dmax * 84)|round(1) }}px"></div>
+        <div class="pair">
+          <div class="bar" style="height:{{ (d.s / dmax * 84)|round(1) }}px"></div>
+          <div class="barr" style="height:{{ (d.r / dmax * 84)|round(1) }}px"></div>
+        </div>
         <div class="lbl">{{ d.date[5:] }}</div>
       </div>
       {% endfor %}
