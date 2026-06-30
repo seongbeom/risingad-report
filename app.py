@@ -1423,17 +1423,24 @@ def _anomaly_scan(today=None):
                 # --- 전환/매출지표(픽셀/ROAS): 정착된 날 기준 (오탐 방지) ---
                 bs = _anomaly_baseline(series, day_set)
                 ts = series.get(day_set)
+                day_prev = (today - _dt.timedelta(days=lag + 1)).isoformat()  # 정착된 '그 전날'
+                tp = series.get(day_prev)
                 if bs and bs["n"] >= _ANOMALY_MIN_ACTIVE and ts and ts["cost"] >= _ANOMALY_MIN_COST:
-                    normally_converts = bs["conv_days"] >= _ANOMALY_MIN_ACTIVE
-                    t_conv = ts["conv"] if conv_col else ts["rev"]
-                    if normally_converts and t_conv == 0 and ts["rev"] == 0:
-                        # 전환추적 깨짐 의심: 평소 전환되던 채널이 광고비 쓰고도 전환·매출 0
+                    # 픽셀/전환추적 깨짐: '평소 안정적으로 전환되던' 채널이 '연속 2일+' 광고비 쓰고도
+                    # 전환·매출 0. 저전환 채널의 하루 0(정상 노이즈)을 거르려고 ① 평소 일평균≥1건
+                    # ② 집행일 60%+에서 전환 ③ 연속 2일 0 — 세 조건을 모두 만족해야 발화.
+                    def _zero_spend_day(m):
+                        return (m and m["cost"] >= _ANOMALY_MIN_COST
+                                and (m["conv"] if conv_col else m["rev"]) == 0 and m["rev"] == 0)
+                    reliable = (conv_col and bs["conv_avg"] >= 1.0
+                                and bs["conv_days"] >= max(_ANOMALY_MIN_ACTIVE, round(bs["n"] * 0.6)))
+                    if reliable and _zero_spend_day(ts) and _zero_spend_day(tp):
                         findings.append({
                             "sev": "warn", "rule": "전환추적깨짐", "store": store,
                             "channel": label, "date": day_set,
-                            "msg": f"🧩 전환추적 깨짐 의심 — {store}/{label} {day_set[5:]}: "
-                                   f"광고비 {ts['cost']:,.0f}원 집행됐는데 전환·매출 0 "
-                                   f"(평소 전환 일평균 {bs['conv_avg']:.1f}). 픽셀/전환연동 점검"})
+                            "msg": f"🧩 전환추적 깨짐 의심 — {store}/{label} {day_prev[5:]}~{day_set[5:]}: "
+                                   f"광고비 쓰는데 전환·매출 2일 연속 0 "
+                                   f"(평소 전환 일평균 {bs['conv_avg']:.1f}건). 픽셀/전환연동 점검"})
                     elif (bs["roas"] >= 150 and bs["cost_avg"] >= _ANOMALY_MIN_COST and ts["rev"] > 0):
                         # ROAS 급락(매출 0은 위 픽셀룰이 커버): 평소 효율 좋던 채널이 절반 이하로 추락
                         t_roas = ts["rev"] / ts["cost"] * 100
