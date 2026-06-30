@@ -147,6 +147,10 @@ _run_lock = threading.Lock()  # 수동 실행과 스케줄 잡이 동시에 안 
 _PROC_STARTED = datetime.now().isoformat()
 # graceful reload 요청 플래그 (배포가 /admin/request_reload 로 세움 → 안전지점에서 os.execv)
 _pending_reload = {"at": None}
+# 실행 중인 WSGI 서버 핸들 — os.execv 전에 리스닝 소켓을 닫아 포트 9090 을 비우기 위함.
+# (execv 는 fd 를 상속하므로, 안 닫으면 새 프로세스가 'Port in use' 로 죽고 systemd 가 재시작 →
+#  무중단 리로드가 깨지고 진행중 스크랩이 끊김. 그 회귀를 막는 핸들.)
+_wsgi_server = {"srv": None}
 
 
 SCRAPE_MAX_ATTEMPTS = 3  # 1차 + 재시도 2회 (reCAPTCHA 풀이 운에 의존하기 때문)
@@ -279,6 +283,14 @@ def _graceful_reexec(reason=""):
         scheduler.shutdown(wait=False)
     except Exception:
         pass
+    # 리스닝 소켓을 먼저 닫아 포트 9090 해제 — 안 닫으면 execv 가 fd 를 상속해 새 프로세스가
+    # 'Port in use' 로 죽고 systemd 가 재시작(=무중단 깨짐). 닫은 뒤 재실행하면 새 코드가 깨끗이 바인드.
+    try:
+        srv = _wsgi_server.get("srv")
+        if srv is not None:
+            srv.server_close()  # 소켓 close (SO_REUSEADDR 라 새 프로세스가 즉시 재바인드 가능)
+    except Exception:
+        traceback.print_exc()
     sys.stdout.flush(); sys.stderr.flush()
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
@@ -5866,4 +5878,13 @@ def feedback_status_form(fid):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=False, port=9090, use_reloader=False)
+    # app.run 대신 make_server 로 서버 핸들을 보관 — graceful reload(os.execv) 직전에
+    # 이 소켓을 닫아 포트를 비워야 'Port in use' 크래시 없이 무중단 재적재가 된다.
+    from werkzeug.serving import make_server
+    _srv = make_server("0.0.0.0", 9090, app, threaded=True)
+    _wsgi_server["srv"] = _srv
+    print("[server] make_server 0.0.0.0:9090 (graceful reload 안전 — 소켓 핸들 보관)", flush=True)
+    try:
+        _srv.serve_forever()
+    except KeyboardInterrupt:
+        _srv.server_close()
