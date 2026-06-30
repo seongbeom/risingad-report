@@ -4781,6 +4781,110 @@ def dashboard():
     )
 
 
+@app.route("/portfolio")
+@login_required
+def portfolio():
+    """전체 매장 통합 트리아지 — '오늘 어느 매장부터 볼까'를 한 화면에.
+    매장별 어제 광고비/실매출/블렌디드ROAS/의존도 + 전주대비 + MTD + 캠페인 이상감지 배지.
+    주의 필요한 매장(이상감지>효율악화>고지출)부터 정렬. 추가 수집 없이 기존 데이터 집계."""
+    now = datetime.now()
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    last_week_same = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    mstart = now.replace(day=1).strftime("%Y-%m-%d")
+    accounts = db.list_accounts()
+    labels = {a["id"]: (a.get("label") or a["id"]) for a in accounts}
+
+    # 채널 광고비/매출 (account,date)별 합산 — 메타는 spend, 그외 cost. 한 달치 한 번에.
+    spend_by, arev_by = {}, {}
+
+    def _accum(rows, cost_key):
+        for r in rows:
+            k = (r["account_id"], r["date"])
+            spend_by[k] = spend_by.get(k, 0) + (r.get(cost_key) or 0)
+            arev_by[k] = arev_by.get(k, 0) + (r.get("revenue") or 0)
+
+    _accum(db.list_meta_metrics(start_date=mstart, end_date=yesterday), "spend")
+    _accum(db.list_naver_metrics(start_date=mstart, end_date=yesterday), "cost")
+    _accum(db.list_criteo_metrics(start_date=mstart, end_date=yesterday), "cost")
+    _accum(db.list_gfa_metrics(start_date=mstart, end_date=yesterday), "cost")
+    _accum(db.list_kakao_metrics(start_date=mstart, end_date=yesterday), "cost")
+    _accum(db.list_shopbox_metrics(start_date=mstart, end_date=yesterday), "cost")  # device 합산됨
+
+    # 매장 실매출(cafe24 자연지표) (account,date)별
+    srev_by = {(m["account_id"], m["date"]): (m.get("매출") or 0)
+               for m in db.list_metrics(start_date=mstart, end_date=yesterday)}
+
+    # 캠페인 이상감지 — 재시작 후 비었으면 lazy 1회
+    if not _anomaly_findings["ts"]:
+        try:
+            _anomaly_findings["items"] = _anomaly_scan()
+            _anomaly_findings["ts"] = now.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            traceback.print_exc()
+    anom_by_store = {}
+    for f in _anomaly_findings["items"]:
+        anom_by_store.setdefault(f["store"], []).append({"rule": f["rule"], "sev": f["sev"]})
+
+    def _roas(rev, cost):
+        return round(rev / cost * 100) if cost else None
+
+    def _dep(cost, rev):
+        return round(cost / rev * 100, 1) if rev else None
+
+    def _delta(cur, prev):
+        return round((cur - prev) / prev * 100) if prev else None
+
+    rows = []
+    for a in accounts:
+        aid = a["id"]; lbl = labels[aid]
+        sp_y = spend_by.get((aid, yesterday), 0); sp_w = spend_by.get((aid, last_week_same), 0)
+        sr_y = srev_by.get((aid, yesterday), 0); sr_w = srev_by.get((aid, last_week_same), 0)
+        sp_m = sum(v for (acc, d), v in spend_by.items() if acc == aid)
+        sr_m = sum(v for (acc, d), v in srev_by.items() if acc == aid)
+        anoms = anom_by_store.get(lbl, [])
+        has_crit = any(x["sev"] == "critical" for x in anoms)
+        # 주의 점수: 이상감지(긴급>일반) > 의존도 높음(광고비/실매출) > 고지출
+        broas_y = _roas(sr_y, sp_y)
+        dep_y = _dep(sp_y, sr_y)
+        score = 0
+        if has_crit: score += 10000
+        score += len(anoms) * 1000
+        if dep_y is not None and dep_y >= 30: score += 200   # 광고비가 실매출의 30%+ = 의존도 경고
+        score += min(sp_y / 10000, 100)                       # 고지출 약가중
+        rows.append({
+            "id": aid, "label": lbl,
+            "spend_y": sp_y, "spend_w": sp_w, "spend_wow": _delta(sp_y, sp_w),
+            "srev_y": sr_y, "srev_w": sr_w, "srev_wow": _delta(sr_y, sr_w),
+            "broas_y": broas_y, "dep_y": dep_y,
+            "spend_m": sp_m, "srev_m": sr_m, "broas_m": _roas(sr_m, sp_m), "dep_m": _dep(sp_m, sr_m),
+            "anoms": anoms, "has_crit": has_crit,
+            "active": sp_m > 0, "score": score,
+        })
+    # 활성 매장(이번달 집행) 우선, 주의 점수순. 비활성은 뒤로.
+    rows.sort(key=lambda r: (not r["active"], -r["score"], -r["spend_y"]))
+    active_rows = [r for r in rows if r["active"]]
+    inactive_rows = [r for r in rows if not r["active"]]
+
+    tot = {
+        "spend_y": sum(r["spend_y"] for r in active_rows),
+        "srev_y": sum(r["srev_y"] for r in active_rows),
+        "spend_m": sum(r["spend_m"] for r in active_rows),
+        "srev_m": sum(r["srev_m"] for r in active_rows),
+        "alerts": sum(len(r["anoms"]) for r in active_rows),
+        "crit": sum(1 for r in active_rows if r["has_crit"]),
+        "n_active": len(active_rows),
+    }
+    tot["broas_y"] = _roas(tot["srev_y"], tot["spend_y"])
+    tot["broas_m"] = _roas(tot["srev_m"], tot["spend_m"])
+
+    return render_template(
+        "portfolio.html", active="portfolio",
+        active_rows=active_rows, inactive_rows=inactive_rows, tot=tot,
+        yesterday=yesterday, last_week_same=last_week_same,
+        anomaly_ts=_anomaly_findings["ts"], now=now.strftime("%H:%M"),
+    )
+
+
 @app.route("/dashboard/range")
 @login_required
 def dashboard_range():

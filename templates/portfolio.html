@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전체 매장 트리아지</title>
+<style>
+  h1{margin:0 0 2px}
+  .subtitle{color:#888; font-size:.82rem; margin:0 0 16px}
+  /* 요약 스트립 */
+  .pf-sum{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px}
+  .pf-kpi{background:#fff; border:1px solid #e6eaef; border-radius:10px; padding:11px 16px; min-width:130px}
+  .pf-kpi .k{font-size:.72rem; color:#999; margin-bottom:3px}
+  .pf-kpi .v{font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums}
+  .pf-kpi.warn{background:#fff4f0; border-color:#f3c6b3}
+  .pf-kpi.warn .v{color:#cf5b2a}
+  /* 표 */
+  .pf-wrap{overflow-x:auto; border:1px solid #e0e5ea; border-radius:10px}
+  table.pf{border-collapse:collapse; width:100%; font-size:.83rem; min-width:980px}
+  table.pf th, table.pf td{padding:9px 12px; text-align:right; border-bottom:1px solid #eef1f4; white-space:nowrap}
+  table.pf thead th{background:#f5f7fa; font-weight:700; color:#46586b; position:sticky; top:0;
+    cursor:pointer; user-select:none; font-size:.76rem}
+  table.pf thead th:hover{background:#eaeef3}
+  table.pf th.l, table.pf td.l{text-align:left}
+  table.pf tbody tr:hover{background:#fafcff}
+  tr.r-crit{background:#fdecec; box-shadow:inset 3px 0 0 #c0392b}
+  tr.r-warn{background:#fff8f3; box-shadow:inset 3px 0 0 #e07b39}
+  .store{font-weight:700; color:#2a3540}
+  .num{font-variant-numeric:tabular-nums}
+  .up{color:#1e8e4e} .down{color:#c0392b} .muted{color:#bbb}
+  .roas-good{color:#1e8e4e; font-weight:700} .roas-mid{color:#a07700; font-weight:700} .roas-bad{color:#c0392b; font-weight:700}
+  .dep-hi{color:#c0392b; font-weight:600}
+  .chip{display:inline-block; font-size:.68rem; font-weight:700; color:#fff; border-radius:5px; padding:1px 6px; margin:1px 2px}
+  .c-crit{background:#c0392b} .c-warn{background:#e07b39}
+  .pf-foot{font-size:.74rem; color:#aaa; margin-top:10px}
+  details.inact{margin-top:14px; font-size:.82rem; color:#888}
+  details.inact summary{cursor:pointer; color:#789}
+  .inact-list span{display:inline-block; background:#f1f3f5; border-radius:6px; padding:2px 8px; margin:3px 4px 0 0; font-size:.76rem; color:#778}
+</style>
+</head>
+<body>
+<div class="app">
+{% include '_sidebar.html' %}
+<div class="main"><div class="main-inner">
+    <h1>전체 매장 트리아지</h1>
+    <p class="subtitle">{{ yesterday }} 기준 · 주의 필요한 매장부터 정렬 · 캠페인 이상감지 스캔 {{ anomaly_ts or '—' }} · 갱신 {{ now }} · <a onclick="location.reload()" style="cursor:pointer;color:#5a8">새로고침</a></p>
+
+    {% macro won(v) %}{{ "{:,}".format(v|int) }}{% endmacro %}
+    {% macro wow(d) %}{% if d is not none %}<span class="{{ 'up' if d>=0 else 'down' }}" style="font-size:.72rem">{{ '▲' if d>=0 else '▼' }}{{ d|abs }}%</span>{% else %}<span class="muted" style="font-size:.72rem">—</span>{% endif %}{% endmacro %}
+    {% macro roas(v) %}{% if v is not none %}<span class="{{ 'roas-good' if v>=400 else ('roas-mid' if v>=200 else 'roas-bad') }}">{{ v }}%</span>{% else %}<span class="muted">—</span>{% endif %}{% endmacro %}
+
+    <!-- 요약 -->
+    <div class="pf-sum">
+        <div class="pf-kpi"><div class="k">활성 매장</div><div class="v">{{ tot.n_active }}</div></div>
+        <div class="pf-kpi"><div class="k">어제 총 광고비</div><div class="v">{{ won(tot.spend_y) }}</div></div>
+        <div class="pf-kpi"><div class="k">어제 총 실매출</div><div class="v">{{ won(tot.srev_y) }}</div></div>
+        <div class="pf-kpi"><div class="k">블렌디드 ROAS</div><div class="v">{% if tot.broas_y is not none %}{{ tot.broas_y }}%{% else %}—{% endif %}</div></div>
+        <div class="pf-kpi {{ 'warn' if tot.alerts else '' }}"><div class="k">캠페인 이상감지</div><div class="v">{{ tot.alerts }}건{% if tot.crit %} <span style="font-size:.78rem">긴급 {{ tot.crit }}</span>{% endif %}</div></div>
+    </div>
+
+    <div class="pf-wrap">
+    <table class="pf" id="pfTable">
+        <thead><tr>
+            <th class="l" data-c="0" data-t="t">매장</th>
+            <th data-c="1" data-t="n">어제 광고비</th>
+            <th data-c="2" data-t="n">전주대비</th>
+            <th data-c="3" data-t="n">어제 실매출</th>
+            <th data-c="4" data-t="n">전주대비</th>
+            <th data-c="5" data-t="n">블렌디드 ROAS</th>
+            <th data-c="6" data-t="n">광고 의존도</th>
+            <th class="l" data-c="7" data-t="t">이상감지</th>
+            <th data-c="8" data-t="n">MTD 광고비</th>
+            <th data-c="9" data-t="n">MTD ROAS</th>
+        </tr></thead>
+        <tbody>
+        {% for r in active_rows %}
+        <tr class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or (r.dep_y is not none and r.dep_y>=30) else '') }}">
+            <td class="l"><a href="/?accounts={{ r.id }}" style="text-decoration:none"><span class="store">{{ r.label }}</span></a></td>
+            <td class="num" data-v="{{ r.spend_y }}">{{ won(r.spend_y) }}</td>
+            <td data-v="{{ r.spend_wow if r.spend_wow is not none else -99999 }}">{{ wow(r.spend_wow) }}</td>
+            <td class="num" data-v="{{ r.srev_y }}">{{ won(r.srev_y) }}</td>
+            <td data-v="{{ r.srev_wow if r.srev_wow is not none else -99999 }}">{{ wow(r.srev_wow) }}</td>
+            <td data-v="{{ r.broas_y if r.broas_y is not none else -1 }}">{{ roas(r.broas_y) }}</td>
+            <td data-v="{{ r.dep_y if r.dep_y is not none else -1 }}">{% if r.dep_y is not none %}<span class="{{ 'dep-hi' if r.dep_y>=30 else '' }}">{{ r.dep_y }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="l" data-v="{{ r.anoms|length }}">{% for x in r.anoms %}<span class="chip {{ 'c-crit' if x.sev=='critical' else 'c-warn' }}">{{ x.rule }}</span>{% endfor %}{% if not r.anoms %}<span class="muted">—</span>{% endif %}</td>
+            <td class="num" data-v="{{ r.spend_m }}">{{ won(r.spend_m) }}</td>
+            <td data-v="{{ r.broas_m if r.broas_m is not none else -1 }}">{{ roas(r.broas_m) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot><tr style="font-weight:700; background:#f5f7fa">
+            <td class="l">합계 ({{ tot.n_active }})</td>
+            <td class="num">{{ won(tot.spend_y) }}</td><td></td>
+            <td class="num">{{ won(tot.srev_y) }}</td><td></td>
+            <td>{% if tot.broas_y is not none %}{{ tot.broas_y }}%{% endif %}</td>
+            <td></td><td></td>
+            <td class="num">{{ won(tot.spend_m) }}</td>
+            <td>{% if tot.broas_m is not none %}{{ tot.broas_m }}%{% endif %}</td>
+        </tr></tfoot>
+    </table>
+    </div>
+    <div class="pf-foot">블렌디드 ROAS = 매장 실매출 ÷ 광고비 · 광고 의존도 = 광고비 ÷ 실매출(높을수록 광고에 기댐). 매장명 클릭 → 해당 매장 상세 대시보드.</div>
+
+    {% if inactive_rows %}
+    <details class="inact">
+        <summary>이번 달 미집행 매장 {{ inactive_rows|length }}개</summary>
+        <div class="inact-list">{% for r in inactive_rows %}<span>{{ r.label }}</span>{% endfor %}</div>
+    </details>
+    {% endif %}
+</div></div></div>
+
+<script>
+// 헤더 클릭 정렬 (data-v 숫자 / 텍스트). 한 번 더 클릭 시 방향 토글.
+(function(){
+  var tbl = document.getElementById('pfTable'), tb = tbl.tBodies[0];
+  var dir = {};
+  tbl.tHead.querySelectorAll('th').forEach(function(th){
+    th.addEventListener('click', function(){
+      var c = +th.dataset.c, t = th.dataset.t;
+      dir[c] = !dir[c];
+      var rows = Array.prototype.slice.call(tb.rows);
+      rows.sort(function(a,b){
+        var av, bv;
+        if(t==='n'){ av=parseFloat(a.cells[c].dataset.v||a.cells[c].textContent.replace(/[^0-9.-]/g,''))||0;
+                     bv=parseFloat(b.cells[c].dataset.v||b.cells[c].textContent.replace(/[^0-9.-]/g,''))||0;
+                     return dir[c]? av-bv : bv-av; }
+        av=a.cells[c].textContent.trim(); bv=b.cells[c].textContent.trim();
+        return dir[c]? av.localeCompare(bv,'ko') : bv.localeCompare(av,'ko');
+      });
+      rows.forEach(function(r){ tb.appendChild(r); });
+    });
+  });
+})();
+</script>
+</body>
+</html>
