@@ -7,7 +7,8 @@
 <style>
   *{box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-    margin:0; background:#eef1f4; color:#2a3540}
+    margin:0; background:#eef1f4; color:#2a3540;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;}
   .sheet{max-width:760px; margin:22px auto; background:#fff; border-radius:14px; overflow:hidden;
     box-shadow:0 2px 18px rgba(0,0,0,.08)}
   .rep-head{background:linear-gradient(135deg,#2a6bb3,#3b8) ; color:#fff; padding:26px 32px}
@@ -19,10 +20,12 @@
   .hgrade .g{font-size:1.9rem; font-weight:800; line-height:1}
   .hgrade .s{font-size:.66rem; opacity:.9; margin-top:2px}
   .toolbar{display:flex; gap:8px; padding:12px 32px; background:#f6f8fa; border-bottom:1px solid #eaedf0; align-items:center}
-  .toolbar a{font-size:.82rem; text-decoration:none; color:#456; padding:5px 12px; border-radius:7px; border:1px solid #d8dde2}
+  .toolbar a{font-size:.82rem; text-decoration:none; color:#456; padding:6px 12px; border-radius:7px; border:1px solid #d8dde2}
   .toolbar a.on{background:#2a6bb3; color:#fff; border-color:#2a6bb3}
   .toolbar .sp{flex:1}
-  .btn-print{background:#2a6bb3; color:#fff; border:none; cursor:pointer}
+  .btn-print{background:#e8530e !important; color:#fff !important; border:none !important; cursor:pointer;
+    font-weight:700; font-size:.9rem !important; padding:9px 20px !important; box-shadow:0 2px 8px rgba(232,83,14,.35)}
+  .btn-print:hover{background:#cf4709 !important}
   .body{padding:26px 32px}
   .kpis{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:22px}
   .kpi{flex:1; min-width:150px; background:#f7f9fb; border:1px solid #e9edf1; border-radius:11px; padding:15px 18px}
@@ -39,6 +42,10 @@
   table.ch .nm{font-weight:600}
   table.ch tfoot td{font-weight:800; border-top:2px solid #e2e7ec; border-bottom:none}
   .roas-good{color:#1e8e4e; font-weight:700} .roas-mid{color:#a07700; font-weight:700} .roas-bad{color:#c0392b; font-weight:700}
+  .submetrics{display:flex; gap:22px; flex-wrap:wrap; padding:10px 16px; background:#f7f9fb; border:1px solid #e9edf1;
+    border-radius:10px; margin-bottom:18px; font-size:.84rem; color:#5a6672}
+  .submetrics b{font-size:1.05rem; color:#2a3540; font-variant-numeric:tabular-nums}
+  .submetrics small{color:#8794a1}
   .comments{background:#f3f8fc; border-left:4px solid #2a6bb3; border-radius:0 9px 9px 0; padding:14px 18px; margin-top:6px}
   .comments li{font-size:.9rem; line-height:1.7; margin:0; list-style:none}
   .bars{display:flex; gap:5px; align-items:flex-end; margin-top:8px; padding:0 2px}
@@ -90,6 +97,15 @@
       {% if tot.contrib is not none %}<div class="kpi"><div class="k">매장 매출 중 광고 기여</div><div class="v">{{ tot.contrib }}<small>%</small></div><div class="d"><span class="muted">전체매출 {{ won(tot.srev) }}원</span></div></div>{% endif %}
     </div>
 
+    <!-- 보조 지표 -->
+    {% if tot.imp %}
+    <div class="submetrics">
+      <span><b>{{ won(tot.imp) }}</b> 노출</span>
+      <span><b>{{ won(tot.clk) }}</b> 클릭{% if tot.ctr is not none %} <small>(클릭률 {{ tot.ctr }}%)</small>{% endif %}</span>
+      {% if tot.conv %}<span><b>{{ won(tot.conv) }}</b> 구매전환</span>{% endif %}
+    </div>
+    {% endif %}
+
     <!-- 자동 코멘트 -->
     {% if comments %}
     <ul class="comments">{% for c in comments %}<li>· {{ c }}</li>{% endfor %}</ul>
@@ -98,20 +114,22 @@
     <!-- 채널별 -->
     <h2 class="sec">채널별 성과</h2>
     <table class="ch">
-      <thead><tr><th class="l">채널</th><th>광고비</th><th>광고 매출</th><th>효율(ROAS)</th><th>광고비 증감</th></tr></thead>
+      <thead><tr><th class="l">채널</th><th>광고비</th><th>노출</th><th>클릭</th><th>전환</th><th>광고 매출</th><th>효율</th></tr></thead>
       <tbody>
       {% for r in rows %}
         <tr>
           <td class="l nm">{{ r.name }}</td>
           <td>{{ won(r.spend) }}</td>
+          <td>{{ won(r.imp) if r.imp else '—' }}</td>
+          <td>{{ won(r.clk) if r.clk else '—' }}</td>
+          <td>{{ won(r.conv) if r.conv else '—' }}</td>
           <td>{{ won(r.rev) }}</td>
           <td>{{ roasc(r.roas) }}</td>
-          <td>{{ delta(r.d_spend) }}</td>
         </tr>
       {% endfor %}
-      {% if not rows %}<tr><td colspan="5" class="muted" style="text-align:center; padding:20px">이 기간 집행된 광고가 없습니다.</td></tr>{% endif %}
+      {% if not rows %}<tr><td colspan="7" class="muted" style="text-align:center; padding:20px">이 기간 집행된 광고가 없습니다.</td></tr>{% endif %}
       </tbody>
-      {% if rows %}<tfoot><tr><td class="l">합계</td><td>{{ won(tot.spend) }}</td><td>{{ won(tot.rev) }}</td><td>{{ roasc(tot.roas) }}</td><td></td></tr></tfoot>{% endif %}
+      {% if rows %}<tfoot><tr><td class="l">합계</td><td>{{ won(tot.spend) }}</td><td>{{ won(tot.imp) }}</td><td>{{ won(tot.clk) }}</td><td>{{ won(tot.conv) if tot.conv else '—' }}</td><td>{{ won(tot.rev) }}</td><td>{{ roasc(tot.roas) }}</td></tr></tfoot>{% endif %}
     </table>
 
     <!-- 일별 추이 -->

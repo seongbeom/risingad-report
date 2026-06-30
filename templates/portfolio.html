@@ -36,11 +36,17 @@
   .bud-save{border:none; background:#5a8; color:#fff; border-radius:5px; padding:3px 7px; cursor:pointer; font-size:.72rem}
   .chip{display:inline-block; font-size:.68rem; font-weight:700; color:#fff; border-radius:5px; padding:1px 6px; margin:1px 2px; cursor:help}
   .c-crit{background:#c0392b} .c-warn{background:#e07b39}
-  .grade{display:inline-block; font-weight:800; font-size:.92rem; width:26px; height:26px; line-height:26px;
-    text-align:center; border-radius:7px; color:#fff; cursor:help}
+  td.grade-cell{text-align:center; white-space:nowrap}
+  .grade{display:inline-block; font-weight:800; font-size:.86rem; min-width:22px; height:22px; line-height:22px;
+    text-align:center; border-radius:6px; color:#fff; padding:0 5px; cursor:help; vertical-align:middle}
   .g-A{background:#1e8e4e} .g-B{background:#5aa84f} .g-C{background:#d6a417} .g-D{background:#e07b39} .g-F{background:#c0392b}
   .g-none{background:#cfd6dd; color:#fff}
-  .gscore{font-size:.66rem; color:#999; display:block; text-align:center; margin-top:1px}
+  .gscore{font-size:.74rem; color:#888; margin-left:5px; font-variant-numeric:tabular-nums}
+  table.pf tbody tr{cursor:pointer}
+  .rep-btn{display:inline-block; font-size:.7rem; font-weight:600; color:#2a6bb3; background:#eaf3fc;
+    border:1px solid #cfe2f5; border-radius:6px; padding:1px 7px; text-decoration:none; margin-left:6px}
+  .rep-btn:hover{background:#2a6bb3; color:#fff}
+  .store-link{text-decoration:none}
   .pf-foot{font-size:.74rem; color:#aaa; margin-top:10px}
   details.inact{margin-top:14px; font-size:.82rem; color:#888}
   details.inact summary{cursor:pointer; color:#789}
@@ -88,12 +94,11 @@
         </tr></thead>
         <tbody>
         {% for r in active_rows %}
-        <tr class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or r.pace_status=='over' or (r.dep_y is not none and r.dep_y>=30) else '') }}">
-            <td class="l"><a href="/?accounts={{ r.id }}" style="text-decoration:none"><span class="store">{{ r.label }}</span></a> <a href="/report/{{ r.id }}" title="클라이언트 리포트" style="font-size:.72rem; color:#5a8; text-decoration:none">📄</a></td>
-            <td data-v="{{ r.health.score if r.health.score is not none else -1 }}">
+        <tr data-href="/?accounts={{ r.id }}" class="{{ 'r-crit' if r.has_crit else ('r-warn' if r.anoms or r.pace_status=='over' or (r.dep_y is not none and r.dep_y>=30) else '') }}">
+            <td class="l"><a class="store-link" href="/?accounts={{ r.id }}"><span class="store">{{ r.label }}</span></a><a class="rep-btn" href="/report/{{ r.id }}" title="클라이언트 리포트">📄 리포트</a></td>
+            <td class="grade-cell" data-v="{{ r.health.score if r.health.score is not none else -1 }}">
                 {% set h = r.health %}
-                <span class="grade {{ 'g-' + h.grade if h.grade else 'g-none' }}" title="{% for c in h.checks %}{{ c.name }}: {{ '✓' if c.result==1.0 else ('△' if c.result==0.5 else ('✗' if c.result==0.0 else '–')) }} {{ c.detail }}&#10;{% endfor %}">{{ h.grade or '–' }}</span>
-                {% if h.score is not none %}<span class="gscore">{{ h.score }}</span>{% endif %}
+                <span class="grade {{ 'g-' + h.grade if h.grade else 'g-none' }}" title="{% for c in h.checks %}{{ c.name }}: {{ '✓' if c.result==1.0 else ('△' if c.result==0.5 else ('✗' if c.result==0.0 else '–')) }} {{ c.detail }}&#10;{% endfor %}">{{ h.grade or '–' }}</span>{% if h.score is not none %}<span class="gscore">{{ h.score }}</span>{% endif %}
             </td>
             <td class="num" data-v="{{ r.spend_y }}">{{ won(r.spend_y) }}</td>
             <td data-v="{{ r.spend_wow if r.spend_wow is not none else -99999 }}">{{ wow(r.spend_wow) }}</td>
@@ -164,6 +169,13 @@
         return dir[c]? av.localeCompare(bv,'ko') : bv.localeCompare(av,'ko');
       });
       rows.forEach(function(r){ tb.appendChild(r); });
+    });
+  });
+  // 행 아무 곳이나 클릭 → 해당 매장 상세 대시보드 (링크·버튼·입력·폼 클릭은 제외)
+  tb.querySelectorAll('tr[data-href]').forEach(function(tr){
+    tr.addEventListener('click', function(e){
+      if (e.target.closest('a,button,input,form,label')) return;
+      window.location.href = tr.dataset.href;
     });
   });
 })();

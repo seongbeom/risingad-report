@@ -5125,14 +5125,14 @@ def _store_health_snapshot(aid, label):
     })
 
 
-# 클라이언트 리포트용 채널 표시명(비전문가용 — 영어·약어 최소화)
+# 클라이언트 리포트용 채널 표시명(비전문가용) — (이름, 조회fn, 광고비컬럼, 전환컬럼)
 _REPORT_CH = [
-    ("메타 (페이스북·인스타그램)", db.list_meta_metrics, "spend"),
-    ("네이버 검색광고", db.list_naver_metrics, "cost"),
-    ("크리테오 (재방문 타겟팅)", db.list_criteo_metrics, "cost"),
-    ("네이버 성과형 디스플레이", db.list_gfa_metrics, "cost"),
-    ("카카오모먼트", db.list_kakao_metrics, "cost"),
-    ("네이버 쇼핑박스", db.list_shopbox_metrics, "cost"),
+    ("메타 (페이스북·인스타그램)", db.list_meta_metrics, "spend", "purchases"),
+    ("네이버 검색광고", db.list_naver_metrics, "cost", "conversions"),
+    ("크리테오 (재방문 타겟팅)", db.list_criteo_metrics, "cost", "conversions"),
+    ("네이버 성과형 디스플레이", db.list_gfa_metrics, "cost", "conversions"),
+    ("카카오모먼트", db.list_kakao_metrics, "cost", "conversions"),
+    ("네이버 쇼핑박스", db.list_shopbox_metrics, "cost", None),
 ]
 
 
@@ -5165,30 +5165,38 @@ def client_report(account_id):
     def _pct(cur, prev):
         return round((cur - prev) / prev * 100) if prev else None
 
-    def _chan_sum(fn, key, a, b):
-        sp = rv = 0
+    def _chan_sum(fn, key, conv_key, a, b):
+        agg = {"sp": 0, "rv": 0, "imp": 0, "clk": 0, "conv": 0}
         daily = {}
         for r in fn(account_ids=[account_id], start_date=a, end_date=b):
             c = r.get(key) or 0; v = r.get("revenue") or 0
-            sp += c; rv += v
+            agg["sp"] += c; agg["rv"] += v
+            agg["imp"] += r.get("impressions") or 0; agg["clk"] += r.get("clicks") or 0
+            agg["conv"] += (r.get(conv_key) or 0) if conv_key else 0
             dd = daily.setdefault(r["date"], {"s": 0, "r": 0}); dd["s"] += c; dd["r"] += v
-        return sp, rv, daily
+        return agg, daily
 
     rows = []
-    tot_s = tot_r = ptot_s = ptot_r = 0
+    tot = {"sp": 0, "rv": 0, "imp": 0, "clk": 0, "conv": 0}
+    ptot_s = ptot_r = 0
     daily_all = {}
-    for name, fn, key in _REPORT_CH:
-        cs, cr, cd = _chan_sum(fn, key, s, e)
-        psp, prv, _ = _chan_sum(fn, key, ps, pe)
-        if cs == 0 and cr == 0 and psp == 0:
+    for name, fn, key, conv_key in _REPORT_CH:
+        cur, cd = _chan_sum(fn, key, conv_key, s, e)
+        prev, _ = _chan_sum(fn, key, conv_key, ps, pe)
+        if cur["sp"] == 0 and cur["rv"] == 0 and prev["sp"] == 0:
             continue
-        rows.append({"name": name, "spend": cs, "rev": cr,
-                     "roas": round(cr / cs * 100) if cs else None,
-                     "d_spend": _pct(cs, psp), "d_rev": _pct(cr, prv)})
-        tot_s += cs; tot_r += cr; ptot_s += psp; ptot_r += prv
+        rows.append({"name": name, "spend": cur["sp"], "rev": cur["rv"],
+                     "imp": cur["imp"], "clk": cur["clk"], "conv": cur["conv"],
+                     "ctr": round(cur["clk"] / cur["imp"] * 100, 2) if cur["imp"] else None,
+                     "roas": round(cur["rv"] / cur["sp"] * 100) if cur["sp"] else None,
+                     "d_spend": _pct(cur["sp"], prev["sp"]), "d_rev": _pct(cur["rv"], prev["rv"])})
+        for k in tot:
+            tot[k] += cur[k]
+        ptot_s += prev["sp"]; ptot_r += prev["rv"]
         for d, v in cd.items():
             x = daily_all.setdefault(d, {"s": 0, "r": 0}); x["s"] += v["s"]; x["r"] += v["r"]
     rows.sort(key=lambda r: r["spend"], reverse=True)
+    tot_s, tot_r = tot["sp"], tot["rv"]
     roas = round(tot_r / tot_s * 100) if tot_s else None
     proas = round(ptot_r / ptot_s * 100) if ptot_s else None
     srev = sum((m.get("매출") or 0) for m in
@@ -5204,6 +5212,14 @@ def client_report(account_id):
         dp = roas - proas
         comments.append(f"광고 효율은 {prev_ko}({proas}%) 대비 {abs(dp)}%포인트 "
                         f"{'올랐습니다' if dp >= 0 else '내렸습니다'} (현재 {roas}%).")
+    if tot["imp"]:
+        ctr = round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else 0
+        line = f"광고가 {tot['imp']:,}회 노출돼 {tot['clk']:,}번 클릭(클릭률 {ctr}%)됐고"
+        if tot["conv"]:
+            line += f", 그중 {tot['conv']:,}건이 구매로 이어졌습니다."
+        else:
+            line += "습니다."
+        comments.append(line)
     if contrib is not None:
         comments.append(f"같은 기간 매장 전체 매출의 약 {contrib}%가 광고를 통해 발생했습니다.")
     if rows:
@@ -5218,7 +5234,9 @@ def client_report(account_id):
         period_ko=period_ko, start=s, end=e, span=span, health=health,
         rows=rows, tot={"spend": tot_s, "rev": tot_r, "roas": roas, "proas": proas,
                         "d_spend": _pct(tot_s, ptot_s), "d_rev": _pct(tot_r, ptot_r),
-                        "srev": srev, "contrib": contrib},
+                        "srev": srev, "contrib": contrib,
+                        "imp": tot["imp"], "clk": tot["clk"], "conv": tot["conv"],
+                        "ctr": round(tot["clk"] / tot["imp"] * 100, 2) if tot["imp"] else None},
         daily_series=daily_series, comments=comments,
         generated=now.strftime("%Y-%m-%d %H:%M"),
     )
